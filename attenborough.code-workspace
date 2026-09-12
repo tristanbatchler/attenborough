@@ -1,0 +1,19 @@
+{
+  "folders": [
+    {
+      "name": "Root Project",
+      "path": "."
+    },
+    {
+      "name": "API (Backend)",
+      "path": "api"
+    },
+    {
+      "name": "Web (Frontend)",
+      "path": "web"
+    }
+  ],
+  "settings": {
+    // Global workspace settings go here (optional)
+  }
+}
