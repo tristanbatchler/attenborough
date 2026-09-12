@@ -2,10 +2,12 @@ from collections.abc import Iterable
 
 from fastapi import FastAPI
 from starlette.responses import JSONResponse
+from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 
+from attenborough.response_models import Message
 from attenborough.router import Router
 
-app = FastAPI()
+app = FastAPI(responses=Message.for_statuses([HTTP_500_INTERNAL_SERVER_ERROR]))
 
 
 def include_routers(parent: FastAPI | Router, routers: Iterable[Router]):
@@ -23,4 +25,4 @@ include_routers(app, honeypot_routers + [exhibit_router])
 
 @app.get("/")
 async def root():
-    return JSONResponse(content=f'{"content": "Hello, world!"}')
+    return JSONResponse(content={"content": "Hello, world!"})
