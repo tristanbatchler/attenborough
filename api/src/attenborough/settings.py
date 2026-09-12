@@ -28,7 +28,7 @@ class _Settings(BaseSettings):
         emails: list[str] = []
         if isinstance(v, str):
             emails = v.split(",")
-        elif isinstance(v, Sequence) and len(v) > 0 and isinstance(v[0], str):
+        elif isinstance(v, Sequence) and v and isinstance(v[0], str):
             v = cast(Sequence[str], v)
             emails = list(v)
         else:
