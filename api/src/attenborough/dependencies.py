@@ -1,6 +1,7 @@
 from ipaddress import AddressValueError, IPv4Address, IPv6Address
+from typing import Annotated
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 from fastapi.requests import Request
 from pydantic.networks import IPvAnyAddress
 from starlette.status import HTTP_400_BAD_REQUEST
@@ -17,13 +18,15 @@ def str2ip(ip_str: str) -> IPvAnyAddress:
         except AddressValueError:
             raise AddressValueError(f"{ip_str} is not a value IP address")
 
+
 async def get_request_origin(request: Request) -> IPvAnyAddress:
-    if (real_ip := request.headers.get(settings.REAL_IP_HEADER)):
+    if real_ip := request.headers.get(settings.REAL_IP_HEADER):
         return str2ip(real_ip)
-    
+
     if not request.client:
         raise HTTPException(HTTP_400_BAD_REQUEST, "IP address undetectable")
-    
-    return str2ip(request.client.host)
-    
 
+    return str2ip(request.client.host)
+
+
+RequestOrigin = Annotated[IPvAnyAddress, Depends(get_request_origin)]

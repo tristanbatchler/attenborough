@@ -3,14 +3,13 @@ from __future__ import annotations
 import logging
 import sys
 from collections.abc import Sequence
+from functools import lru_cache
 from pathlib import Path
-from typing import ClassVar, cast
+from typing import ClassVar, Self, cast
 
 from pydantic import Field, field_validator
 from pydantic_core import PydanticUndefined
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from functools import lru_cache
-
 
 app_directory = Path(__file__).parent.parent.parent
 settings_path = app_directory / ".env"
@@ -19,6 +18,10 @@ _ADMIN_EMAILS_VALIDATION_ALIAS: str = "ADMIN_EMAILS"
 
 
 class _Settings(BaseSettings):
+    def __new__(cls) -> Self:
+        cls.write_example()
+        return super().__new__(cls)
+
     @field_validator(_ADMIN_EMAILS_VALIDATION_ALIAS, mode="before")
     @classmethod
     def normalize_admin_emails(cls, v: object) -> set[str]:
@@ -60,29 +63,30 @@ class _Settings(BaseSettings):
         env_ignore_empty=True,
     )
 
+    @staticmethod
+    def write_example() -> None:
+        # Write the settings example file based on Settings defaults
+        example_lines: list[str] = []
+        for field_name, field_info in _Settings.model_fields.items():
+            default = cast(object, field_info.default)
+            if default is not PydanticUndefined:
+                line = f"# {field_name} = {default} # Optional"
+            else:
+                line = f"{field_name} = "
+            example_lines.append(line)
 
-def write_example(maybe_fail_and_copy: bool = False) -> None:
-    # Write the settings example file based on Settings defaults
-    example_lines: list[str] = []
-    for field_name, field_info in _Settings.model_fields.items():
-        default = cast(object, field_info.default)
-        if default is not PydanticUndefined:
-            line = f"# {field_name} = {default} # Optional"
-        else:
-            line = f"{field_name} = "
-        example_lines.append(line)
+        example_text = "\n".join(example_lines)
+        example_settings_path = app_directory / ".example.env"
+        _ = example_settings_path.write_text(example_text)
 
-    example_text = "\n".join(example_lines)
-    example_settings_path = app_directory / ".example.env"
-    _ = example_settings_path.write_text(example_text)
+        # If the settings file doesn't exist, copy the example on there too
+        if not settings_path.is_file():
+            _ = settings_path.write_text(example_text)
+            logging.fatal(
+                f"Settings file {settings_path} not present so I have created it for you - please fill out the required fields"
+            )
+            sys.exit(1)
 
-    # If the settings file doesn't exist, copy the example on there too
-    if maybe_fail_and_copy and not settings_path.is_file():
-        _ = settings_path.write_text(example_text)
-        logging.fatal(
-            f"Settings file {settings_path} not present so I have created it for you - please fill out the required fields"
-        )
-        sys.exit(1)
 
 @lru_cache
 def get_settings() -> _Settings:
