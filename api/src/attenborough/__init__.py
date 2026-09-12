@@ -1,2 +1,3 @@
-from attenborough.settings import settings as settings
+from attenborough.settings import get_settings
+settings = get_settings()
 

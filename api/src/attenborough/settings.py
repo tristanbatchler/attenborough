@@ -4,13 +4,13 @@ import logging
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import ClassVar, Self, cast
+from typing import ClassVar, cast
 
 from pydantic import Field, field_validator
 from pydantic_core import PydanticUndefined
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from functools import lru_cache
 
-from attenborough.util import inherit_signature
 
 app_directory = Path(__file__).parent.parent.parent
 settings_path = app_directory / ".env"
@@ -18,22 +18,7 @@ settings_path = app_directory / ".env"
 _ADMIN_EMAILS_VALIDATION_ALIAS: str = "ADMIN_EMAILS"
 
 
-class Settings(BaseSettings):
-    _instance: ClassVar[Settings | None] = None
-    _initialized: ClassVar[bool] = False
-
-    def __new__(cls) -> Self:
-        if cls._instance is None:
-            inst = super().__new__(cls)
-            cls._instance = inst
-        return cast(Self, cls._instance)
-
-    @inherit_signature
-    def __init__(self, *args: object, **kwargs: object):
-        if not Settings._initialized:
-            super().__init__()
-            Settings._initialized = True
-
+class _Settings(BaseSettings):
     @field_validator(_ADMIN_EMAILS_VALIDATION_ALIAS, mode="before")
     @classmethod
     def normalize_admin_emails(cls, v: object) -> set[str]:
@@ -79,7 +64,7 @@ class Settings(BaseSettings):
 def write_example(maybe_fail_and_copy: bool = False) -> None:
     # Write the settings example file based on Settings defaults
     example_lines: list[str] = []
-    for field_name, field_info in Settings.model_fields.items():
+    for field_name, field_info in _Settings.model_fields.items():
         default = cast(object, field_info.default)
         if default is not PydanticUndefined:
             line = f"# {field_name} = {default} # Optional"
@@ -99,4 +84,6 @@ def write_example(maybe_fail_and_copy: bool = False) -> None:
         )
         sys.exit(1)
 
-settings = Settings()
+@lru_cache
+def get_settings() -> _Settings:
+    return _Settings()
