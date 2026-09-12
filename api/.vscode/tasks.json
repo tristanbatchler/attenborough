@@ -1,0 +1,27 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "sqlc: generate",
+      "type": "shell",
+      "command": "uv",
+      "args": [
+        "run",
+        "sqlc",
+        "generate",
+        "--file",
+        "src/attenborough/db/sqlc.yaml"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}

@@ -48,21 +48,27 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
+    { name = "psycopg", extra = ["pool"] },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "basedpyright" },
     { name = "ruff" },
+    { name = "sqlc-bin" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "fastapi", extras = ["standard"], specifier = ">=0.141.1" }]
+requires-dist = [
+    { name = "fastapi", extras = ["standard"], specifier = ">=0.141.1" },
+    { name = "psycopg", extras = ["pool"], specifier = ">=3.3.5" },
+]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "basedpyright", specifier = ">=1.39.10" },
     { name = "ruff", specifier = ">=0.16.4" },
+    { name = "sqlc-bin", specifier = ">=1.31.1.post1" },
 ]
 
 [[package]]
@@ -425,6 +431,35 @@ wheels = [
 ]
 
 [[package]]
+name = "psycopg"
+version = "3.3.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/72/73/8fb739d0f6bba247b9b93c9840c402a4f88545be5f1d4b02b23366371c00/psycopg-3.3.5.tar.gz", hash = "sha256:d0a3d9ccf5788af054cbd745278cb02401b5c312aeaafbf2c6144460aec47da4", size = 166508, upload-time = "2026-08-31T22:45:43.151Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3d/2e/d0a645bcaadde68bd6d93c43f02f14b0191bdda367ce3f7722abe3da744a/psycopg-3.3.5-py3-none-any.whl", hash = "sha256:ce5aa5cdb4f9379f00f487590e5890bfa7df9a164648c969ffa628505e21af4e", size = 213598, upload-time = "2026-08-31T22:39:02.184Z" },
+]
+
+[package.optional-dependencies]
+pool = [
+    { name = "psycopg-pool" },
+]
+
+[[package]]
+name = "psycopg-pool"
+version = "3.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/90/82/7a23d26039827ecd4ebe93905651029ddd307c5182ad59296dfb6f67b528/psycopg_pool-3.3.1.tar.gz", hash = "sha256:b10b10b7a175d5cc1592147dc5b7eec8a9e0834eb3ed2c4a92c858e2f51eb63c", size = 31661, upload-time = "2026-05-01T23:31:59.809Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/37/ed/89c2c620af0e1660354cd8aabf9f5b21f911597ce22acb37c805d6c86bc8/psycopg_pool-3.3.1-py3-none-any.whl", hash = "sha256:2af5b432941c4c9ad5c87b3fa410aec910ec8f7c122855897983a06c45f2e4b5", size = 40023, upload-time = "2026-05-01T23:31:53.136Z" },
+]
+
+[[package]]
 name = "pydantic"
 version = "2.13.5"
 source = { registry = "https://pypi.org/simple" }
@@ -712,6 +747,20 @@ wheels = [
 ]
 
 [[package]]
+name = "sqlc-bin"
+version = "1.31.1.post1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/4e/62944acbd5c4a4773aa27e937484602b2f7a7b6d678a5c51982832bada69/sqlc_bin-1.31.1.post1.tar.gz", hash = "sha256:a898b2e79f49615bb96d6402b36c90ef65c81f1744568f9376eb9f3be25452af", size = 6208, upload-time = "2026-08-10T08:23:34.252Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f9/27/7fd250116ee674541a23ba1fae9eeff0689b3050fe64f05ebf0463993091/sqlc_bin-1.31.1.post1-py3-none-macosx_11_0_arm64.whl", hash = "sha256:7493fdc9dd16a330596fbdb1e91575b088b0a7e1b28e1cf510682e69937d133b", size = 14471638, upload-time = "2026-08-10T08:23:15.482Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/fc/5768b57c0626eea11feb18c2ee866e069c034e5fc1ac8668dc12a11d46c5/sqlc_bin-1.31.1.post1-py3-none-macosx_11_0_x86_64.whl", hash = "sha256:38f20286deb026d3de26025a0ca06f947d8551f6e45a88f3f629eb4a30b57921", size = 15917628, upload-time = "2026-08-10T08:23:19.228Z" },
+    { url = "https://files.pythonhosted.org/packages/86/85/a09c3fb79953cd7875eeb6a96313d6a68894e562284a84750d498a2f2a27/sqlc_bin-1.31.1.post1-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.musllinux_1_1_aarch64.whl", hash = "sha256:55307be3b16c4a43a021ba04203c2033c8fcd493722d039b5491942827fadc0f", size = 13633531, upload-time = "2026-08-10T08:23:22.258Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/9c/504173c47e63c831c5a8611319782526daa0b25324efa5b637104c5c78db/sqlc_bin-1.31.1.post1-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.musllinux_1_1_x86_64.whl", hash = "sha256:0547da025ecd2136e5700f56e72194c227779a4843a3f4dd297ceed0f119557e", size = 15058706, upload-time = "2026-08-10T08:23:25.477Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/5a/15fa71eb49079305beb9ff94316fa21aef8243b7c9a2f977744c5ca52afb/sqlc_bin-1.31.1.post1-py3-none-win_amd64.whl", hash = "sha256:b4befd2178659e59237a4021455c20c85724a76d77ea23e8aabf20c0ec4ff1a8", size = 15385329, upload-time = "2026-08-10T08:23:28.866Z" },
+    { url = "https://files.pythonhosted.org/packages/89/37/76f2bea89b55bef435df507ac8f88583f4c85ef0eb345b3f730e269ae9c8/sqlc_bin-1.31.1.post1-py3-none-win_arm64.whl", hash = "sha256:b59d93bab220ac0d029a95df5bbb846a6a21c125631a15209ecdaa7ab7b7a1dc", size = 13747963, upload-time = "2026-08-10T08:23:32.43Z" },
+]
+
+[[package]]
 name = "starlette"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -757,6 +806,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a3/26/b09b8010994eccc3c09092e6b34058f36a460eea2d4c3e8b910c695975a0/typing_inspection-0.4.4.tar.gz", hash = "sha256:547274fa6b0a561ccf549cc9524b999a578e737d015d8709d021f9d0d13bea47", size = 76928, upload-time = "2026-08-12T12:37:25.997Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/67/81/4add07e5172b7ac40d8ed5ff580409a7801a4fe26d529bdd915401dabfbe/typing_inspection-0.4.4-py3-none-any.whl", hash = "sha256:65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147", size = 14750, upload-time = "2026-08-12T12:37:24.648Z" },
+]
+
+[[package]]
+name = "tzdata"
+version = "2026.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/92/ff/5a28bdfd8c3ebec42564ac7d0e54ca3db65044a9314a97f9564fa7a1e926/tzdata-2026.3.tar.gz", hash = "sha256:4a1518b8993086a7982523e071643f3c0e5f213e75b21318e78bcabfff9d1415", size = 198674, upload-time = "2026-07-10T08:50:37.887Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/6d/b53b99a9f2766d095985947a5782f1702cabb129a34f7a802d7197af832f/tzdata-2026.3-py2.py3-none-any.whl", hash = "sha256:dc096730c87af6cab1b171c9d532be840741ff5d459015e7f6947bd7d7e54931", size = 348168, upload-time = "2026-07-10T08:50:36.46Z" },
 ]
 
 [[package]]

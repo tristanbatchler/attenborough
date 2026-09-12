@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "fastapi[standard]>=0.141.1",
+    "psycopg[pool]>=3.3.5",
 ]
 
 [project.scripts]
@@ -22,14 +23,22 @@ build-backend = "uv_build"
 dev = [
     "basedpyright>=1.39.10",
     "ruff>=0.16.4",
+    "sqlc-bin>=1.31.1.post1",
 ]
 
 [tool.ruff]
 exclude = [
     "src/attenborough/db/query.py",
     "src/attenborough/db/models.py",
-    "src/attenborough/db/__init__.py",
 ]
+
+[tool.basedpyright]
+ignore = [
+    "src/attenborough/db/query.py",
+    "src/attenborough/db/models.py",
+]
+typeCheckingMode = "strict"
+
 
 [tool.fastapi]
 entrypoint = "attenborough.main:app"

@@ -3,10 +3,12 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException
 from fastapi.requests import Request
+from psycopg import AsyncConnection
 from pydantic.networks import IPvAnyAddress
 from starlette.status import HTTP_400_BAD_REQUEST
 
 from attenborough import settings
+from attenborough.db.ops import get_db_conn
 
 
 def str2ip(ip_str: str) -> IPvAnyAddress:
@@ -30,3 +32,4 @@ async def get_request_origin(request: Request) -> IPvAnyAddress:
 
 
 RequestOrigin = Annotated[IPvAnyAddress, Depends(get_request_origin)]
+DBConn = Annotated[AsyncConnection, Depends(get_db_conn)]

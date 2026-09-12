@@ -16,7 +16,6 @@ settings_path = app_directory / ".env"
 
 _ADMIN_EMAILS_VALIDATION_ALIAS: str = "ADMIN_EMAILS"
 
-
 class _Settings(BaseSettings):
     def __new__(cls) -> Self:
         cls.write_example()
@@ -43,9 +42,13 @@ class _Settings(BaseSettings):
     DB_PASSWORD: str = Field(default=...)
     DB_HOST: str = Field(default=...)
     DB_PORT: int = Field(default=5432, ge=0, le=0xFFFF)
+    DB_MIN_POOL_SIZE: int = Field(default=5, ge=1)
+    DB_MAX_POOL_SIZE: int = Field(default=20, ge=1)
+    DB_POOL_TIMEOUT_SECONDS: int = Field(default=30, gt=0)
     WEB_BASE_URL: str = Field(default=...)
     API_BASE_URL: str = Field(default=...)
     APP_MAX_PAGE_TAKE: int = Field(default=200, ge=1)
+    APP_DEFAULT_PAGE_TAKE: int = Field(default=20, ge=1, le=APP_MAX_PAGE_TAKE)
     GOOGLE_CLIENT_ID: str = Field(default=...)
     GOOGLE_CLIENT_SECRET: str = Field(default=...)
     APP_SESSION_DURATION_DAYS: int = Field(default=30, gt=0)
