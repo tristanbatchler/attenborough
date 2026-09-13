@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import ClassVar, Self, cast
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_core import PydanticUndefined
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -37,6 +37,12 @@ class _Settings(BaseSettings):
 
         return {e.strip().lower() for e in emails}
 
+    @model_validator(mode="after")
+    def validate_page_takes(self) -> Self:
+        if self.APP_DEFAULT_PAGE_TAKE > self.APP_MAX_PAGE_TAKE:
+            raise ValueError("APP_DEFAULT_PAGE_TAKE cannot exceed APP_MAX_PAGE_TAKE")
+        return self
+
     DB_DATABASE: str = Field(default=...)
     DB_USERNAME: str = Field(default=...)
     DB_PASSWORD: str = Field(default=...)
@@ -48,7 +54,7 @@ class _Settings(BaseSettings):
     WEB_BASE_URL: str = Field(default=...)
     API_BASE_URL: str = Field(default=...)
     APP_MAX_PAGE_TAKE: int = Field(default=200, ge=1)
-    APP_DEFAULT_PAGE_TAKE: int = Field(default=20, ge=1, le=APP_MAX_PAGE_TAKE)
+    APP_DEFAULT_PAGE_TAKE: int = Field(default=20, ge=1)
     GOOGLE_CLIENT_ID: str = Field(default=...)
     GOOGLE_CLIENT_SECRET: str = Field(default=...)
     APP_SESSION_DURATION_DAYS: int = Field(default=30, gt=0)

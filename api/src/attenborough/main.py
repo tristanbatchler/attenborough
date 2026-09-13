@@ -21,8 +21,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     _ = openapi_json_path.write_text(json.dumps(app.openapi()))
     logger.info("Wrote %s", openapi_json_path)
 
-    await ops.create_tables()
     await ops.db_conn_pool.open()
+    await ops.create_tables()
     yield
     await ops.db_conn_pool.close()
 
