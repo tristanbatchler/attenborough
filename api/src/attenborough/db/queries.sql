@@ -25,9 +25,9 @@ VALUES ($1, $2, $3, $4, $5, $6, $7);
 
 -- name: CreateCredentialStuffingAttempt :exec
 INSERT INTO credential_stuffing_attempts (
-    ip_address, endpoint_path, username, password
+    ip_address, endpoint_path, username, password, was_fake_success
 )
-VALUES ($1, $2, $3, $4);
+VALUES ($1, $2, $3, $4, $5);
 
 -- name: GetIpThreatSummary :one
 SELECT
@@ -67,12 +67,12 @@ FROM (
     -- 2. Credential Stuffing / Login Probes
     SELECT
         csa.attempted_at AS event_at,
-        'credential_stuffing'::TEXT AS event_type,
+        CASE WHEN csa.was_fake_success THEN 'credential_stuffing_fake_success' ELSE 'credential_stuffing' END::TEXT AS event_type,
         NULL::BIGINT AS target_id,
         csa.endpoint_path::TEXT AS target_slug,
         ('username=' || csa.username || ' | password=' || csa.password)::TEXT AS details
     FROM credential_stuffing_attempts csa
-    WHERE csa.ip_address = sqlc.arg(ip_address)::inet
+    WHERE csa.ip_address = $1::inet
 
     UNION ALL
 

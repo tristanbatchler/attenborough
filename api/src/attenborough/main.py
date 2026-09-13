@@ -12,6 +12,7 @@ from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 from attenborough.db import ops
 from attenborough.response_models import Message
 from attenborough.router import Router
+from attenborough.middleware import TelemetryMiddleware
 
 logger = logging.getLogger(name="attenborough")
 
@@ -30,6 +31,8 @@ app = FastAPI(
     responses=Message.for_statuses([HTTP_500_INTERNAL_SERVER_ERROR]),
     lifespan=lifespan
 )
+
+app.add_middleware(TelemetryMiddleware)
 
 
 def include_routers(parent: FastAPI | Router, routers: Iterable[Router]):

@@ -51,6 +51,7 @@ class CredentialStuffingAttempt(pydantic.BaseModel):
     endpoint_path: str
     username: str
     password: str
+    was_fake_success: bool
     attempted_at: datetime.datetime
 
 

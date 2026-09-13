@@ -83,9 +83,9 @@ VALUES (%(p1)s, %(p2)s, %(p3)s, %(p4)s, %(p5)s, %(p6)s, %(p7)s)
 
 CREATE_CREDENTIAL_STUFFING_ATTEMPT: typing.Final[typing.LiteralString] = """-- name: CreateCredentialStuffingAttempt :exec
 INSERT INTO credential_stuffing_attempts (
-    ip_address, endpoint_path, username, password
+    ip_address, endpoint_path, username, password, was_fake_success
 )
-VALUES (%(p1)s, %(p2)s, %(p3)s, %(p4)s)
+VALUES (%(p1)s, %(p2)s, %(p3)s, %(p4)s, %(p5)s)
 """
 
 GET_IP_THREAT_SUMMARY: typing.Final[typing.LiteralString] = """-- name: GetIpThreatSummary :one
@@ -121,14 +121,14 @@ FROM (
         th.path::TEXT AS target_slug,
         ('status=' || th.status_code::text || ' | method=' || th.method)::TEXT AS details
     FROM telemetry_hits th
-    WHERE th.ip_address = %(p1)s::inet
+    WHERE th.ip_address = %(p2)s::inet
 
     UNION ALL
 
     -- 2. Credential Stuffing / Login Probes
     SELECT
         csa.attempted_at AS event_at,
-        'credential_stuffing'::TEXT AS event_type,
+        CASE WHEN csa.was_fake_success THEN 'credential_stuffing_fake_success' ELSE 'credential_stuffing' END::TEXT AS event_type,
         NULL::BIGINT AS target_id,
         csa.endpoint_path::TEXT AS target_slug,
         ('username=' || csa.username || ' | password=' || csa.password)::TEXT AS details
@@ -146,7 +146,7 @@ FROM (
         NULL::TEXT AS details
     FROM decoy_views dv
     INNER JOIN decoys d ON d.id = dv.decoy_id
-    WHERE dv.ip_address = %(p1)s::inet
+    WHERE dv.ip_address = %(p2)s::inet
 
     UNION ALL
 
@@ -159,7 +159,7 @@ FROM (
         NULL::TEXT AS details
     FROM decoy_password_attempts dpa
     INNER JOIN decoys d ON d.id = dpa.decoy_id
-    WHERE dpa.ip_address = %(p1)s::inet
+    WHERE dpa.ip_address = %(p2)s::inet
 
     UNION ALL
 
@@ -171,7 +171,7 @@ FROM (
         NULL::TEXT AS target_slug,
         ('by_user_id=' || b.added_by_user_id::text || COALESCE(' | reason=' || NULLIF(b.reason, ''), ''))::TEXT AS details
     FROM ip_bans b
-    WHERE b.ip_address = %(p1)s::inet
+    WHERE b.ip_address = %(p2)s::inet
 
     UNION ALL
 
@@ -183,12 +183,12 @@ FROM (
         NULL::TEXT AS target_slug,
         ('by_user_id=' || b.revoked_by_user_id::text)::TEXT AS details
     FROM ip_bans b
-    WHERE b.ip_address = %(p1)s::inet
+    WHERE b.ip_address = %(p2)s::inet
 ) events
 WHERE event_at IS NOT NULL
 ORDER BY event_at DESC
-LIMIT %(p3)s::int
-OFFSET %(p2)s::int
+LIMIT %(p4)s::int
+OFFSET %(p3)s::int
 """
 
 
@@ -252,8 +252,8 @@ async def create_telemetry_hit(conn: ConnectionLike, *, ip_address: str, method:
     await conn.execute(CREATE_TELEMETRY_HIT, {"p1": ip_address, "p2": method, "p3": path, "p4": router_group, "p5": user_agent, "p6": headers, "p7": status_code})
 
 
-async def create_credential_stuffing_attempt(conn: ConnectionLike, *, ip_address: str, endpoint_path: str, username: str, password: str) -> None:
-    await conn.execute(CREATE_CREDENTIAL_STUFFING_ATTEMPT, {"p1": ip_address, "p2": endpoint_path, "p3": username, "p4": password})
+async def create_credential_stuffing_attempt(conn: ConnectionLike, *, ip_address: str, endpoint_path: str, username: str, password: str, was_fake_success: bool) -> None:
+    await conn.execute(CREATE_CREDENTIAL_STUFFING_ATTEMPT, {"p1": ip_address, "p2": endpoint_path, "p3": username, "p4": password, "p5": was_fake_success})
 
 
 async def get_ip_threat_summary(conn: ConnectionLike, *, ip_address: str) -> GetIpThreatSummaryRow | None:
@@ -270,8 +270,8 @@ async def create_active_ip_ban(conn: ConnectionLike, *, ip_address: str, expires
     return models.IpBan(id_=row[0], ip_address=str(row[1]), added=row[2], expires=row[3], reason=row[4], added_by_user_id=row[5], revoked_at=row[6], revoked_by_user_id=row[7], revocation_reason=row[8])
 
 
-def list_ip_activity(conn: ConnectionLike, *, ip_address: str, offset: int, limit: int) -> QueryResults[ListIpActivityRow]:
+def list_ip_activity(conn: ConnectionLike, *, dollar_1: str, ip_address: str, offset: int, limit: int) -> QueryResults[ListIpActivityRow]:
     def _decode_hook(row: psycopg.rows.TupleRow) -> ListIpActivityRow:
         return ListIpActivityRow(event_at=row[0], event_type=row[1], target_id=row[2], target_slug=row[3], details=row[4])
 
-    return QueryResults(conn, LIST_IP_ACTIVITY, _decode_hook, {"p1": ip_address, "p2": offset, "p3": limit})
+    return QueryResults(conn, LIST_IP_ACTIVITY, _decode_hook, {"p1": dollar_1, "p2": ip_address, "p3": offset, "p4": limit})

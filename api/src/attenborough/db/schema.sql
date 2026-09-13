@@ -110,12 +110,13 @@ CREATE INDEX idx_telemetry_hits_router ON telemetry_hits (router_group, occurred
 
 -- Specialized logging for credential stuffing & brute force attempts on /honeypot/admin/login or /auth
 CREATE TABLE IF NOT EXISTS credential_stuffing_attempts (
-    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    ip_address    INET NOT NULL,
+    id BIGSERIAL PRIMARY KEY,
+    ip_address INET NOT NULL,
     endpoint_path TEXT NOT NULL,
-    username      TEXT NOT NULL,
-    password      TEXT NOT NULL,
-    attempted_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    username TEXT NOT NULL,
+    password TEXT NOT NULL,
+    was_fake_success BOOLEAN NOT NULL DEFAULT FALSE,
+    attempted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_credential_attempts_ip ON credential_stuffing_attempts (ip_address, attempted_at DESC);

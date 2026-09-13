@@ -22,16 +22,17 @@ async def dashboard():
 async def login(
     request: Request, username: Annotated[str, Body()], password: Annotated[str, Body()], db_conn: DBConn, origin: RequestOrigin
 ):
-    router.logger.info(f"Login attempt: {username=}, password_length={password}")
+    success = random.random() < 0.5
+    router.logger.info(f"Login attempt: {username=}, password_length={password}, success={success}, origin={origin}")
 
-    if random.random() < 0.5:
+    async with db_conn.transaction():
+        await queries.create_credential_stuffing_attempt(db_conn, endpoint_path=request.url.path, ip_address=str(origin), username=username, password=password, was_fake_success=success)
+
+    if success:
         return RedirectResponse(
             router.url_for(request, dashboard), status_code=HTTP_303_SEE_OTHER
         )
-
-    async with db_conn.transaction():
-        await queries.create_credential_stuffing_attempt(db_conn, endpoint_path=request.url.path, ip_address=str(origin), username=username, password=password)
-
+    
     raise HTTPException(
         HTTP_500_INTERNAL_SERVER_ERROR, "Incorrect username or password"
     )
