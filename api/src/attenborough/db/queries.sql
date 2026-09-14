@@ -1,6 +1,6 @@
 -- name: UpsertUser :one
 INSERT INTO users (google_sub, email, name, is_admin)
-VALUES ($1, $2, $3, $4)
+VALUES (sqlc.arg(google_sub), sqlc.arg(email), sqlc.arg(name), sqlc.arg(is_admin))
 ON CONFLICT (google_sub)
 DO UPDATE SET
     email = EXCLUDED.email,
@@ -14,20 +14,20 @@ SELECT
     u.id, u.google_sub, u.email, u.name, u.created, u.last_login, u.is_admin
 FROM users u
 INNER JOIN sessions s ON u.id = s.user_id
-WHERE s.token_hash = $1 
+WHERE s.token_hash = sqlc.arg(token_hash)
   AND s.expires > NOW();
 
 -- name: CreateTelemetryHit :exec
 INSERT INTO telemetry_hits (
     ip_address, method, path, router_group, user_agent, headers, status_code
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7);
+VALUES (sqlc.arg(ip_address), sqlc.arg(method), sqlc.arg(path), sqlc.arg(router_group), sqlc.arg(user_agent), sqlc.arg(headers), sqlc.arg(status_code));
 
 -- name: CreateCredentialStuffingAttempt :exec
 INSERT INTO credential_stuffing_attempts (
     ip_address, endpoint_path, username, password, was_fake_success
 )
-VALUES ($1, $2, $3, $4, $5);
+VALUES (sqlc.arg(ip_address), sqlc.arg(endpoint_path), sqlc.arg(username), sqlc.arg(password), sqlc.arg(was_fake_success));
 
 -- name: GetIpThreatSummary :one
 SELECT
@@ -41,7 +41,7 @@ GROUP BY ip_address;
 
 -- name: CreateActiveIpBan :one
 INSERT INTO ip_bans (ip_address, expires, reason, added_by_user_id)
-VALUES ($1, $2, $3, $4)
+VALUES (sqlc.arg(ip_address), sqlc.arg(expires), sqlc.arg(reason), sqlc.arg(added_by_user_id))
 RETURNING *;
 
 -- name: ListIpActivity :many
@@ -72,7 +72,7 @@ FROM (
         csa.endpoint_path::TEXT AS target_slug,
         ('username=' || csa.username || ' | password=' || csa.password)::TEXT AS details
     FROM credential_stuffing_attempts csa
-    WHERE csa.ip_address = $1::inet
+    WHERE csa.ip_address = sqlc.arg(ip_address)::inet
 
     UNION ALL
 
