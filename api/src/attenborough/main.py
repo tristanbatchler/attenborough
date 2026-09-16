@@ -1,20 +1,20 @@
-from collections.abc import Iterable
-from contextlib import asynccontextmanager
 import json
 import logging
+from collections.abc import AsyncGenerator, Iterable
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from starlette.responses import JSONResponse
 from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 
 from attenborough.db import ops
+from attenborough.middleware import TelemetryMiddleware
 from attenborough.response_models import Message
 from attenborough.router import Router
-from attenborough.middleware import TelemetryMiddleware
 
 logger = logging.getLogger(name="attenborough")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
@@ -27,9 +27,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     yield
     await ops.db_conn_pool.close()
 
+
 app = FastAPI(
-    responses=Message.for_statuses([HTTP_500_INTERNAL_SERVER_ERROR]),
-    lifespan=lifespan
+    responses=Message.for_statuses([HTTP_500_INTERNAL_SERVER_ERROR]), lifespan=lifespan
 )
 
 app.add_middleware(TelemetryMiddleware)

@@ -19,15 +19,28 @@ __all__: collections.abc.Sequence[str] = (
 )
 
 import datetime
-import pydantic
 import typing
+
+import pydantic
 
 if typing.TYPE_CHECKING:
     import collections.abc
+
     import psycopg
     import psycopg.rows
 
-    type QueryResultsArgsType = int | float | str | memoryview | datetime.date | datetime.time | datetime.datetime | datetime.timedelta | collections.abc.Sequence[QueryResultsArgsType] | None
+    type QueryResultsArgsType = (
+        int
+        | float
+        | str
+        | memoryview
+        | datetime.date
+        | datetime.time
+        | datetime.datetime
+        | datetime.timedelta
+        | collections.abc.Sequence[QueryResultsArgsType]
+        | None
+    )
 
     type ConnectionLike = psycopg.AsyncConnection[psycopg.rows.TupleRow]
 
@@ -65,7 +78,9 @@ DO UPDATE SET
 RETURNING id, google_sub, email, name, created, last_login, is_admin
 """
 
-GET_USER_BY_SESSION_TOKEN_HASH: typing.Final[typing.LiteralString] = """-- name: GetUserBySessionTokenHash :one
+GET_USER_BY_SESSION_TOKEN_HASH: typing.Final[
+    typing.LiteralString
+] = """-- name: GetUserBySessionTokenHash :one
 SELECT 
     u.id, u.google_sub, u.email, u.name, u.created, u.last_login, u.is_admin
 FROM users u
@@ -74,21 +89,27 @@ WHERE s.token_hash = %(p1)s
   AND s.expires > NOW()
 """
 
-CREATE_TELEMETRY_HIT: typing.Final[typing.LiteralString] = """-- name: CreateTelemetryHit :exec
+CREATE_TELEMETRY_HIT: typing.Final[
+    typing.LiteralString
+] = """-- name: CreateTelemetryHit :exec
 INSERT INTO telemetry_hits (
     ip_address, method, path, router_group, user_agent, headers, status_code
 )
 VALUES (%(p1)s, %(p2)s, %(p3)s, %(p4)s, %(p5)s, %(p6)s, %(p7)s)
 """
 
-CREATE_CREDENTIAL_STUFFING_ATTEMPT: typing.Final[typing.LiteralString] = """-- name: CreateCredentialStuffingAttempt :exec
+CREATE_CREDENTIAL_STUFFING_ATTEMPT: typing.Final[
+    typing.LiteralString
+] = """-- name: CreateCredentialStuffingAttempt :exec
 INSERT INTO credential_stuffing_attempts (
     ip_address, endpoint_path, username, password, was_fake_success
 )
 VALUES (%(p1)s, %(p2)s, %(p3)s, %(p4)s, %(p5)s)
 """
 
-GET_IP_THREAT_SUMMARY: typing.Final[typing.LiteralString] = """-- name: GetIpThreatSummary :one
+GET_IP_THREAT_SUMMARY: typing.Final[
+    typing.LiteralString
+] = """-- name: GetIpThreatSummary :one
 SELECT
     ip_address,
     COUNT(*)::BIGINT AS total_requests,
@@ -99,7 +120,9 @@ WHERE ip_address = %(p1)s::inet
 GROUP BY ip_address
 """
 
-CREATE_ACTIVE_IP_BAN: typing.Final[typing.LiteralString] = """-- name: CreateActiveIpBan :one
+CREATE_ACTIVE_IP_BAN: typing.Final[
+    typing.LiteralString
+] = """-- name: CreateActiveIpBan :one
 INSERT INTO ip_bans (ip_address, expires, reason, added_by_user_id)
 VALUES (%(p1)s, %(p2)s, %(p3)s, %(p4)s)
 RETURNING id, ip_address, added, expires, reason, added_by_user_id, revoked_at, revoked_by_user_id, revocation_reason
@@ -207,7 +230,9 @@ class QueryResults[T]:
         self._decode_hook = decode_hook
         self._params = params
         self._cursor: psycopg.AsyncCursor[psycopg.rows.TupleRow] | None = None
-        self._iterator: collections.abc.AsyncIterator[psycopg.rows.TupleRow] | None = None
+        self._iterator: collections.abc.AsyncIterator[psycopg.rows.TupleRow] | None = (
+            None
+        )
 
     def __aiter__(self) -> QueryResults[T]:
         return self
@@ -216,7 +241,9 @@ class QueryResults[T]:
         self,
     ) -> collections.abc.Generator[None, None, collections.abc.Sequence[T]]:
         async def _wrapper() -> collections.abc.Sequence[T]:
-            result = await (await self._conn.execute(self._sql, self._params)).fetchall()
+            result = await (
+                await self._conn.execute(self._sql, self._params)
+            ).fetchall()
             return [self._decode_hook(row) for row in result]
 
         return _wrapper().__await__()
@@ -234,44 +261,152 @@ class QueryResults[T]:
         return self._decode_hook(record)
 
 
-async def upsert_user(conn: ConnectionLike, *, google_sub: str, email: str, name: str, is_admin: bool) -> models.User | None:
-    row = await (await conn.execute(UPSERT_USER, {"p1": google_sub, "p2": email, "p3": name, "p4": is_admin})).fetchone()
+async def upsert_user(
+    conn: ConnectionLike, *, google_sub: str, email: str, name: str, is_admin: bool
+) -> models.User | None:
+    row = await (
+        await conn.execute(
+            UPSERT_USER, {"p1": google_sub, "p2": email, "p3": name, "p4": is_admin}
+        )
+    ).fetchone()
     if row is None:
         return None
-    return models.User(id_=row[0], google_sub=row[1], email=row[2], name=row[3], created=row[4], last_login=row[5], is_admin=row[6])
+    return models.User(
+        id_=row[0],
+        google_sub=row[1],
+        email=row[2],
+        name=row[3],
+        created=row[4],
+        last_login=row[5],
+        is_admin=row[6],
+    )
 
 
-async def get_user_by_session_token_hash(conn: ConnectionLike, *, token_hash: str) -> models.User | None:
-    row = await (await conn.execute(GET_USER_BY_SESSION_TOKEN_HASH, {"p1": token_hash})).fetchone()
+async def get_user_by_session_token_hash(
+    conn: ConnectionLike, *, token_hash: str
+) -> models.User | None:
+    row = await (
+        await conn.execute(GET_USER_BY_SESSION_TOKEN_HASH, {"p1": token_hash})
+    ).fetchone()
     if row is None:
         return None
-    return models.User(id_=row[0], google_sub=row[1], email=row[2], name=row[3], created=row[4], last_login=row[5], is_admin=row[6])
+    return models.User(
+        id_=row[0],
+        google_sub=row[1],
+        email=row[2],
+        name=row[3],
+        created=row[4],
+        last_login=row[5],
+        is_admin=row[6],
+    )
 
 
-async def create_telemetry_hit(conn: ConnectionLike, *, ip_address: str, method: str, path: str, router_group: str, user_agent: str | None, headers: str, status_code: int) -> None:
-    await conn.execute(CREATE_TELEMETRY_HIT, {"p1": ip_address, "p2": method, "p3": path, "p4": router_group, "p5": user_agent, "p6": headers, "p7": status_code})
+async def create_telemetry_hit(
+    conn: ConnectionLike,
+    *,
+    ip_address: str,
+    method: str,
+    path: str,
+    router_group: str,
+    user_agent: str | None,
+    headers: str,
+    status_code: int,
+) -> None:
+    await conn.execute(
+        CREATE_TELEMETRY_HIT,
+        {
+            "p1": ip_address,
+            "p2": method,
+            "p3": path,
+            "p4": router_group,
+            "p5": user_agent,
+            "p6": headers,
+            "p7": status_code,
+        },
+    )
 
 
-async def create_credential_stuffing_attempt(conn: ConnectionLike, *, ip_address: str, endpoint_path: str, username: str, password: str, was_fake_success: bool) -> None:
-    await conn.execute(CREATE_CREDENTIAL_STUFFING_ATTEMPT, {"p1": ip_address, "p2": endpoint_path, "p3": username, "p4": password, "p5": was_fake_success})
+async def create_credential_stuffing_attempt(
+    conn: ConnectionLike,
+    *,
+    ip_address: str,
+    endpoint_path: str,
+    username: str,
+    password: str,
+    was_fake_success: bool,
+) -> None:
+    await conn.execute(
+        CREATE_CREDENTIAL_STUFFING_ATTEMPT,
+        {
+            "p1": ip_address,
+            "p2": endpoint_path,
+            "p3": username,
+            "p4": password,
+            "p5": was_fake_success,
+        },
+    )
 
 
-async def get_ip_threat_summary(conn: ConnectionLike, *, ip_address: str) -> GetIpThreatSummaryRow | None:
-    row = await (await conn.execute(GET_IP_THREAT_SUMMARY, {"p1": ip_address})).fetchone()
+async def get_ip_threat_summary(
+    conn: ConnectionLike, *, ip_address: str
+) -> GetIpThreatSummaryRow | None:
+    row = await (
+        await conn.execute(GET_IP_THREAT_SUMMARY, {"p1": ip_address})
+    ).fetchone()
     if row is None:
         return None
-    return GetIpThreatSummaryRow(ip_address=str(row[0]), total_requests=row[1], unique_endpoints_probed=row[2], last_seen_at=row[3])
+    return GetIpThreatSummaryRow(
+        ip_address=str(row[0]),
+        total_requests=row[1],
+        unique_endpoints_probed=row[2],
+        last_seen_at=row[3],
+    )
 
 
-async def create_active_ip_ban(conn: ConnectionLike, *, ip_address: str, expires: datetime.datetime | None, reason: str | None, added_by_user_id: int) -> models.IpBan | None:
-    row = await (await conn.execute(CREATE_ACTIVE_IP_BAN, {"p1": ip_address, "p2": expires, "p3": reason, "p4": added_by_user_id})).fetchone()
+async def create_active_ip_ban(
+    conn: ConnectionLike,
+    *,
+    ip_address: str,
+    expires: datetime.datetime | None,
+    reason: str | None,
+    added_by_user_id: int,
+) -> models.IpBan | None:
+    row = await (
+        await conn.execute(
+            CREATE_ACTIVE_IP_BAN,
+            {"p1": ip_address, "p2": expires, "p3": reason, "p4": added_by_user_id},
+        )
+    ).fetchone()
     if row is None:
         return None
-    return models.IpBan(id_=row[0], ip_address=str(row[1]), added=row[2], expires=row[3], reason=row[4], added_by_user_id=row[5], revoked_at=row[6], revoked_by_user_id=row[7], revocation_reason=row[8])
+    return models.IpBan(
+        id_=row[0],
+        ip_address=str(row[1]),
+        added=row[2],
+        expires=row[3],
+        reason=row[4],
+        added_by_user_id=row[5],
+        revoked_at=row[6],
+        revoked_by_user_id=row[7],
+        revocation_reason=row[8],
+    )
 
 
-def list_ip_activity(conn: ConnectionLike, *, ip_address: str, offset: int, limit: int) -> QueryResults[ListIpActivityRow]:
+def list_ip_activity(
+    conn: ConnectionLike, *, ip_address: str, offset: int, limit: int
+) -> QueryResults[ListIpActivityRow]:
     def _decode_hook(row: psycopg.rows.TupleRow) -> ListIpActivityRow:
-        return ListIpActivityRow(event_at=row[0], event_type=row[1], target_id=row[2], target_slug=row[3], details=row[4])
+        return ListIpActivityRow(
+            event_at=row[0],
+            event_type=row[1],
+            target_id=row[2],
+            target_slug=row[3],
+            details=row[4],
+        )
 
-    return QueryResults(conn, LIST_IP_ACTIVITY, _decode_hook, {"p1": ip_address, "p2": offset, "p3": limit})
+    return QueryResults(
+        conn,
+        LIST_IP_ACTIVITY,
+        _decode_hook,
+        {"p1": ip_address, "p2": offset, "p3": limit},
+    )

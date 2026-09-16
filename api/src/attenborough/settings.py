@@ -16,6 +16,7 @@ settings_path = app_directory / ".env"
 
 _ADMIN_EMAILS_VALIDATION_ALIAS: str = "ADMIN_EMAILS"
 
+
 class _Settings(BaseSettings):
     def __new__(cls) -> Self:
         cls.write_example()
