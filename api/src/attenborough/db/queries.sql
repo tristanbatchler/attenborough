@@ -50,7 +50,7 @@ SELECT
     event_type,
     COALESCE(target_id, 0)::BIGINT AS target_id,
     COALESCE(target_slug, '')::TEXT AS target_slug,
-    details
+    COALESCE(details, '')::TEXT AS details
 FROM (
     -- 1. General Telemetry Hits (Path probes across routers)
     SELECT
@@ -132,7 +132,8 @@ OFFSET sqlc.arg('offset')::int;
 -- name: UpsertDecoy :one
 INSERT INTO decoys (type, slug, added_by_ip)
 VALUES (sqlc.arg(type), sqlc.arg(slug), sqlc.arg(added_by_ip))
-ON CONFLICT (slug) DO UPDATE SET added_by_ip = EXCLUDED.added_by_ip
+-- No-op update so RETURNING yields the existing id; added_by_ip stays the first visitor's.
+ON CONFLICT (slug) DO UPDATE SET slug = decoys.slug
 RETURNING id;
 
 -- name: CreateDecoyView :exec
@@ -142,3 +143,17 @@ VALUES (sqlc.arg(decoy_id), sqlc.arg(ip_address));
 -- name: CreateDecoyPasswordAttempt :exec
 INSERT INTO decoy_password_attempts (decoy_id, ip_address, successful)
 VALUES (sqlc.arg(decoy_id), sqlc.arg(ip_address), sqlc.arg(successful));
+
+-- Schema reset and fingerprint (used only by db/schema.py). DROP ... CASCADE also removes the
+-- extensions installed in public; schema.sql recreates them.
+-- name: DropPublicSchema :exec
+DROP SCHEMA IF EXISTS public CASCADE;
+
+-- name: CreatePublicSchema :exec
+CREATE SCHEMA public;
+
+-- name: GetSchemaFingerprint :one
+SELECT sha256 FROM schema_fingerprint;
+
+-- name: SetSchemaFingerprint :exec
+INSERT INTO schema_fingerprint (sha256) VALUES (sqlc.arg(sha256));

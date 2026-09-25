@@ -1,18 +1,11 @@
-import logging
-import pathlib
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import LiteralString, cast
 
 from psycopg import AsyncConnection
 from psycopg.conninfo import make_conninfo
 from psycopg_pool import AsyncConnectionPool
 
 from attenborough import settings
-
-file_path = pathlib.Path(__file__)
-
-logger = logging.getLogger(file_path.name)
 
 db_conn_info = make_conninfo(
     host=settings.DB_HOST,
@@ -42,14 +35,3 @@ async def get_db_conn() -> AsyncGenerator[AsyncConnection]:
 def get_db_context():
     """This helps in the case that dependency injection is not available, e.g. in a middleware"""
     return asynccontextmanager(get_db_conn)()
-
-
-async def create_tables() -> None:
-    schema_sql = (file_path.parent / "schema.sql").read_text()
-
-    async with db_conn_pool.connection() as conn:
-        async with conn.cursor() as cursor:
-            _ = await cursor.execute(cast(LiteralString, schema_sql))
-
-        await conn.commit()
-    logger.info("db tables ready")

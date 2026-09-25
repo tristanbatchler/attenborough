@@ -20,6 +20,7 @@ The project is early-stage. Expect incomplete implementations, active reorganisa
 - Keep Python code explicit and strictly typed. Prefer useful concrete types; avoid `Any`, unjustified casts, type-ignore comments, and broad exception handling.
 - Keep module responsibilities and import direction clear. Avoid import-time side effects and importing application entrypoints from lower-level modules.
 - Database query source and schema are authoritative; generated sqlc output is not hand-edited.
+- `api/src/attenborough/db/schema.sql` is the whole schema (plain DDL, no `DO` blocks, so sqlc keeps enums typed). It is applied only by an atomic reset, `db/schema.py:reset_schema`, which deletes all data. There are no migrations in v1. At startup the app compares the database with `schema.sql` by SHA-256 fingerprint, and if they differ it asks on the terminal whether to reset, refusing to start otherwise. Changed `schema.sql` → regenerate, then reset. Changed only `queries.sql` → regenerate, no reset. See `api/README.md`, "Database".
 - Treat configuration and deployment as a single system: understand how local development and Docker obtain settings before changing either.
 - Follow the repository’s actual commands and existing conventions. Discover them from project files rather than guessing.
 - Always run `uv run ruff check` (optionally `--fix` and `--unsafe-fixes`) and `uv run ruff format` and `uv run basedpyright` after every change to the backend code to ensure consistency and correctness. This helps identify runtime bugs before they happen.
@@ -32,7 +33,7 @@ The project is early-stage. Expect incomplete implementations, active reorganisa
 - The public exhibit is a core product feature. Preserve event timestamps, request context, IP attribution, country/geolocation data, and useful cross-event relationships when changing ingestion or presentation.
 - Everything a visitor sends to the honeypot is shown **in full plain view** on the public exhibit, by design: IP addresses, headers, user agents, paths, and submitted usernames and passwords. Do not redact, mask or hash it, and do not propose doing so.
 - What must never be exposed is the project's own data: secrets and config (`.env`, DB credentials, OAuth secrets), admin users and sessions, audit logs, and internal errors. Keep these out of public responses, fixtures, logs and error messages.
-- Do not make assumptions about trusted proxy headers. Follow the configured real-IP/proxy boundary and inspect deployment configuration before changing IP attribution.
+- Client IP attribution is security-critical, and one rule decides it: `X-Forwarded-For` is honoured only from peers in `FORWARDED_ALLOW_IPS`, via uvicorn's `ProxyHeadersMiddleware` installed in `main.py`. `get_request_origin` reads `request.client` only. Never read an IP from any other request header, and never widen trust (e.g. `*`). Deployment requirements and caveats are in `api/README.md` (Deployment).
 - Be careful with attacker-controlled input: validate and bound it, avoid unsafe rendering, and do not let captured request data become executable HTML, SQL, shell input, or log-control characters.
 - Avoid turning the exhibit into an attack surface for the exhibit itself. Consider abuse, resource exhaustion, query cost, pagination limits, and privacy implications when changing public endpoints.
 

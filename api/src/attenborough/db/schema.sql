@@ -1,27 +1,25 @@
--- Enable necessary extensions
+-- The complete schema. The app applies it only through db/schema.py:reset_schema, which drops the
+-- existing schema and applies this file in one transaction, then records this file's SHA-256 in
+-- schema_fingerprint. At startup the app compares that hash with this file and offers a reset if
+-- they differ. Run the reset from scripts/reset_db.py or answer the startup prompt. It deletes all
+-- data; there are no migrations (see api/README.md, "Database").
+--
+-- Keep it plain DDL. No DO $$ blocks: sqlc doesn't execute them, so types created inside are
+-- invisible to it and generated enums become typing.Any. IF NOT EXISTS only where a brand-new
+-- schema can already have the object (extensions).
+
+-- Extensions (a new database may inherit these from its template)
 CREATE EXTENSION IF NOT EXISTS "citext";
 
--- Safely create decoy_type
-DO $$ 
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'decoy_type') THEN
-        CREATE TYPE decoy_type AS ENUM ('text', 'binary', 'trap');
-    END IF;
-END $$;
-
--- Safely create audit_action
-DO $$ 
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'audit_action') THEN
-        CREATE TYPE audit_action AS ENUM ('login', 'ban_created', 'ban_revoked', 'decoy_revoked', 'settings_changed');
-    END IF;
-END $$;
+-- Enum types
+CREATE TYPE decoy_type AS ENUM ('text', 'binary', 'trap');
+CREATE TYPE audit_action AS ENUM ('login', 'ban_created', 'ban_revoked', 'decoy_revoked', 'settings_changed');
 
 ------------------------------------------------------------------
 -- 1. AUTHENTICATION & USERS
 ------------------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE users (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     google_sub  TEXT NOT NULL UNIQUE,
     email       CITEXT NOT NULL UNIQUE,
@@ -31,7 +29,7 @@ CREATE TABLE IF NOT EXISTS users (
     is_admin    BOOLEAN NOT NULL DEFAULT FALSE
 );
 
-CREATE TABLE IF NOT EXISTS sessions (
+CREATE TABLE sessions (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id    BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     token_hash TEXT NOT NULL UNIQUE,
@@ -42,10 +40,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     CONSTRAINT chk_sessions_expiry CHECK (expires > created)
 );
 
-CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions (expires);
+CREATE INDEX idx_sessions_user_id ON sessions (user_id);
+CREATE INDEX idx_sessions_expires ON sessions (expires);
 
-CREATE TABLE IF NOT EXISTS oauth_states (
+CREATE TABLE oauth_states (
     state         TEXT PRIMARY KEY,
     code_verifier TEXT NOT NULL,
     created       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -55,13 +53,13 @@ CREATE TABLE IF NOT EXISTS oauth_states (
     CONSTRAINT chk_oauth_states_expiry CHECK (expires > created)
 );
 
-CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states (expires);
+CREATE INDEX idx_oauth_states_expires ON oauth_states (expires);
 
 ------------------------------------------------------------------
 -- 2. DECOYS & EXHIBIT ARTIFACTS
 ------------------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS decoys (
+CREATE TABLE decoys (
     id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     type             decoy_type NOT NULL DEFAULT 'text',
     slug             TEXT NOT NULL,
@@ -72,28 +70,28 @@ CREATE TABLE IF NOT EXISTS decoys (
     CONSTRAINT uq_decoys_slug UNIQUE (slug)
 );
 
-CREATE INDEX IF NOT EXISTS idx_decoys_added ON decoys (added DESC);
+CREATE INDEX idx_decoys_added ON decoys (added DESC);
 
-CREATE TABLE IF NOT EXISTS decoy_text_contents (
+CREATE TABLE decoy_text_contents (
     decoy_id BIGINT PRIMARY KEY REFERENCES decoys (id) ON DELETE CASCADE,
     content  TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS decoy_binary_paths (
+CREATE TABLE decoy_binary_paths (
     decoy_id  BIGINT PRIMARY KEY REFERENCES decoys (id) ON DELETE CASCADE,
     file_path TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS decoy_configs (
+CREATE TABLE decoy_configs (
     decoy_id      BIGINT PRIMARY KEY REFERENCES decoys (id) ON DELETE CASCADE,
     expires_at    TIMESTAMPTZ,
     password_hash TEXT,
     one_time_view BOOLEAN NOT NULL DEFAULT FALSE
 );
 
-CREATE INDEX IF NOT EXISTS idx_decoy_configs_expiry ON decoy_configs (expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX idx_decoy_configs_expiry ON decoy_configs (expires_at) WHERE expires_at IS NOT NULL;
 
-CREATE TABLE IF NOT EXISTS decoy_revocations (
+CREATE TABLE decoy_revocations (
     decoy_id           BIGINT PRIMARY KEY REFERENCES decoys (id) ON DELETE RESTRICT,
     revoked_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     revoked_by_user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE RESTRICT
@@ -104,7 +102,7 @@ CREATE TABLE IF NOT EXISTS decoy_revocations (
 ------------------------------------------------------------------
 
 -- Raw HTTP requests hitting any endpoint (Exhibit or Honeypot routers: admin, auth, backup, etc.)
-CREATE TABLE IF NOT EXISTS telemetry_hits (
+CREATE TABLE telemetry_hits (
     id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     ip_address   INET NOT NULL,
     method       TEXT NOT NULL,
@@ -117,12 +115,12 @@ CREATE TABLE IF NOT EXISTS telemetry_hits (
 );
 
 -- BRIN index is optimal for high-volume, append-only time-series telemetry
-CREATE INDEX IF NOT EXISTS idx_telemetry_hits_brin ON telemetry_hits USING brin (occurred_at);
-CREATE INDEX IF NOT EXISTS idx_telemetry_hits_ip ON telemetry_hits (ip_address, occurred_at DESC);
-CREATE INDEX IF NOT EXISTS idx_telemetry_hits_router ON telemetry_hits (router_group, occurred_at DESC);
+CREATE INDEX idx_telemetry_hits_brin ON telemetry_hits USING brin (occurred_at);
+CREATE INDEX idx_telemetry_hits_ip ON telemetry_hits (ip_address, occurred_at DESC);
+CREATE INDEX idx_telemetry_hits_router ON telemetry_hits (router_group, occurred_at DESC);
 
 -- Specialized logging for credential stuffing & brute force attempts on /honeypot/admin/login or /auth
-CREATE TABLE IF NOT EXISTS credential_stuffing_attempts (
+CREATE TABLE credential_stuffing_attempts (
     id BIGSERIAL PRIMARY KEY,
     ip_address INET NOT NULL,
     endpoint_path TEXT NOT NULL,
@@ -132,20 +130,20 @@ CREATE TABLE IF NOT EXISTS credential_stuffing_attempts (
     attempted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_credential_attempts_ip ON credential_stuffing_attempts (ip_address, attempted_at DESC);
+CREATE INDEX idx_credential_attempts_ip ON credential_stuffing_attempts (ip_address, attempted_at DESC);
 
 -- Decoy specific interaction telemetry (views, downloads)
-CREATE TABLE IF NOT EXISTS decoy_views (
+CREATE TABLE decoy_views (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     decoy_id   BIGINT NOT NULL REFERENCES decoys (id) ON DELETE CASCADE,
     ip_address INET NOT NULL,
     viewed_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_decoy_views_ip ON decoy_views (ip_address, viewed_at DESC);
+CREATE INDEX idx_decoy_views_ip ON decoy_views (ip_address, viewed_at DESC);
 
 -- Decoy password attempts and lockouts
-CREATE TABLE IF NOT EXISTS decoy_password_attempts (
+CREATE TABLE decoy_password_attempts (
     id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     decoy_id     BIGINT NOT NULL REFERENCES decoys (id) ON DELETE CASCADE,
     ip_address   INET NOT NULL,
@@ -153,9 +151,9 @@ CREATE TABLE IF NOT EXISTS decoy_password_attempts (
     attempted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_decoy_pwd_attempts_ip ON decoy_password_attempts (ip_address, attempted_at DESC);
+CREATE INDEX idx_decoy_pwd_attempts_ip ON decoy_password_attempts (ip_address, attempted_at DESC);
 
-CREATE TABLE IF NOT EXISTS decoy_lockouts (
+CREATE TABLE decoy_lockouts (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     decoy_id   BIGINT NOT NULL REFERENCES decoys (id) ON DELETE CASCADE,
     ip_address INET NOT NULL,
@@ -165,13 +163,13 @@ CREATE TABLE IF NOT EXISTS decoy_lockouts (
     CONSTRAINT chk_decoy_lockouts_expiry CHECK (expires > added)
 );
 
-CREATE INDEX IF NOT EXISTS idx_decoy_lockouts_ip ON decoy_lockouts (ip_address, expires DESC);
+CREATE INDEX idx_decoy_lockouts_ip ON decoy_lockouts (ip_address, expires DESC);
 
 ------------------------------------------------------------------
 -- 4. SECURITY ENFORCEMENT & AUDITING
 ------------------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS ip_bans (
+CREATE TABLE ip_bans (
     id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     ip_address         INET NOT NULL,
     added              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -186,9 +184,9 @@ CREATE TABLE IF NOT EXISTS ip_bans (
     CONSTRAINT chk_ip_bans_revocation CHECK (revoked_at IS NULL OR revoked_at >= added)
 );
 
-CREATE INDEX IF NOT EXISTS idx_ip_bans_active ON ip_bans (ip_address, expires) WHERE revoked_at IS NULL;
+CREATE INDEX idx_ip_bans_active ON ip_bans (ip_address, expires) WHERE revoked_at IS NULL;
 
-CREATE TABLE IF NOT EXISTS admin_audit_log (
+CREATE TABLE admin_audit_log (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id    BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     action     audit_action NOT NULL,
@@ -197,4 +195,14 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
     logged_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_admin_audit_log_time ON admin_audit_log (logged_at DESC);
+CREATE INDEX idx_admin_audit_log_time ON admin_audit_log (logged_at DESC);
+
+------------------------------------------------------------------
+-- 5. SCHEMA BOOKKEEPING
+------------------------------------------------------------------
+
+-- The SHA-256 of the schema.sql this database was built from: one row, written by reset_schema.
+CREATE TABLE schema_fingerprint (
+    sha256     TEXT PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

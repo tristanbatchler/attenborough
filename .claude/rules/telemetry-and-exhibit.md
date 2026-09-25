@@ -12,7 +12,7 @@ paths:
 - Keep event timestamps consistent and explicit about their source and time zone. Do not silently replace event time with ingestion or display time.
 - Preserve the relationship between requests, IP addresses, decoys, credential attempts, and other event records when modifying schemas or queries.
 - Treat all request metadata as attacker-controlled. Sanitize for logs and HTML; escape on output; never trust headers or paths as safe display content.
-- IP attribution must respect the configured trusted-proxy arrangement. Never blindly trust a client-supplied forwarding header.
+- IP attribution goes only through `get_request_origin` (`request.client`, already resolved by `ProxyHeadersMiddleware` for peers in `FORWARDED_ALLOW_IPS`). Never attribute from a request header directly. `telemetry_probe.py verify` checks every row's IP, including forged `X-Real-IP` and `X-Forwarded-For` cases; see `api/README.md` for deployment.
 - Geolocation and country are derived data, not intrinsic proof of identity or physical location. Preserve provider/source and missing/unknown states if the implementation supports them.
 - The exhibit shows what visitors submitted **in full plain view**: submitted usernames and passwords, headers, user agents, paths and IPs. Do not redact or mask it; showing it is the point of the exhibit.
 - Public exhibit endpoints must never expose the project's own data: admin users, sessions and OAuth state, audit logs, secrets and configuration, or internal error details.

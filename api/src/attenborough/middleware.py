@@ -1,7 +1,6 @@
 import json
 import logging
 from enum import StrEnum
-from ipaddress import AddressValueError
 
 from fastapi import HTTPException
 from fastapi.routing import APIRoute
@@ -46,7 +45,7 @@ async def _record_telemetry_hit(
 ) -> None:
     try:
         origin = await get_request_origin(request)
-    except HTTPException, AddressValueError:
+    except HTTPException:
         logger.warning(
             "Dropping telemetry for %s %r: origin undetectable",
             request.method,

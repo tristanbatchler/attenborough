@@ -1,5 +1,4 @@
 from ipaddress import AddressValueError, IPv4Address, IPv6Address
-from logging import getLogger
 from typing import Annotated
 
 from fastapi import Depends, HTTPException
@@ -8,10 +7,7 @@ from psycopg import AsyncConnection
 from pydantic.networks import IPvAnyAddress
 from starlette.status import HTTP_400_BAD_REQUEST
 
-from attenborough import settings
 from attenborough.db.ops import get_db_conn
-
-logger = getLogger("attenborough.dependencies")
 
 
 def str2ip(ip_str: str) -> IPvAnyAddress:
@@ -25,21 +21,14 @@ def str2ip(ip_str: str) -> IPvAnyAddress:
 
 
 async def get_request_origin(request: Request) -> IPvAnyAddress:
-    if real_ip := request.headers.get(settings.REAL_IP_HEADER):
-        try:
-            return str2ip(real_ip)
-        except AddressValueError:
-            # A trusted proxy always sets a valid address, so a malformed value was
-            # sent by the peer itself: attribute the request to that peer instead.
-            logger.warning(
-                "Ignoring unparseable %s header; using peer address",
-                settings.REAL_IP_HEADER,
-            )
-
-    if not request.client:
-        raise HTTPException(HTTP_400_BAD_REQUEST, "IP address undetectable")
-
-    return str2ip(request.client.host)
+    # The only source of the client address. ProxyHeadersMiddleware (main.py) has already replaced
+    # it with the X-Forwarded-For client, but only for peers in settings.FORWARDED_ALLOW_IPS; no
+    # request header is ever read here, so clients cannot choose their own attribution.
+    host = request.client.host if request.client else ""
+    try:
+        return str2ip(host)
+    except AddressValueError:
+        raise HTTPException(HTTP_400_BAD_REQUEST, "IP address undetectable") from None
 
 
 RequestOrigin = Annotated[IPvAnyAddress, Depends(get_request_origin)]

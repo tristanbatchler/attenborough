@@ -17,6 +17,7 @@ __all__: collections.abc.Sequence[str] = (
     "DecoyView",
     "IpBan",
     "OauthState",
+    "SchemaFingerprint",
     "Session",
     "TelemetryHit",
     "User",
@@ -148,6 +149,13 @@ class OauthState(pydantic.BaseModel):
     created: datetime.datetime
     expires: datetime.datetime
     ip_address: str
+
+
+class SchemaFingerprint(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    sha256: str
+    applied_at: datetime.datetime
 
 
 class Session(pydantic.BaseModel):

@@ -65,7 +65,11 @@ class _Settings(BaseSettings):
     )
     PASSWORD_LOCKOUT_EXPIRY_MINUTES: int = Field(default=15)
     PASSWORD_LOCKOUT_ATTEMPTS_THRESHOLD: int = Field(default=5)
-    REAL_IP_HEADER: str = Field(default="X-Real-IP")
+    # Proxies allowed to report the client address via X-Forwarded-For: comma-separated IPs, CIDRs
+    # or literals, as uvicorn's --forwarded-allow-ips (same name as its env var). Any other peer is
+    # attributed to its own address. "*" trusts every peer, so it is only safe if the app can never
+    # be reached except through the proxy. See api/README.md.
+    FORWARDED_ALLOW_IPS: str = Field(default="127.0.0.1")
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=settings_path,

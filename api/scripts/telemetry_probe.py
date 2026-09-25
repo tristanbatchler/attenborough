@@ -1,7 +1,8 @@
 """Test and troubleshoot Attenborough request telemetry against a running server and its database.
 
 Run from `api/` with the project environment, e.g. `uv run python scripts/telemetry_probe.py summary`.
-Database settings come from the application's own `Settings` (`api/.env` plus environment overrides).
+It reaches the database through the app's own connection pool and `Settings` (`api/.env` plus
+environment overrides), so it always inspects the same database as the server.
 
 Subcommands:
   summary               Read-only overview of `telemetry_hits`: counts per group/status and probe rows.
@@ -18,9 +19,12 @@ only read.
 
 import argparse
 import asyncio
+import ipaddress
 import sys
 import time
 from collections import Counter
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -28,9 +32,9 @@ from http import HTTPMethod
 
 import httpx
 from psycopg import AsyncConnection
-from psycopg.conninfo import make_conninfo
 from psycopg.rows import class_row
 
+from attenborough.db import ops
 from attenborough.router.group import RouterGroup
 from attenborough.settings import get_settings
 
@@ -46,6 +50,13 @@ AUTH_LOGIN_PATH = "/auth/login"
 PROTECTED_SECRET_PATH = "/protected/secret"
 NESTED_EXHIBIT_PATH = "/exhibit/feed/test"
 ADMIN_DASHBOARD_PATH = "/admin/dashboard"
+DEFAULT_PEER_IP = "127.0.0.1"
+FORWARDED_FOR_HEADER = "X-Forwarded-For"
+REAL_IP_HEADER = "X-Real-IP"
+TRUST_EVERY_PEER = "*"
+# Documentation ranges (RFC 5737): a client-forged address, and the real client a proxy appends.
+FORGED_IP = "198.51.100.66"
+FORWARDED_CLIENT_IP = "203.0.113.7"
 
 
 @dataclass(frozen=True)
@@ -57,9 +68,11 @@ class Case:
     json: object = None
     headers: dict[str, str] = field(default_factory=dict[str, str])
     repeat: int = 1
+    # Sent as a proxy chain "<forged>, <client>": only a trusted peer may make this the origin.
+    forwarded_client: str | None = None
 
 
-def request_matrix(real_ip_header: str) -> list[Case]:
+def request_matrix() -> list[Case]:
     """One case per outcome the telemetry must record identically: OK, redirect, returned and raised
     errors, framework errors (404/405/422), unhandled exceptions, and framework routes."""
     return [
@@ -114,12 +127,20 @@ def request_matrix(real_ip_header: str) -> list[Case]:
         Case("404", HTTPMethod.GET, "/this/does/not/exist", RouterGroup.HONEYPOT),
         Case("405", HTTPMethod.DELETE, ADMIN_DASHBOARD_PATH, RouterGroup.HONEYPOT),
         Case("422", HTTPMethod.POST, AUTH_LOGIN_PATH, RouterGroup.HONEYPOT, json={}),
+        # IP attribution: a client-set header must never choose the recorded origin.
         Case(
-            "bad-real-ip",
+            "forged-x-real-ip",
             HTTPMethod.GET,
             ADMIN_DASHBOARD_PATH,
             RouterGroup.HONEYPOT,
-            headers={real_ip_header: "not-an-ip"},
+            headers={REAL_IP_HEADER: FORGED_IP},
+        ),
+        Case(
+            "forwarded-chain",
+            HTTPMethod.GET,
+            ADMIN_DASHBOARD_PATH,
+            RouterGroup.HONEYPOT,
+            forwarded_client=FORWARDED_CLIENT_IP,
         ),
         Case("docs", HTTPMethod.GET, "/docs", RouterGroup.SYSTEM),
         Case("openapi", HTTPMethod.GET, "/openapi.json", RouterGroup.SYSTEM),
@@ -177,19 +198,13 @@ class ProbeRunCount:
     first_seen: datetime
 
 
-async def connect() -> AsyncConnection:
-    settings = get_settings()
-    conninfo = make_conninfo(
-        host=settings.DB_HOST,
-        port=settings.DB_PORT,
-        user=settings.DB_USERNAME,
-        password=settings.DB_PASSWORD,
-        dbname=settings.DB_DATABASE,
-    )
-    conn = await AsyncConnection.connect(conninfo, autocommit=True)
-    # This tool only ever inspects; the server under test does all writing.
-    _ = await conn.execute("SET default_transaction_read_only = on")
-    return conn
+@asynccontextmanager
+async def read_only_connection() -> AsyncGenerator[AsyncConnection]:
+    """A connection from the app's pool whose session can only read: this tool inspects, and the
+    server under test does all the writing. Needs the pool open (see `run`)."""
+    async with ops.get_db_context() as conn:
+        _ = await conn.execute("SET default_transaction_read_only = on")
+        yield conn
 
 
 async def fetch_run_rows(
@@ -210,7 +225,7 @@ async def fetch_run_rows(
 
 
 async def summary() -> int:
-    async with await connect() as conn:
+    async with read_only_connection() as conn:
         async with conn.cursor(row_factory=class_row(GroupCount)) as cur:
             _ = await cur.execute(
                 """
@@ -246,7 +261,7 @@ async def summary() -> int:
 
 
 async def rows(run: str, since: datetime) -> int:
-    async with await connect() as conn:
+    async with read_only_connection() as conn:
         found = await fetch_run_rows(conn, run, since)
     for r in found:
         print(
@@ -258,7 +273,6 @@ async def rows(run: str, since: datetime) -> int:
 
 
 async def send_all(base_url: str, run: str, burst: int) -> list[Sent]:
-    settings = get_settings()
     sent: list[Sent] = []
     counter = 0
 
@@ -273,15 +287,15 @@ async def send_all(base_url: str, run: str, burst: int) -> list[Sent]:
             nonlocal counter
             counter += 1
             probe = f"{run}-{counter:03d}-{case.label}"
+            headers = {PROBE_HEADER: probe, **case.headers}
+            if case.forwarded_client:
+                headers[FORWARDED_FOR_HEADER] = f"{FORGED_IP}, {case.forwarded_client}"
             response = await client.request(
-                case.method,
-                case.path,
-                json=case.json,
-                headers={PROBE_HEADER: probe, **case.headers},
+                case.method, case.path, json=case.json, headers=headers
             )
             return Sent(probe, case, response.status_code)
 
-        for case in request_matrix(settings.REAL_IP_HEADER):
+        for case in request_matrix():
             for _ in range(case.repeat):
                 sent.append(await send(case))
 
@@ -295,7 +309,7 @@ async def wait_for_rows(run: str, since: datetime, expected: int) -> list[HitRow
     """Telemetry is written in the background after each response, so poll until it settles."""
     deadline = time.monotonic() + 15
     found: list[HitRow] = []
-    async with await connect() as conn:
+    async with read_only_connection() as conn:
         while time.monotonic() < deadline:
             found = await fetch_run_rows(conn, run, since)
             if len(found) >= expected:
@@ -306,8 +320,24 @@ async def wait_for_rows(run: str, since: datetime, expected: int) -> list[HitRow
     return found
 
 
-async def verify(base_url: str, run: str, burst: int) -> int:
+def peer_is_trusted(peer_ip: str, forwarded_allow_ips: str) -> bool:
+    """Mirror the server's rule: may this peer report the client via X-Forwarded-For?"""
+    peer = ipaddress.ip_address(peer_ip)
+    for entry in (e.strip() for e in forwarded_allow_ips.split(",")):
+        if entry == TRUST_EVERY_PEER:
+            return True
+        try:
+            if peer in ipaddress.ip_network(entry, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+async def verify(base_url: str, run: str, burst: int, peer_ip: str) -> int:
     since = datetime.now(UTC)
+    trusted = peer_is_trusted(peer_ip, get_settings().FORWARDED_ALLOW_IPS)
+    print(f"peer {peer_ip} is {'a trusted proxy' if trusted else 'untrusted'}")
     sent = await send_all(base_url, run, burst)
     found = await wait_for_rows(run, since, len(sent))
 
@@ -320,6 +350,9 @@ async def verify(base_url: str, run: str, burst: int) -> int:
     for s in sent:
         recorded = by_probe.pop(s.probe, [])
         outcomes[(s.case.label, s.status)] += 1
+        expected_ip = (
+            s.case.forwarded_client if s.case.forwarded_client and trusted else peer_ip
+        )
         problem = ""
         if not recorded:
             problem = "MISSING"
@@ -329,6 +362,8 @@ async def verify(base_url: str, run: str, burst: int) -> int:
             problem = f"STATUS db={recorded[0].status_code} client={s.status}"
         elif recorded[0].router_group != s.case.group:
             problem = f"GROUP db={recorded[0].router_group} expected={s.case.group}"
+        elif recorded[0].ip != expected_ip:
+            problem = f"IP db={recorded[0].ip} expected={expected_ip}"
         if problem:
             failures += 1
             print(f"FAIL {s.probe:40} {s.case.method} {s.case.path} -> {problem}")
@@ -361,6 +396,19 @@ class Args(argparse.Namespace):
     since: datetime = EPOCH
     base_url: str = DEFAULT_BASE_URL
     burst: int = DEFAULT_BURST
+    peer_ip: str = DEFAULT_PEER_IP
+
+
+async def run(args: Args) -> int:
+    # The app's pool, opened for this command only; every connection below is borrowed from it.
+    async with ops.db_conn_pool:
+        match Command(args.command):
+            case Command.SUMMARY:
+                return await summary()
+            case Command.ROWS:
+                return await rows(args.run, args.since)
+            case Command.VERIFY:
+                return await verify(args.base_url, args.run, args.burst, args.peer_ip)
 
 
 def main() -> int:
@@ -389,15 +437,14 @@ def main() -> int:
     _ = verify_parser.add_argument(
         "--burst", type=int, default=DEFAULT_BURST, help="concurrent requests"
     )
+    _ = verify_parser.add_argument(
+        "--peer-ip",
+        default=DEFAULT_PEER_IP,
+        help="the address the server sees this tool connect from",
+    )
     args = parser.parse_args(namespace=Args())
 
-    match Command(args.command):
-        case Command.SUMMARY:
-            return asyncio.run(summary())
-        case Command.ROWS:
-            return asyncio.run(rows(args.run, args.since))
-        case Command.VERIFY:
-            return asyncio.run(verify(args.base_url, args.run, args.burst))
+    return asyncio.run(run(args))
 
 
 if __name__ == "__main__":
