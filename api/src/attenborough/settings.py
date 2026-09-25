@@ -14,7 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 app_directory = Path(__file__).parent.parent.parent
 settings_path = app_directory / ".env"
 
-_ADMIN_EMAILS_VALIDATION_ALIAS: str = "ADMIN_EMAILS"
+_ADMIN_EMAILS_VALIDATION_ALIAS = "ADMIN_EMAILS"
 
 
 class _Settings(BaseSettings):

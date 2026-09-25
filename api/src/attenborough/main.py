@@ -9,9 +9,13 @@ from starlette.responses import JSONResponse
 from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 
 from attenborough.db import ops
+from attenborough.exhibit.routers import exported_routers as exhibit_routers
+from attenborough.honeypot.routers import exported_routers as honeypot_routers
 from attenborough.middleware import TelemetryMiddleware
 from attenborough.response_models import Message
-from attenborough.router import Router
+from attenborough.router import ExhibitRouter, Router
+
+logging.basicConfig(level=logging.DEBUG)
 
 logger = logging.getLogger(name="attenborough")
 
@@ -29,7 +33,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 
 app = FastAPI(
-    responses=Message.for_statuses([HTTP_500_INTERNAL_SERVER_ERROR]), lifespan=lifespan
+    responses=Message.for_statuses([HTTP_500_INTERNAL_SERVER_ERROR]),
+    lifespan=lifespan,
 )
 
 app.add_middleware(TelemetryMiddleware)
@@ -40,10 +45,7 @@ def include_routers(parent: FastAPI | Router, routers: Iterable[Router]):
         parent.include_router(router)
 
 
-from attenborough.exhibit.routers import exported_routers as exhibit_routers
-from attenborough.honeypot.routers import exported_routers as honeypot_routers
-
-exhibit_router = Router(prefix="/exhibit")
+exhibit_router = ExhibitRouter(prefix="/exhibit")
 include_routers(exhibit_router, exhibit_routers)
 include_routers(app, honeypot_routers + [exhibit_router])
 

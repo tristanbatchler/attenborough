@@ -1,3 +1,3 @@
-from attenborough.router import Router
+from attenborough.router import HoneypotRouter
 
-router = Router(prefix="/backup")
+router = HoneypotRouter(prefix="/backup")

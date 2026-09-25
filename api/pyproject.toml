@@ -30,16 +30,16 @@ dev = [
 
 [tool.ruff]
 exclude = [
-    "src/attenborough/db/query.py",
+    "src/attenborough/db/queries.py",
     "src/attenborough/db/models.py",
 ]
 
 [tool.basedpyright]
 ignore = [
-    "src/attenborough/db/query.py",
+    "src/attenborough/db/queries.py",
     "src/attenborough/db/models.py",
 ]
-typeCheckingMode = "strict"
+typeCheckingMode = "all"
 
 
 [tool.fastapi]

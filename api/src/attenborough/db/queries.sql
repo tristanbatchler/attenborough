@@ -128,3 +128,17 @@ WHERE event_at IS NOT NULL
 ORDER BY event_at DESC
 LIMIT sqlc.arg('limit')::int
 OFFSET sqlc.arg('offset')::int;
+
+-- name: UpsertDecoy :one
+INSERT INTO decoys (type, slug, added_by_ip)
+VALUES (sqlc.arg(type), sqlc.arg(slug), sqlc.arg(added_by_ip))
+ON CONFLICT (slug) DO UPDATE SET added_by_ip = EXCLUDED.added_by_ip
+RETURNING id;
+
+-- name: CreateDecoyView :exec
+INSERT INTO decoy_views (decoy_id, ip_address)
+VALUES (sqlc.arg(decoy_id), sqlc.arg(ip_address));
+
+-- name: CreateDecoyPasswordAttempt :exec
+INSERT INTO decoy_password_attempts (decoy_id, ip_address, successful)
+VALUES (sqlc.arg(decoy_id), sqlc.arg(ip_address), sqlc.arg(successful));

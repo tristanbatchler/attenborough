@@ -6,9 +6,9 @@ from attenborough import settings
 from attenborough.db import queries
 from attenborough.dependencies import DBConn
 from attenborough.response_models import Message
-from attenborough.router import Router
+from attenborough.router import ExhibitRouter
 
-router = Router(prefix="/ip")
+router = ExhibitRouter(prefix="/ip")
 
 
 @router.get(

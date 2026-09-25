@@ -7,9 +7,9 @@ from starlette.status import HTTP_303_SEE_OTHER, HTTP_500_INTERNAL_SERVER_ERROR
 
 from attenborough.db import queries
 from attenborough.dependencies import DBConn, RequestOrigin
-from attenborough.router import Router
+from attenborough.router import HoneypotRouter
 
-router = Router(prefix="/admin")
+router = HoneypotRouter(prefix="/admin")
 
 
 @router.get("/dashboard")
@@ -28,7 +28,11 @@ async def login(
 ):
     success = random.random() < 0.5
     router.logger.info(
-        f"Login attempt: {username=}, password_length={password}, success={success}, origin={origin}"
+        "Login attempt from %s (username=%r, password_length=%d, success=%s)",
+        origin,
+        username,
+        len(password),
+        success,
     )
 
     async with db_conn.transaction():

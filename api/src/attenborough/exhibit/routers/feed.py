@@ -1,3 +1,3 @@
-from attenborough.router import Router
+from attenborough.router import ExhibitRouter
 
-router = Router(prefix="/feed")
+router = ExhibitRouter(prefix="/feed")

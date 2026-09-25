@@ -1,6 +1,7 @@
 import logging
 import pathlib
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import LiteralString, cast
 
 from psycopg import AsyncConnection
@@ -36,6 +37,11 @@ async def get_db_conn() -> AsyncGenerator[AsyncConnection]:
         # attempt logging.
         await conn.set_autocommit(True)
         yield conn
+
+
+def get_db_context():
+    """This helps in the case that dependency injection is not available, e.g. in a middleware"""
+    return asynccontextmanager(get_db_conn)()
 
 
 async def create_tables() -> None:

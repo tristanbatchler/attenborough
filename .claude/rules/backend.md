@@ -1,0 +1,26 @@
+---
+paths:
+  - "api/src/attenborough/**/*.py"
+  - "api/tests/**/*.py"
+---
+
+# Python / FastAPI
+
+- Follow the configured Python 3.14+ and basedpyright strictness. Keep annotations accurate and concrete.
+- Prefer existing project idioms, but do not preserve a pattern merely because it exists if it causes the issue being fixed.
+- Keep imports acyclic and responsibilities clear. Lower-level modules must not import `main`, router aggregation modules, or other high-level composition points.
+- Keep application construction and lifecycle wiring in the composition/entrypoint layer; avoid opening pools, reading mutable runtime state, or doing network/database work at import time.
+- Understand FastAPI dependency, middleware, exception-handler, and lifespan ordering before changing request telemetry.
+- Preserve asynchronous behaviour and transaction boundaries. Be deliberate about background tasks: failures, connection lifetime, and whether the response can complete before persistence.
+- Validate request inputs and bound user-controlled sizes. Do not expose internal exception details in public responses.
+- Never log the project's own secrets: tokens, cookies, session material, OAuth or DB credentials. Credentials submitted by honeypot visitors are captured on purpose, stored in the database, and shown in full on the public exhibit (see `CLAUDE.md`). The exhibit reads them from the DB. Application logs are not the exhibit, so don't write raw submitted values into them; log metadata instead (e.g. `password_length`), and use `%r` for attacker-controlled text to prevent log injection.
+- Run the repository’s actual formatter, linter, type checker, and relevant tests; discover exact commands from `pyproject.toml`, scripts, and CI.
+- Post-change checklist for any Python edit: `ruff check`, `ruff format`, `basedpyright` (below), the magic-string scan (`uv run python scripts/find_magic_strings.py`, judged with the `magic-strings` skill), and the relevant tests. No magic or repeated strings: use enums (existing ones first: `RouterGroup`, `db.enums`, `http.HTTPMethod`), named constants, or helpers.
+- Type-check from `api/` with `uv run basedpyright`. It must report `0 errors, 0 warnings, 0 notes`. `api/pyproject.toml` sets `typeCheckingMode = "all"`, basedpyright's strictest mode, where every rule is an error. The user wants to stay on it. Don't weaken it, and don't add rule overrides without asking.
+- Only run basedpyright from `api/`. It reads its config from the current directory, not from the paths you pass it: `basedpyright api` run from the repo root loads no config and reports false `reportMissingTypeStubs` warnings for `attenborough.*`. Fix pre-existing findings in lines you didn't touch only if the user asks; otherwise report them.
+- The user's editor diagnostics are the ground truth. When a tool result carries `<ide_diagnostics>` (a hook adds them after Write/Edit), treat every entry as something the user sees and resolve it. Unresolved-import errors right after creating a new file or directory can be indexing lag: re-check after the next edit before acting on them, but never assume they are lag without re-checking.
+- Fix warnings properly rather than suppressing them: annotate attributes (`self.app: ASGIApp = app`), mark overrides with `@override`, and narrow `Any` values from untyped mappings (e.g. Starlette's `Message`/`Scope`) with a `match` class pattern such as `case {"status": int(status)}:`, since assigning `Any` to a declared type or binding it with a walrus still triggers `reportAny`. No `# type: ignore`, `# pyright: ignore`, or unjustified `cast`.
+- Code style (user preference): no pointless annotations. Don't annotate a variable when inference already gives the same type, or when the value is only checked or narrowed (`is None`, `isinstance`, `in`) and never used as a specific type. Letting it be inferred as `Any` is fine there, e.g. `route = scope.get("route")`, not `route: object = scope.get("route")`. The same applies to `cast(object, …)`. Annotate only where it adds information: function signatures; empty containers (`[]`, `{}`, `set()`, `Counter()`); declarations such as pydantic or dataclass fields, `ClassVar` and `argparse.Namespace` fields; and instance attributes, which `reportUnannotatedClassAttribute` requires (`self.app: ASGIApp = app`). Before removing an annotation, prove it's pointless by running basedpyright, and keep it if a new finding appears.
+- When reporting verification, quote the actual basedpyright summary line; never summarise warnings as "passed".
+- Always use absolute imports in code we write, i.e. `from attenborough.`...
+- Never edit automatically generated files, e.g. database files made with sqlc

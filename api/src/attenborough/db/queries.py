@@ -11,10 +11,13 @@ __all__: collections.abc.Sequence[str] = (
     "QueryResults",
     "create_active_ip_ban",
     "create_credential_stuffing_attempt",
+    "create_decoy_password_attempt",
+    "create_decoy_view",
     "create_telemetry_hit",
     "get_ip_threat_summary",
     "get_user_by_session_token_hash",
     "list_ip_activity",
+    "upsert_decoy",
     "upsert_user",
 )
 
@@ -44,7 +47,7 @@ if typing.TYPE_CHECKING:
 
     type ConnectionLike = psycopg.AsyncConnection[psycopg.rows.TupleRow]
 
-from . import models
+from . import enums, models
 
 
 class GetIpThreatSummaryRow(pydantic.BaseModel):
@@ -212,6 +215,27 @@ WHERE event_at IS NOT NULL
 ORDER BY event_at DESC
 LIMIT %(p3)s::int
 OFFSET %(p2)s::int
+"""
+
+UPSERT_DECOY: typing.Final[typing.LiteralString] = """-- name: UpsertDecoy :one
+INSERT INTO decoys (type, slug, added_by_ip)
+VALUES (%(p1)s, %(p2)s, %(p3)s)
+ON CONFLICT (slug) DO UPDATE SET added_by_ip = EXCLUDED.added_by_ip
+RETURNING id
+"""
+
+CREATE_DECOY_VIEW: typing.Final[
+    typing.LiteralString
+] = """-- name: CreateDecoyView :exec
+INSERT INTO decoy_views (decoy_id, ip_address)
+VALUES (%(p1)s, %(p2)s)
+"""
+
+CREATE_DECOY_PASSWORD_ATTEMPT: typing.Final[
+    typing.LiteralString
+] = """-- name: CreateDecoyPasswordAttempt :exec
+INSERT INTO decoy_password_attempts (decoy_id, ip_address, successful)
+VALUES (%(p1)s, %(p2)s, %(p3)s)
 """
 
 
@@ -409,4 +433,30 @@ def list_ip_activity(
         LIST_IP_ACTIVITY,
         _decode_hook,
         {"p1": ip_address, "p2": offset, "p3": limit},
+    )
+
+
+async def upsert_decoy(
+    conn: ConnectionLike, *, type: enums.DecoyType, slug: str, added_by_ip: str
+) -> int | None:
+    row = await (
+        await conn.execute(UPSERT_DECOY, {"p1": type, "p2": slug, "p3": added_by_ip})
+    ).fetchone()
+    if row is None:
+        return None
+    return row[0]
+
+
+async def create_decoy_view(
+    conn: ConnectionLike, *, decoy_id: int, ip_address: str
+) -> None:
+    await conn.execute(CREATE_DECOY_VIEW, {"p1": decoy_id, "p2": ip_address})
+
+
+async def create_decoy_password_attempt(
+    conn: ConnectionLike, *, decoy_id: int, ip_address: str, successful: bool
+) -> None:
+    await conn.execute(
+        CREATE_DECOY_PASSWORD_ATTEMPT,
+        {"p1": decoy_id, "p2": ip_address, "p3": successful},
     )

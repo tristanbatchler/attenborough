@@ -1,8 +1,21 @@
 -- Enable necessary extensions
 CREATE EXTENSION IF NOT EXISTS "citext";
 
-CREATE TYPE decoy_type AS ENUM ('text', 'binary', 'trap');
-CREATE TYPE audit_action AS ENUM ('login', 'ban_created', 'ban_revoked', 'decoy_revoked', 'settings_changed');
+-- Safely create decoy_type
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'decoy_type') THEN
+        CREATE TYPE decoy_type AS ENUM ('text', 'binary', 'trap');
+    END IF;
+END $$;
+
+-- Safely create audit_action
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'audit_action') THEN
+        CREATE TYPE audit_action AS ENUM ('login', 'ban_created', 'ban_revoked', 'decoy_revoked', 'settings_changed');
+    END IF;
+END $$;
 
 ------------------------------------------------------------------
 -- 1. AUTHENTICATION & USERS
@@ -29,8 +42,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     CONSTRAINT chk_sessions_expiry CHECK (expires > created)
 );
 
-CREATE INDEX idx_sessions_user_id ON sessions (user_id);
-CREATE INDEX idx_sessions_expires ON sessions (expires);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions (expires);
 
 CREATE TABLE IF NOT EXISTS oauth_states (
     state         TEXT PRIMARY KEY,
@@ -42,7 +55,7 @@ CREATE TABLE IF NOT EXISTS oauth_states (
     CONSTRAINT chk_oauth_states_expiry CHECK (expires > created)
 );
 
-CREATE INDEX idx_oauth_states_expires ON oauth_states (expires);
+CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states (expires);
 
 ------------------------------------------------------------------
 -- 2. DECOYS & EXHIBIT ARTIFACTS
@@ -59,7 +72,7 @@ CREATE TABLE IF NOT EXISTS decoys (
     CONSTRAINT uq_decoys_slug UNIQUE (slug)
 );
 
-CREATE INDEX idx_decoys_added ON decoys (added DESC);
+CREATE INDEX IF NOT EXISTS idx_decoys_added ON decoys (added DESC);
 
 CREATE TABLE IF NOT EXISTS decoy_text_contents (
     decoy_id BIGINT PRIMARY KEY REFERENCES decoys (id) ON DELETE CASCADE,
@@ -78,7 +91,7 @@ CREATE TABLE IF NOT EXISTS decoy_configs (
     one_time_view BOOLEAN NOT NULL DEFAULT FALSE
 );
 
-CREATE INDEX idx_decoy_configs_expiry ON decoy_configs (expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_decoy_configs_expiry ON decoy_configs (expires_at) WHERE expires_at IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS decoy_revocations (
     decoy_id           BIGINT PRIMARY KEY REFERENCES decoys (id) ON DELETE RESTRICT,
@@ -96,7 +109,7 @@ CREATE TABLE IF NOT EXISTS telemetry_hits (
     ip_address   INET NOT NULL,
     method       TEXT NOT NULL,
     path         TEXT NOT NULL,
-    router_group TEXT NOT NULL, -- e.g., 'admin', 'git', 'backup', 'exhibit'
+    router_group TEXT NOT NULL, 
     user_agent   TEXT,
     headers      JSONB NOT NULL DEFAULT '{}'::jsonb,
     status_code  INTEGER NOT NULL,
@@ -104,9 +117,9 @@ CREATE TABLE IF NOT EXISTS telemetry_hits (
 );
 
 -- BRIN index is optimal for high-volume, append-only time-series telemetry
-CREATE INDEX idx_telemetry_hits_brin ON telemetry_hits USING brin (occurred_at);
-CREATE INDEX idx_telemetry_hits_ip ON telemetry_hits (ip_address, occurred_at DESC);
-CREATE INDEX idx_telemetry_hits_router ON telemetry_hits (router_group, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_telemetry_hits_brin ON telemetry_hits USING brin (occurred_at);
+CREATE INDEX IF NOT EXISTS idx_telemetry_hits_ip ON telemetry_hits (ip_address, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_telemetry_hits_router ON telemetry_hits (router_group, occurred_at DESC);
 
 -- Specialized logging for credential stuffing & brute force attempts on /honeypot/admin/login or /auth
 CREATE TABLE IF NOT EXISTS credential_stuffing_attempts (
@@ -119,7 +132,7 @@ CREATE TABLE IF NOT EXISTS credential_stuffing_attempts (
     attempted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_credential_attempts_ip ON credential_stuffing_attempts (ip_address, attempted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_credential_attempts_ip ON credential_stuffing_attempts (ip_address, attempted_at DESC);
 
 -- Decoy specific interaction telemetry (views, downloads)
 CREATE TABLE IF NOT EXISTS decoy_views (
@@ -129,7 +142,7 @@ CREATE TABLE IF NOT EXISTS decoy_views (
     viewed_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_decoy_views_ip ON decoy_views (ip_address, viewed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_decoy_views_ip ON decoy_views (ip_address, viewed_at DESC);
 
 -- Decoy password attempts and lockouts
 CREATE TABLE IF NOT EXISTS decoy_password_attempts (
@@ -140,7 +153,7 @@ CREATE TABLE IF NOT EXISTS decoy_password_attempts (
     attempted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_decoy_pwd_attempts_ip ON decoy_password_attempts (ip_address, attempted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_decoy_pwd_attempts_ip ON decoy_password_attempts (ip_address, attempted_at DESC);
 
 CREATE TABLE IF NOT EXISTS decoy_lockouts (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -152,7 +165,7 @@ CREATE TABLE IF NOT EXISTS decoy_lockouts (
     CONSTRAINT chk_decoy_lockouts_expiry CHECK (expires > added)
 );
 
-CREATE INDEX idx_decoy_lockouts_ip ON decoy_lockouts (ip_address, expires DESC);
+CREATE INDEX IF NOT EXISTS idx_decoy_lockouts_ip ON decoy_lockouts (ip_address, expires DESC);
 
 ------------------------------------------------------------------
 -- 4. SECURITY ENFORCEMENT & AUDITING
@@ -173,7 +186,7 @@ CREATE TABLE IF NOT EXISTS ip_bans (
     CONSTRAINT chk_ip_bans_revocation CHECK (revoked_at IS NULL OR revoked_at >= added)
 );
 
-CREATE INDEX idx_ip_bans_active ON ip_bans (ip_address, expires) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_ip_bans_active ON ip_bans (ip_address, expires) WHERE revoked_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS admin_audit_log (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -184,4 +197,4 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
     logged_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_admin_audit_log_time ON admin_audit_log (logged_at DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_log_time ON admin_audit_log (logged_at DESC);
