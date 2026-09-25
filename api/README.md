@@ -152,6 +152,5 @@ If either forged address shows the hit, attribution can be spoofed; fix the prox
 ### Known gaps
 
 - `GET /exhibit/ip/{ip}/activity` doesn't validate its input: `take` has no upper bound, and `page < 1` or a malformed IP returns a 500.
-- Telemetry writes run as unbounded background tasks. A flood can queue them in memory, and writes still pending at shutdown are lost.
 - Every router exposes a public `/test` debug route.
 - There are no migrations: any schema change resets the database and loses its data. Fine for v1; revisit before data must be kept.

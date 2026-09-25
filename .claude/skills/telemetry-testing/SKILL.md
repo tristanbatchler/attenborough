@@ -38,7 +38,7 @@ The tool is `api/scripts/telemetry_probe.py` (typed, checked by the project's ru
 7. Run `git diff --stat -- api/src/openapi.json api/.example.env`. Any diff must be explained by your change. Churn with no API change means route naming has regressed.
 8. Report the verify summary line, the run tags you created, and anything unexpected in the log.
 
-When changing the checker itself, prove it can fail: copy `api/src` into the scratchpad, inject a bug (e.g. call `fire_and_forget` twice in the middleware), run that copy on another port (it needs a copy of `api/.env` beside `src/`; delete it afterwards) and confirm `verify` exits 1 with `DUPLICATED`.
+When changing the checker itself, prove it can fail: copy `api/src` into the scratchpad, inject a bug (e.g. call `_record_telemetry_hit` twice in the middleware), run that copy on another port (it needs a copy of `api/.env` beside `src/`; delete it afterwards) and confirm `verify` exits 1 with `DUPLICATED`.
 
 ## Interpreting failures
 
@@ -55,6 +55,6 @@ When changing the checker itself, prove it can fail: copy `api/src` into the scr
 - `TelemetryMiddleware` (pure ASGI, `app.add_middleware`) sits inside Starlette's `ServerErrorMiddleware` and outside `ExceptionMiddleware`: 404/405/422 and raised `HTTPException`s reach it as normal responses; unhandled exceptions pass through it (recorded as 500) before `ServerErrorMiddleware` answers.
 - After the app runs, `scope["route"]` is the matched `APIRoute` (carrying `openapi_extra["header_group"]`); plain Starlette routes such as `/docs` set only `scope["endpoint"]`; neither key means nothing matched (classified `honeypot`).
 - `ProxyHeadersMiddleware` (uvicorn's, added last in `main.py`, so it runs outermost) resolves `scope["client"]` from `X-Forwarded-For` before telemetry or any handler sees the request, but only for peers in `FORWARDED_ALLOW_IPS`.
-- Rows are written with `util.fire_and_forget` after the response, so they appear asynchronously — poll, don't query immediately (the tool does this).
+- The middleware runs the write as a `starlette.background.BackgroundTask` after the response has been sent, the same way Starlette runs a response's background tasks (`Response.__call__` sends, then awaits `background`). So the client never waits for the database, and a row can land a moment after the client sees the response: poll, don't query immediately (the tool does this). The write is part of the request, so uvicorn's graceful shutdown (`Waiting for background tasks to complete.`) waits for it.
 - FastAPI 0.141 includes routers lazily (`_IncludedRouter`): a parent `Router` subclass's `add_api_route` override is **not** called for included routes, and parent + child router-level dependencies are combined (the historical cause of double-counted `/exhibit/*` hits).
 - Historical rows before this fix contain `router_group = 'unknown'` and 500s stored as 200; they cannot be corrected reliably.

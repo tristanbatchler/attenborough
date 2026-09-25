@@ -5,6 +5,7 @@ from enum import StrEnum
 from fastapi import HTTPException
 from fastapi.routing import APIRoute
 from psycopg import Error as PsycopgError
+from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -13,7 +14,6 @@ from attenborough.db import queries
 from attenborough.db.ops import get_db_context
 from attenborough.dependencies import get_request_origin
 from attenborough.router.group import RouterGroup
-from attenborough.util import fire_and_forget
 
 logger = logging.getLogger("attenborough.middleware")
 
@@ -102,10 +102,12 @@ class TelemetryMiddleware:
         try:
             await self.app(scope, receive, send_wrapper)
         finally:
-            # Written off the request path so the DB never delays the response.
-            fire_and_forget(
-                _record_telemetry_hit,
-                Request(scope),
-                _router_group(scope),
-                status_code,
+            # A Starlette background task (what FastAPI's BackgroundTasks are built on), run the
+            # way Starlette's Response.__call__ runs response.background: after the response has
+            # been sent, within the request. The client never waits for it, and uvicorn's graceful
+            # shutdown does. Only an unhandled exception's 500 is sent after it (by
+            # ServerErrorMiddleware, which sits outside this middleware).
+            telemetry = BackgroundTask(
+                _record_telemetry_hit, Request(scope), _router_group(scope), status_code
             )
+            await telemetry()
