@@ -3,7 +3,6 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from logging import Logger, getLogger
 from typing import override
-from uuid import uuid4
 
 from fastapi import Request
 from fastapi.routing import APIRouter
@@ -51,17 +50,28 @@ class Router(APIRouter, ABC):
         endpoint: Callable[..., object],
         *args: object,
         name: str | None = None,
+        summary: str | None = None,
         openapi_extra: dict[str, object] | None = None,
         **kwargs: object,
     ):
-        uuid_str = uuid4().hex
-        self._endpoint_registry[endpoint] = uuid_str
+        short_name = name or endpoint.__name__
+        # Qualified by this router so it is unique across routers (url_for resolves by name) and
+        # stable across restarts (FastAPI derives each operationId from it).
+        route_name = f"{self.logger.name}.{short_name}"
+        self._endpoint_registry[endpoint] = route_name
 
         # A new dict: never mutate the caller's. Read back by TelemetryMiddleware to classify each request.
         extra = {**(openapi_extra or {}), RouterGroup.header_key: self.group.value}
 
         return super().add_api_route(
-            path, endpoint, *args, name=uuid_str, **kwargs, openapi_extra=extra
+            path,
+            endpoint,
+            *args,
+            name=route_name,
+            # FastAPI would title-case the qualified name; keep the readable short form.
+            summary=summary or short_name.replace("_", " ").title(),
+            **kwargs,
+            openapi_extra=extra,
         )
 
     def url_for(
