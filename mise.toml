@@ -9,7 +9,9 @@
 #
 # Checks always run: no `sources`, because mise would skip a task whose sources look unchanged,
 # and results also depend on configuration and installed tools. Only the generators (sqlc,
-# web-gen-types, decoy-gen-types) are skipped when their inputs haven't changed.
+# web-gen-types, decoy-gen-types) are skipped when their inputs haven't changed. Their `sources`
+# start with {{config_root}}: mise resolves relative ones against the task's `dir`, where they
+# don't exist, and would then skip the task forever.
 
 [tools]
 uv = "latest"
@@ -49,7 +51,7 @@ run = "uv run python scripts/find_magic_strings.py"
 description = "Regenerate the typed query code from schema.sql and queries.sql"
 dir = "api"
 run = "uv run sqlc generate --file src/attenborough/db/sqlc.yaml"
-sources = ["api/src/attenborough/db/*.sql", "api/src/attenborough/db/sqlc.yaml"]
+sources = ["{{config_root}}/api/src/attenborough/db/*.sql", "{{config_root}}/api/src/attenborough/db/sqlc.yaml"]
 
 # --- Web (web/) -----------------------------------------------------------------------------
 
@@ -82,7 +84,7 @@ run = "node scripts/find-magic-strings.ts"
 description = "Regenerate the API client from api/src/openapi.json"
 dir = "web"
 run = "npm run gen-types"
-sources = ["api/src/openapi.json", "web/openapi-ts.config.ts"]
+sources = ["{{config_root}}/api/src/openapi.json", "{{config_root}}/web/openapi-ts.config.ts"]
 
 # --- Decoy (decoy/) -------------------------------------------------------------------------
 # The fake sites visitors see. Same tools and scripts as web/.
@@ -116,7 +118,7 @@ run = "node ../web/scripts/find-magic-strings.ts src"
 description = "Regenerate the API client from api/src/openapi.json"
 dir = "decoy"
 run = "npm run gen-types"
-sources = ["api/src/openapi.json", "decoy/openapi-ts.config.ts"]
+sources = ["{{config_root}}/api/src/openapi.json", "{{config_root}}/decoy/openapi-ts.config.ts"]
 
 # --- Aggregates -----------------------------------------------------------------------------
 
