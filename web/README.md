@@ -27,13 +27,17 @@ When the API changes:
 **How to call the API:** only from server `load` functions (`+page.server.ts`), spreading in `apiOptions(fetch)` from `$lib/server/api`, which supplies the API's address and SvelteKit's `fetch`:
 
 ```ts
-const { data, error, response } = await ipGetIpActivity({
-	...apiOptions(fetch),
-	path: { ip_addr: params.address }
-});
+const api = apiOptions(fetch);
+const { default_page_take: take } = unwrap(await metaGetMeta(api));
+const rows = unwrap(
+	await ipGetIpActivity({ ...api, path: { ip_addr: params.address }, query: { take } }),
+	'That is not a valid IP address.'
+);
 ```
 
-A call never throws for an HTTP error or an unreachable API. Check `data`: if it's `undefined`, `response` is `undefined` when the API was unreachable, and otherwise holds the error status.
+A call never throws for an HTTP error or an unreachable API; it returns `{ data, error, response }`. `unwrap` (also in `$lib/server/api`) returns the data or shows the right error page: 503 if the API was unreachable, 400 with your message if it rejected the input (422), and 502 otherwise.
+
+Settings the frontend needs from the API, such as the page size (`APP_DEFAULT_PAGE_TAKE`), come from `GET /exhibit/meta` (`metaGetMeta`). Don't duplicate them as constants here.
 
 ## Structure
 

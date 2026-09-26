@@ -17,3 +17,10 @@ class Message(BaseModel):
 
 class GoogleLoginLocation(BaseModel):
     url: str
+
+
+class ExhibitMeta(BaseModel):
+    """What exhibit clients need to know about the API, such as its page sizes."""
+
+    default_page_take: int
+    max_page_take: int

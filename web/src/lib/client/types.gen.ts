@@ -5,6 +5,22 @@ export type ClientOptions = {
 };
 
 /**
+ * ExhibitMeta
+ *
+ * What exhibit clients need to know about the API, such as its page sizes.
+ */
+export type ExhibitMeta = {
+    /**
+     * Default Page Take
+     */
+    default_page_take: number;
+    /**
+     * Max Page Take
+     */
+    max_page_take: number;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -126,3 +142,28 @@ export type IpGetIpActivityResponses = {
 };
 
 export type IpGetIpActivityResponse = IpGetIpActivityResponses[keyof IpGetIpActivityResponses];
+
+export type MetaGetMetaData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/exhibit/meta';
+};
+
+export type MetaGetMetaErrors = {
+    /**
+     * Internal Server Error
+     */
+    500: Message;
+};
+
+export type MetaGetMetaError = MetaGetMetaErrors[keyof MetaGetMetaErrors];
+
+export type MetaGetMetaResponses = {
+    /**
+     * Successful Response
+     */
+    200: ExhibitMeta;
+};
+
+export type MetaGetMetaResponse = MetaGetMetaResponses[keyof MetaGetMetaResponses];

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { IpGetIpActivityData, IpGetIpActivityErrors, IpGetIpActivityResponses } from './types.gen';
+import type { IpGetIpActivityData, IpGetIpActivityErrors, IpGetIpActivityResponses, MetaGetMetaData, MetaGetMetaErrors, MetaGetMetaResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -22,3 +22,8 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
  * Get Ip Activity
  */
 export const ipGetIpActivity = <ThrowOnError extends boolean = false>(options: Options<IpGetIpActivityData, ThrowOnError>): RequestResult<IpGetIpActivityResponses, IpGetIpActivityErrors, ThrowOnError> => (options.client ?? client).get<IpGetIpActivityResponses, IpGetIpActivityErrors, ThrowOnError>({ url: '/exhibit/ip/{ip_addr}/activity', ...options });
+
+/**
+ * Get Meta
+ */
+export const metaGetMeta = <ThrowOnError extends boolean = false>(options?: Options<MetaGetMetaData, ThrowOnError>): RequestResult<MetaGetMetaResponses, MetaGetMetaErrors, ThrowOnError> => (options?.client ?? client).get<MetaGetMetaResponses, MetaGetMetaErrors, ThrowOnError>({ url: '/exhibit/meta', ...options });
