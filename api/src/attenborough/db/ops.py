@@ -20,6 +20,10 @@ db_conn_pool = AsyncConnectionPool(
     min_size=settings.DB_MIN_POOL_SIZE,
     max_size=settings.DB_MAX_POOL_SIZE,
     timeout=settings.DB_POOL_TIMEOUT_SECONDS,
+    # Test each connection as it is handed out and replace it if dead. Pooled connections can be
+    # closed by the server or network while idle (e.g. overnight); without this, the next request
+    # on each one fails with a 500 and loses its telemetry row. Costs one round trip per borrow.
+    check=AsyncConnectionPool.check_connection,
 )
 
 

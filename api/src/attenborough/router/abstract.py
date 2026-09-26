@@ -10,9 +10,16 @@ from starlette.responses import JSONResponse
 
 from attenborough.dependencies import RequestOrigin
 from attenborough.router.group import RouterGroup
-from attenborough.util import inherit_signature
+from attenborough.util import ROOT_LOGGER_NAME, inherit_signature
 
 logger = getLogger(name="attenborough.router.abstract")
+
+_NAMESPACE_SEPARATOR = "."
+
+
+def _dotted(*parts: str) -> str:
+    """Join the non-empty parts into a dotted name: ("admin", "dashboard") -> "admin.dashboard"."""
+    return _NAMESPACE_SEPARATOR.join(part for part in parts if part)
 
 
 class Router(APIRouter, ABC):
@@ -20,9 +27,11 @@ class Router(APIRouter, ABC):
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
 
-        prefix_str = str(self.prefix).replace("/", ".") if self.prefix else ""
-        logger_name = f"attenborough{prefix_str}"
-        self.logger: Logger = getLogger(name=logger_name)
+        # This router's prefix as a dotted namespace, e.g. "/admin" -> "admin", "" -> "".
+        self._namespace: str = (
+            str(self.prefix).strip("/").replace("/", _NAMESPACE_SEPARATOR)
+        )
+        self.logger: Logger = getLogger(name=_dotted(ROOT_LOGGER_NAME, self._namespace))
 
         self._endpoint_registry: dict[Callable[..., object], str] = {}
 
@@ -55,9 +64,10 @@ class Router(APIRouter, ABC):
         **kwargs: object,
     ):
         short_name = name or endpoint.__name__
-        # Qualified by this router so it is unique across routers (url_for resolves by name) and
-        # stable across restarts (FastAPI derives each operationId from it).
-        route_name = f"{self.logger.name}.{short_name}"
+        # Namespaced by this router ("admin.dashboard", "ip.get_ip_activity"): unique across
+        # routers, which url_for relies on, and stable. main.py also uses it as the OpenAPI
+        # operationId, so it names the generated frontend client's functions.
+        route_name = _dotted(self._namespace, short_name)
         self._endpoint_registry[endpoint] = route_name
 
         # A new dict: never mutate the caller's. Read back by TelemetryMiddleware to classify each request.

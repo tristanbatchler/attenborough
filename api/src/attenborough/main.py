@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.routing import APIRoute
 from starlette.responses import JSONResponse
 from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
@@ -18,10 +19,11 @@ from attenborough.honeypot.routers import exported_routers as honeypot_routers
 from attenborough.middleware import TelemetryMiddleware
 from attenborough.response_models import Message
 from attenborough.router import ExhibitRouter, Router
+from attenborough.util import ROOT_LOGGER_NAME
 
 logging.basicConfig(level=logging.DEBUG)
 
-logger = logging.getLogger(name="attenborough")
+logger = logging.getLogger(name=ROOT_LOGGER_NAME)
 
 _TERMINAL = Path("/dev/tty")
 _YES_ANSWERS = frozenset({"y", "yes"})
@@ -80,9 +82,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         await ops.db_conn_pool.close()
 
 
+def _operation_id(route: APIRoute) -> str:
+    """The route's namespaced name (e.g. "ip.get_ip_activity"), already unique and stable.
+
+    It names the frontend's generated client functions (web/, hey-api), so FastAPI's default,
+    which appends the path and method, would make them unreadable.
+    """
+    return route.name
+
+
 app = FastAPI(
     responses=Message.for_statuses([HTTP_500_INTERNAL_SERVER_ERROR]),
     lifespan=lifespan,
+    generate_unique_id_function=_operation_id,
 )
 
 app.add_middleware(TelemetryMiddleware)
