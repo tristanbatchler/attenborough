@@ -157,6 +157,6 @@ If either forged address shows the hit, attribution can be spoofed; fix the prox
 
 ### Known gaps
 
-- `GET /exhibit/ip/{ip}/activity` doesn't validate the IP address: a malformed one returns a 500 instead of a 422. (`page` and `take` are validated.)
+- `GET /exhibit/ip/{ip}/activity` accepts any `page` of at least 1, so a huge one (e.g. `2147483647`) overflows the query's 32-bit OFFSET and returns a 500.
 - Every router exposes a public `/test` debug route.
 - There are no migrations: any schema change resets the database and loses its data. Fine for v1; revisit before data must be kept.

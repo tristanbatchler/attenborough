@@ -74,7 +74,8 @@ class Case:
 
 def request_matrix() -> list[Case]:
     """One case per outcome the telemetry must record identically: OK, redirect, returned and raised
-    errors, framework errors (404/405/422), unhandled exceptions, and framework routes."""
+    errors, framework errors (404/405/422), and framework routes. There is no unhandled-exception
+    case, because nothing in the API deliberately crashes."""
     return [
         Case("root", HTTPMethod.GET, "/", RouterGroup.SYSTEM),
         Case("html", HTTPMethod.GET, ADMIN_DASHBOARD_PATH, RouterGroup.HONEYPOT),
@@ -144,14 +145,15 @@ def request_matrix() -> list[Case]:
         ),
         Case("docs", HTTPMethod.GET, "/docs", RouterGroup.SYSTEM),
         Case("openapi", HTTPMethod.GET, "/openapi.json", RouterGroup.SYSTEM),
-        # Currently an unhandled exception (invalid inet cast). If input validation is added this
-        # stops exercising the unhandled-500 path; replace it with another unhandled failure.
+        # Rejected input (FastAPI validation, 422). Nothing in the API deliberately crashes, so
+        # the unhandled-exception path (recorded as 500) currently has no case here.
         Case(
-            "unhandled-500",
+            "invalid-ip",
             HTTPMethod.GET,
             "/exhibit/ip/not-an-ip/activity",
             RouterGroup.EXHIBIT,
         ),
+        Case("exhibit-meta", HTTPMethod.GET, "/exhibit/meta", RouterGroup.EXHIBIT),
     ]
 
 
