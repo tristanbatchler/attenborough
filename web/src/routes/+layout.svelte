@@ -1,15 +1,10 @@
 <script lang="ts">
 	import '../app.scss';
 	import { resolve } from '$app/paths';
-	import favicon from '$lib/assets/favicon.svg';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
 </script>
-
-<svelte:head>
-	<link rel="icon" href={favicon} />
-</svelte:head>
 
 <header>
 	<nav>
