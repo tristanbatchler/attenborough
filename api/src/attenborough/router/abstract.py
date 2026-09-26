@@ -8,6 +8,7 @@ from fastapi import Request
 from fastapi.routing import APIRouter
 from starlette.responses import JSONResponse
 
+from attenborough import settings
 from attenborough.dependencies import RequestOrigin
 from attenborough.router.group import RouterGroup
 from attenborough.util import ROOT_LOGGER_NAME, inherit_signature, url_path_segments
@@ -33,16 +34,20 @@ class Router(APIRouter, ABC):
 
         self._endpoint_registry: dict[Callable[..., object], str] = {}
 
-        @self.get("/test")
-        def test_route(request_origin: RequestOrigin):
-            return JSONResponse(
-                {
-                    "prefix": self.prefix,
-                    "logger_name": self.logger.name,
-                    "server_time": datetime.now(tz=UTC).isoformat(),
-                    "request_origin": str(request_origin),
-                }
-            )
+        # A debug route, only with DEBUG on. Left out of the OpenAPI spec so that openapi.json (tracked,
+        # and rewritten at startup) doesn't depend on the setting.
+        if settings.DEBUG:
+
+            @self.get("/test", include_in_schema=False)
+            def test_route(request_origin: RequestOrigin):
+                return JSONResponse(
+                    {
+                        "prefix": self.prefix,
+                        "logger_name": self.logger.name,
+                        "server_time": datetime.now(tz=UTC).isoformat(),
+                        "request_origin": str(request_origin),
+                    }
+                )
 
     @property
     @abstractmethod

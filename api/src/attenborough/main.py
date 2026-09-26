@@ -21,7 +21,7 @@ from attenborough.response_models import Message
 from attenborough.router import ExhibitRouter, Router
 from attenborough.util import ROOT_LOGGER_NAME
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG if settings.DEBUG else logging.INFO)
 
 logger = logging.getLogger(name=ROOT_LOGGER_NAME)
 

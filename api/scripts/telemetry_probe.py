@@ -49,7 +49,7 @@ RUN_OPTION = "--run"
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 AUTH_LOGIN_PATH = "/auth/login"
 PROTECTED_SECRET_PATH = "/protected/secret"
-NESTED_EXHIBIT_PATH = "/exhibit/feed/test"
+NESTED_EXHIBIT_PATH = "/exhibit/feed?take=1"
 ADMIN_DASHBOARD_PATH = "/admin/dashboard"
 DEFAULT_PEER_IP = "127.0.0.1"
 FORWARDED_FOR_HEADER = "X-Forwarded-For"
@@ -155,7 +155,6 @@ def request_matrix() -> list[Case]:
             RouterGroup.EXHIBIT,
         ),
         Case("exhibit-meta", HTTPMethod.GET, "/exhibit/meta", RouterGroup.EXHIBIT),
-        Case("exhibit-feed", HTTPMethod.GET, "/exhibit/feed", RouterGroup.EXHIBIT),
         # Past APP_MAX_PAGE: rejected (422). This page once overflowed the query's OFFSET (500).
         Case(
             "page-too-large",

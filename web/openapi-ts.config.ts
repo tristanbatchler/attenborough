@@ -11,9 +11,7 @@ export default defineConfig({
 			operations: {
 				// Only the public exhibit. The honeypot's decoy routes share the spec but are for
 				// scanners, not the frontend.
-				include: ['/^[A-Z]+ \\/exhibit\\//'],
-				// Every router's debug /test route.
-				exclude: ['/^[A-Z]+ .*\\/test$/']
+				include: ['/^[A-Z]+ \\/exhibit\\//']
 			}
 		}
 	},

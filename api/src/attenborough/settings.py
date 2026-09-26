@@ -51,6 +51,9 @@ class _Settings(BaseSettings):
         """The last page whose OFFSET still fits a PostgreSQL int at the largest allowed take."""
         return _POSTGRES_INT_MAX // self.APP_MAX_PAGE_TAKE + 1
 
+    # Development only: DEBUG-level logging (INFO otherwise) and every router's /test debug route.
+    # Keep it off in production: /test reveals the server's view of the request.
+    DEBUG: bool = Field(default=False)
     DB_DATABASE: str = Field(default=...)
     DB_USERNAME: str = Field(default=...)
     DB_PASSWORD: str = Field(default=...)

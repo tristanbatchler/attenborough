@@ -22,7 +22,7 @@ When the API changes:
 2. `mise run web-gen-types` from the repo root, or `npm run gen-types` here
 3. Commit the regenerated `src/lib/client/` together with the API change.
 
-`openapi-ts.config.ts` limits the client to the public exhibit (`/exhibit/…`), without the debug `/test` routes. Function names come from the API's operation IDs: `ip.get_ip_activity` becomes `ipGetIpActivity`.
+`openapi-ts.config.ts` limits the client to the public exhibit (`/exhibit/…`). The API's `DEBUG`-only `/test` routes are left out of the spec. Function names come from the API's operation IDs: `ip.get_ip_activity` becomes `ipGetIpActivity`.
 
 **How to call the API:** only from server `load` functions (`+page.server.ts`), spreading in `apiOptions(fetch)` from `$lib/server/api`, which supplies the API's address and SvelteKit's `fetch`:
 

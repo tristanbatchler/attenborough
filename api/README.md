@@ -7,7 +7,7 @@ FastAPI on Python 3.14, async psycopg against PostgreSQL, and sqlc-generated que
 ## Running locally
 
 1. `mise install` (repo root; installs the pinned Python and uv), then `uv sync`
-2. Create `.env`. Starting the server with no `.env` present creates one from the same template as `.example.env`, then exits. Fill in the required values. Any setting can also come from an environment variable, which takes precedence over `.env`.
+2. Create `.env`. Starting the server with no `.env` present creates one from the same template as `.example.env`, then exits. Fill in the required values, and set `DEBUG = True` for development: it turns on DEBUG-level logging (INFO otherwise) and every router's `/test` debug route. Any setting can also come from an environment variable, which takes precedence over `.env`.
 3. Make sure the PostgreSQL database named in `DB_DATABASE` exists, e.g. `createdb attenborough`. It can be empty; the app never creates the database itself.
 4. Start the server from a terminal:
 
@@ -153,9 +153,8 @@ If either forged address shows the hit, attribution can be spoofed; fix the prox
 - **Never publish the project's own data:** `.env` (git-ignored), DB and OAuth credentials, admin users and sessions, audit logs, internal errors.
 - **Least privilege:** in production, run the app as a role that can only read and write rows, so it can never reset anything. A reset in production then has to be deliberate: run `scripts/reset_db.py --yes` as the schema owner, with `DB_USERNAME` and `DB_PASSWORD` set in the environment for that one command, since environment variables override `.env`. Then grant the app role only what it needs, e.g. `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app;` plus `GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO app;`, which `BIGSERIAL` columns need. The startup check only reads `schema_fingerprint`. These grants haven't been tested yet, so verify them when you set the role up.
 - **Writable source directory:** startup writes `src/openapi.json` and `.example.env`, so the app needs write access to its own directory. A read-only container filesystem will fail at startup.
-- **Logs:** they contain attacker-controlled paths and user agents. Treat them as untrusted input in any log viewer. Logging is currently set to `DEBUG` at import in `main.py`.
+- **Logs:** they contain attacker-controlled paths and user agents. Treat them as untrusted input in any log viewer. Leave `DEBUG` off in production: it logs at DEBUG level and enables the `/test` debug routes.
 
 ### Known gaps
 
-- Every router exposes a public `/test` debug route.
 - There are no migrations: any schema change resets the database and loses its data. Fine for v1; revisit before data must be kept.

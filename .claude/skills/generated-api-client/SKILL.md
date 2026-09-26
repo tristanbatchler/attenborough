@@ -50,7 +50,7 @@ Don't work around it. Change the API instead, and regenerate:
 
 1. Add or change the route or model in `api/`. If a generated function name reads badly, fix the operation ID in the API (`main.py:_operation_id`, `Router` route names).
 2. Restart the API (it rewrites `api/src/openapi.json`), then `mise run web-gen-types`.
-3. The client only includes `/exhibit/…` operations, minus `/test` (`web/openapi-ts.config.ts`). A route outside `/exhibit` isn't meant for the frontend.
+3. The client only includes `/exhibit/…` operations (`web/openapi-ts.config.ts`); the `DEBUG`-only `/test` routes aren't in the spec at all. A route outside `/exhibit` isn't meant for the frontend.
 4. Commit the regenerated `web/src/lib/client/` together with the API change.
 
 Finish with `mise run fix` and `mise run check`.
