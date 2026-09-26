@@ -1,0 +1,40 @@
+// Global design system: Pico CSS as the semantic base, plus Attenborough's own variables and a
+// few element rules. Style elements, not utility classes. Components get their own <style> only
+// when they are genuinely self-contained.
+
+@use '@picocss/pico/scss/pico' with (
+	$theme-color: 'jade',
+	// Classless: markup stays plain semantic HTML.
+	$enable-classes: false,
+	// <header>, <main> and <footer> are the page containers. SvelteKit renders pages inside
+	// <div style="display: contents"> (src/app.html), so the root is that div, not <body>.
+	$enable-semantic-container: true,
+	$semantic-root-element: 'body > div'
+);
+
+:root {
+	// Natural-history exhibit: restrained serif headings, monospace for observed data.
+	--attenborough-heading-font: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+	--pico-font-family-monospace:
+		ui-monospace, 'SFMono-Regular', 'Cascadia Mono', 'Segoe UI Mono', Menlo, monospace;
+}
+
+h1,
+h2,
+h3 {
+	font-family: var(--attenborough-heading-font);
+	font-weight: 600;
+	letter-spacing: 0.01em;
+}
+
+// Observed values (IPs, paths, methods) are data, not prose.
+td code,
+h1 code {
+	font-size: 0.95em;
+	word-break: break-all;
+}
+
+time {
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
