@@ -2,6 +2,7 @@ from collections.abc import Sequence
 from typing import Annotated
 
 from fastapi import Query
+from pydantic import IPvAnyAddress
 from starlette.status import HTTP_404_NOT_FOUND
 
 from attenborough import settings
@@ -19,7 +20,7 @@ router = ExhibitRouter(prefix="/ip")
     responses=Message.for_statuses([HTTP_404_NOT_FOUND]),
 )
 async def get_ip_activity(
-    ip_addr: str,
+    ip_addr: IPvAnyAddress,
     db_conn: DBConn,
     page: Annotated[int, Query(ge=1)] = 1,
     take: Annotated[
@@ -27,6 +28,6 @@ async def get_ip_activity(
     ] = settings.APP_DEFAULT_PAGE_TAKE,
 ) -> Sequence[queries.ListIpActivityRow]:
     ip_activity = await queries.list_ip_activity(
-        db_conn, ip_address=ip_addr, offset=(page - 1) * take, limit=take
+        db_conn, ip_address=str(ip_addr), offset=(page - 1) * take, limit=take
     )
     return ip_activity
