@@ -2,11 +2,11 @@
 
 The backend of Attenborough, a public honeypot. It serves decoy resources to scanners and bots, records every request, and publishes what it observed on the public **exhibit** (`/exhibit/...`).
 
-FastAPI on Python 3.14, async psycopg against PostgreSQL, and sqlc-generated query code. Run every command below from this `api/` directory.
+FastAPI on Python 3.14, async psycopg against PostgreSQL, and sqlc-generated query code. Commands below run from this `api/` directory, except the `mise` tasks, which run from the repo root.
 
 ## Running locally
 
-1. `uv sync`
+1. `mise install` (repo root; installs the pinned Python and uv), then `uv sync`
 2. Create `.env`. Starting the server with no `.env` present creates one from the same template as `.example.env`, then exits. Fill in the required values. Any setting can also come from an environment variable, which takes precedence over `.env`.
 3. Make sure the PostgreSQL database named in `DB_DATABASE` exists, e.g. `createdb attenborough`. It can be empty; the app never creates the database itself.
 4. Start the server from a terminal:
@@ -50,7 +50,7 @@ Any change to `schema.sql`, even a comment, changes the fingerprint and triggers
 | `queries.sql` only | regenerate the query code. **No reset needed**; data is kept. |
 | `schema.sql` | regenerate the query code, then restart and answer `y`, or run `scripts/reset_db.py --yes`. **All data is deleted.** |
 
-Regenerate with:
+Regenerate with `mise run sqlc` from the repo root, or from here:
 
 ```sh
 uv run sqlc generate --file src/attenborough/db/sqlc.yaml

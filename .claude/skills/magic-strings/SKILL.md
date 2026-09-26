@@ -1,11 +1,11 @@
 ---
 name: magic-strings
-description: Find and fix magic strings and repeated string literals in the Attenborough Python code, replacing them with enums, named constants, or helpers. Part of the post-change checklist for any Python edit (alongside ruff and basedpyright), and use it whenever reviewing or cleaning up backend code.
+description: Find and fix magic strings and repeated string literals in the Attenborough code (Python via a scanner, TypeScript/Svelte by review), replacing them with enums, named constants, or helpers. Part of the post-change checklist after `mise run check`, and use it whenever reviewing or cleaning up code.
 ---
 
 # Magic strings
 
-The user dislikes magic strings and repeated strings, and prefers enums or named constants wherever they apply. Run this after every change to Python code, as part of the same checklist as ruff and basedpyright.
+The user dislikes magic strings and repeated strings, and prefers enums or named constants wherever they apply. Run this after every change to Python code, after `mise run check`. The same rules apply to TypeScript and Svelte in `web/`; there is no scanner there, so review new code by eye against section 2 (module-level `const`s such as `PAGE_SIZE`, or a helper such as `pageHref`).
 
 ## 1. Scan
 
@@ -43,7 +43,7 @@ When unsure whether two equal values share a meaning, ask: "if one changed, must
 
 For each finding to fix:
 1. Make the smallest change that removes it. Reuse an existing enum or constant before creating one, and keep new constants private (`_NAME`) unless another module needs them. Keep import direction acyclic (see `.claude/rules/backend.md`): a constant belongs to the lowest-level module that owns the meaning.
-2. Run ruff check, ruff format, and basedpyright (see `.claude/rules/backend.md`), then re-run the scanner to confirm the finding is gone and nothing new appeared.
+2. Run `mise run fix` and `mise run check` (see `CLAUDE.md`), then re-run the scanner to confirm the finding is gone and nothing new appeared.
 3. If the change touches request handling or telemetry, finish with the `telemetry-testing` skill.
 
 Report which candidates you fixed, and which you accepted with the reason for each.

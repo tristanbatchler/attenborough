@@ -4,7 +4,7 @@ The public exhibit: a SvelteKit site that presents what the honeypot observed. I
 
 ## Running locally
 
-1. `npm install`
+1. `mise install` (repo root; installs the pinned Node), then `npm install`
 2. `cp .env.example .env` and set `API_BASE_URL` to where the API runs (default `http://127.0.0.1:8000`). Without it, the server refuses to work: `node build` exits at startup, and `npm run dev` answers every page with that error. The check is `init` in `src/hooks.server.ts`.
 3. Start the API (see `../api/README.md`), then:
 
@@ -19,7 +19,7 @@ Every endpoint, parameter and response type comes from `src/lib/client/`, genera
 When the API changes:
 
 1. Restart the API, which rewrites `../api/src/openapi.json`.
-2. `npm run gen-types`
+2. `mise run web-gen-types` from the repo root, or `npm run gen-types` here
 3. Commit the regenerated `src/lib/client/` together with the API change.
 
 `openapi-ts.config.ts` limits the client to the public exhibit (`/exhibit/…`), without the debug `/test` routes. Function names come from the API's operation IDs: `ip.get_ip_activity` becomes `ipGetIpActivity`.
@@ -37,13 +37,15 @@ A call never throws for an HTTP error or an unreachable API. Check `data`: if it
 
 ## Structure
 
-| Path              | What                                                                                                                         |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `src/app.scss`    | The design system: Pico (classless, semantic containers) plus Attenborough's variables. Style elements, not utility classes. |
-| `src/routes/`     | Pages. `+page.server.ts` loads data on the server; `+page.svelte` renders it.                                                |
-| `src/lib/client/` | **Generated** API client. Don't edit.                                                                                        |
-| `src/lib/server/` | Server-only code, never bundled for the browser, e.g. the API's address.                                                     |
-| `vite.config.ts`  | Vite, and the SvelteKit config (adapter, compiler options). There's no `svelte.config.js`.                                   |
+| Path                  | What                                                                                                                         |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `src/app.scss`        | The design system: Pico (classless, semantic containers) plus Attenborough's variables. Style elements, not utility classes. |
+| `src/routes/`         | Pages. `+page.server.ts` loads data on the server; `+page.svelte` renders it.                                                |
+| `src/lib/client/`     | **Generated** API client. Don't edit.                                                                                        |
+| `src/lib/server/`     | Server-only code, never bundled for the browser, e.g. the API's address.                                                     |
+| `src/hooks.server.ts` | `init`: refuses to start without `API_BASE_URL`.                                                                             |
+| `static/`             | Served from the site root as-is: favicons and `site.webmanifest` (linked in `src/app.html`), `robots.txt`.                   |
+| `vite.config.ts`      | Vite, and the SvelteKit config (adapter, compiler options). There's no `svelte.config.js`.                                   |
 
 Captured data (IPs, paths, credentials, headers) is shown in full, but always as text. Svelte escapes `{…}` expressions, so never use `{@html}` on it.
 

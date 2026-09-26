@@ -1,7 +1,9 @@
 ---
 paths:
   - "api/src/attenborough/**/*.py"
-  - "api/tests/**/*.py"
+  - "api/src/tests/**/*.py"
+  - "api/scripts/**/*.py"
+  - "api/pyproject.toml"
 ---
 
 # Python / FastAPI
@@ -11,10 +13,11 @@ paths:
 - Keep imports acyclic and responsibilities clear. Lower-level modules must not import `main`, router aggregation modules, or other high-level composition points.
 - Keep application construction and lifecycle wiring in the composition/entrypoint layer; avoid opening pools, reading mutable runtime state, or doing network/database work at import time.
 - Understand FastAPI dependency, middleware, exception-handler, and lifespan ordering before changing request telemetry.
+- Pure ASGI middleware is instantiated once and shared by every concurrent request, so per-request state lives in locals of `__call__` and closures over them (`nonlocal`), exactly as Starlette's own `ServerErrorMiddleware` does, never on `self`. For more state than a value or two, create a per-request object, like Starlette's `GZipResponder`.
 - Preserve asynchronous behaviour and transaction boundaries. Work after the response is a background task: FastAPI's `BackgroundTasks` in handlers, or in pure ASGI middleware a `starlette.background.BackgroundTask` awaited after the wrapped app returns, which is how Starlette's `Response.__call__` runs one. "Background" means after the response is sent, not concurrently. Never use detached `asyncio.create_task`-style fire-and-forget: it escapes graceful shutdown, grows without bound under load, and loses its exceptions.
 - Validate request inputs and bound user-controlled sizes. Do not expose internal exception details in public responses.
 - Never log the project's own secrets: tokens, cookies, session material, OAuth or DB credentials. Credentials submitted by honeypot visitors are captured on purpose, stored in the database, and shown in full on the public exhibit (see `CLAUDE.md`). The exhibit reads them from the DB. Application logs are not the exhibit, so don't write raw submitted values into them; log metadata instead (e.g. `password_length`), and use `%r` for attacker-controlled text to prevent log injection.
-- Run the repository’s actual formatter, linter, type checker, and relevant tests; discover exact commands from `pyproject.toml`, scripts, and CI.
+- Commands come from `mise.toml` at the repo root (`mise tasks ls`); run the real tools through it rather than guessing flags.
 - Post-change checklist for any Python edit: `mise run fix`, then `mise run check` (the gate for API and web; see `CLAUDE.md`), then the magic-string scan (`mise run api-magic-strings`, judged with the `magic-strings` skill). After editing `queries.sql` or `schema.sql`, regenerate (`mise run sqlc`). After editing `schema.sql`, also reset the database (`uv run python scripts/reset_db.py --yes`, which deletes all data), or the next server start will refuse or ask. No magic or repeated strings: use enums (existing ones first: `RouterGroup`, `db.enums`, `http.HTTPMethod`), named constants, or helpers. Generated code (sqlc's `db/__init__.py`, `enums.py`, `models.py`, `queries.py`) is excluded from ruff and basedpyright in `pyproject.toml`; keep any new generated file excluded too.
 - Operation IDs are the route names (`admin.dashboard`, `ip.get_ip_activity`; `main.py:_operation_id`), and they name the frontend's generated client functions (`ipGetIpActivity`). Keep route names meaningful and stable. After changing routes, parameters or response models, restart the API so it rewrites `api/src/openapi.json`, then run `npm run gen-types` in `web/` and commit both.
 - Type-check from `api/` with `uv run basedpyright`. It must report `0 errors, 0 warnings, 0 notes`. `api/pyproject.toml` sets `typeCheckingMode = "all"`, basedpyright's strictest mode, where every rule is an error. The user wants to stay on it. Don't weaken it, and don't add rule overrides without asking.
@@ -24,5 +27,5 @@ paths:
 - Code style (user preference): no pointless annotations. Don't annotate a variable when inference already gives the same type, or when the value is only checked or narrowed (`is None`, `isinstance`, `in`) and never used as a specific type. Letting it be inferred as `Any` is fine there, e.g. `route = scope.get("route")`, not `route: object = scope.get("route")`. The same applies to `cast(object, …)`. Annotate only where it adds information: function signatures; empty containers (`[]`, `{}`, `set()`, `Counter()`); declarations such as pydantic or dataclass fields, `ClassVar` and `argparse.Namespace` fields; and instance attributes, which `reportUnannotatedClassAttribute` requires (`self.app: ASGIApp = app`). Before removing an annotation, prove it's pointless by running basedpyright, and keep it if a new finding appears.
 - When reporting verification, quote the actual basedpyright summary line; never summarise warnings as "passed".
 - Database connections have one source, the `ops.db_conn_pool` pool. Request handlers take the `DBConn` dependency. Code outside a request (startup, middleware, scripts) uses `ops.get_db_context()`, which gives the same autocommit connection. Scripts open the pool for their duration with `async with ops.db_conn_pool, ops.get_db_context() as conn:`. Don't create connections with `AsyncConnection.connect` or set autocommit by hand. Functions in `db/` take `conn` as a parameter, like the generated `queries.py`, so the caller controls the connection and transaction.
-- Always use absolute imports in code we write, i.e. `from attenborough.`...
-- Never edit automatically generated files, e.g. database files made with sqlc
+- Always use absolute imports in code we write (`from attenborough.…`).
+- Scripts in `api/scripts/` follow the same rules as the app: typed, checked by the gate, no magic strings, and they import the app's own `Settings`, pool and generated queries rather than duplicating them.

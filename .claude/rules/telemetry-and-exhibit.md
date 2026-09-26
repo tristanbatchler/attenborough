@@ -2,6 +2,9 @@
 paths:
   - "api/src/attenborough/dependencies.py"
   - "api/src/attenborough/middleware.py"
+  - "api/src/attenborough/main.py"
+  - "api/src/attenborough/router/**/*.py"
+  - "web/src/routes/**/*"
   - "api/src/attenborough/honeypot/**/*.py"
   - "api/src/attenborough/exhibit/**/*.py"
 ---
