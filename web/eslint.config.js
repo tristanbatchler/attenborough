@@ -75,6 +75,22 @@ export default defineConfig(
 			]
 		}
 	},
+	{
+		// No magic numbers: name them, or use a library's constant (HTTP statuses: node:http2).
+		rules: {
+			'no-magic-numbers': 'off',
+			'@typescript-eslint/no-magic-numbers': [
+				'error',
+				{
+					ignore: [-1, 0, 1],
+					ignoreEnums: true,
+					ignoreNumericLiteralTypes: true,
+					ignoreReadonlyClassProperties: true,
+					ignoreTypeIndexes: true
+				}
+			]
+		}
+	},
 	// Plain JavaScript (config files) has no types for the type-aware rules to use.
 	{ files: ['**/*.js'], extends: [ts.configs.disableTypeChecked] },
 	{

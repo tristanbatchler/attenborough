@@ -2,7 +2,7 @@
 	import { resolve } from '$app/paths';
 	import ActivityTable from '$lib/components/ActivityTable.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
-	import { PAGE_PARAM } from '$lib/params';
+	import { FIRST_PAGE, PAGE_PARAM } from '$lib/params';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -22,7 +22,7 @@
 
 {#if data.rows.length === 0}
 	<p>
-		{data.page === 1
+		{data.page === FIRST_PAGE
 			? 'No activity has been recorded from this address.'
 			: 'There is no more activity for this address.'}
 	</p>

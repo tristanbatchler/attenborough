@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import { constants } from 'node:http2';
 import { env } from '$env/dynamic/private';
 
 // Connection settings for the generated API client (src/lib/client). This file only says
@@ -37,8 +38,6 @@ interface ApiResult<T> {
 	response?: Response;
 }
 
-const HTTP_UNPROCESSABLE_CONTENT = 422;
-
 /**
  * The data of a generated SDK call, or the matching error page. SDK calls never throw: an
  * unreachable API has no `response` (503), a 422 means the API rejected the request's input
@@ -50,11 +49,11 @@ export function unwrap<T>(result: ApiResult<T>, invalidInput = 'The request was 
 	}
 	if (result.response === undefined) {
 		console.error('Exhibit API unreachable', result.error);
-		error(503, 'The exhibit is temporarily unavailable.');
+		error(constants.HTTP_STATUS_SERVICE_UNAVAILABLE, 'The exhibit is temporarily unavailable.');
 	}
-	if (result.response.status === HTTP_UNPROCESSABLE_CONTENT) {
-		error(400, invalidInput);
+	if (result.response.status === constants.HTTP_STATUS_UNPROCESSABLE_ENTITY) {
+		error(constants.HTTP_STATUS_BAD_REQUEST, invalidInput);
 	}
 	console.error('Exhibit API error', result.response.status, result.error);
-	error(502, 'The exhibit could not load this page.');
+	error(constants.HTTP_STATUS_BAD_GATEWAY, 'The exhibit could not load this page.');
 }

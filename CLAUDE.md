@@ -35,7 +35,7 @@ Layout: `api/` (FastAPI backend, see `api/README.md`), `web/` (SvelteKit exhibit
 - The user's other project, `~/Source/stashit`, uses the same stack. Mirror its conventions where they apply (tool choices, npm script names, mise tasks), and look there first when setting up something new.
 - **After every change, run `mise run fix` then `mise run check` from the repo root; `check` must exit 0.** It is the gate for both halves: `ruff check`, `ruff format --check` and `basedpyright` (API), `pytest`, then `svelte-check`, `eslint`, `prettier --check` and `vite build` (web). It never skips a check and stops at the first failure. The tools pair up: ruff check ↔ eslint (linters), ruff format ↔ prettier (formatters), basedpyright ↔ svelte-check/TypeScript (type checkers). Each is also a task on its own (`mise tasks ls`). Report the actual output, never "passed" from memory.
 - **Strictest settings, and warnings count.** basedpyright runs in `typeCheckingMode = "all"`, ESLint uses typescript-eslint `strictTypeChecked`, and svelte-check fails on warnings. Never weaken a checker or loosen a rule to get code through; fix the code. The user's editor diagnostics, passed to you as `<ide_diagnostics>` after edits, are the ground truth for what they see.
-- **No magic or repeated strings,** in Python and TypeScript alike: use enums, named constants or helpers. After every Python change, run the magic-string scan (`mise run api-magic-strings`) and judge it with the `magic-strings` skill; it is not part of `check`, because accepted candidates remain. There is no scanner for `web/`, so review TypeScript and Svelte by eye.
+- **No magic or repeated strings,** in Python and TypeScript alike: use enums, named constants or helpers. After every change, run the magic-string scan for that half (`mise run api-magic-strings`, `mise run web-magic-strings`) and judge it with the `magic-strings` skill; it is not part of `check`, because accepted candidates remain. Magic numbers in `web/` fail lint; HTTP statuses come from `node:http2`'s `constants`, never bare numbers.
 
 ## Attenborough-specific care
 
@@ -60,7 +60,7 @@ Layout: `api/` (FastAPI backend, see `api/README.md`), `web/` (SvelteKit exhibit
 - `mise run check` / `mise run fix`, plus one task per check (`mise tasks ls`); watch mode with `mise watch -w api/src check`.
 - `api/scripts/telemetry_probe.py`: inspect `telemetry_hits` read-only (`summary`, `rows`), and verify end to end that every request to a running server is recorded exactly once with the right status, group and IP (`verify`). Use the `telemetry-testing` skill for the full procedure: starting and stopping the server safely, handling test data in the real LAN database, and interpreting failures.
 - `api/scripts/reset_db.py --yes`: reset the database to `schema.sql` (deletes all data; approved for v1).
-- `api/scripts/find_magic_strings.py` (`mise run api-magic-strings`): magic-string candidates, judged with the `magic-strings` skill.
+- `api/scripts/find_magic_strings.py` (`mise run api-magic-strings`) and `web/scripts/find-magic-strings.ts` (`mise run web-magic-strings`): magic-string candidates, judged with the `magic-strings` skill.
 - Put reusable tooling in the repo (`api/scripts/`, typed and checked like the app), and procedures in `.claude/skills/`. Never leave them only in a session scratchpad.
 
 ## Completion

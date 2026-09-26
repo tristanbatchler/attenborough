@@ -2,7 +2,7 @@
 	import { resolve } from '$app/paths';
 	import ActivityTable from '$lib/components/ActivityTable.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
-	import { PAGE_PARAM } from '$lib/params';
+	import { ADDRESS_PARAM, FIRST_PAGE, PAGE_PARAM } from '$lib/params';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -30,7 +30,13 @@
 	<form method="GET" action={resolve('/ip')}>
 		<label>
 			IP address
-			<input name="address" type="text" placeholder="203.0.113.7" autocomplete="off" required />
+			<input
+				name={ADDRESS_PARAM}
+				type="text"
+				placeholder="203.0.113.7"
+				autocomplete="off"
+				required
+			/>
 		</label>
 		<button type="submit">View activity</button>
 	</form>
@@ -41,7 +47,7 @@
 	<p>The most recent attempts from every address, newest first. Times are in UTC.</p>
 	{#if data.rows.length === 0}
 		<p>
-			{data.page === 1 ? 'Nothing has been recorded yet.' : 'There is no older activity.'}
+			{data.page === FIRST_PAGE ? 'Nothing has been recorded yet.' : 'There is no older activity.'}
 		</p>
 	{:else}
 		<ActivityTable rows={data.rows} />

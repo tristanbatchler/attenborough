@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import { constants } from 'node:http2';
 import { metaGetMeta } from '$lib/client';
 import { FIRST_PAGE, PAGE_PARAM } from '$lib/params';
 import { type ApiOptions, unwrap } from '$lib/server/api';
@@ -17,7 +18,7 @@ export async function paging(url: URL, api: ApiOptions): Promise<Paging> {
 	const page = Number(url.searchParams.get(PAGE_PARAM) ?? FIRST_PAGE);
 	if (!Number.isInteger(page) || page < FIRST_PAGE || page > meta.max_page) {
 		error(
-			400,
+			constants.HTTP_STATUS_BAD_REQUEST,
 			`Page must be a whole number from ${String(FIRST_PAGE)} to ${String(meta.max_page)}.`
 		);
 	}

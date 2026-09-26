@@ -65,6 +65,8 @@ The same kinds of checks as the API, paired tool for tool:
 | `npm run check`                   | svelte-check (TypeScript stricter than `strict`; warnings fail)        | `basedpyright` (`all`)                |
 | `npm run build`                   | Vite                                                                   |                                       |
 
+`node scripts/find-magic-strings.ts` (`mise run web-magic-strings`) lists magic-string candidates to judge with the `magic-strings` skill; it isn't a gate. `scripts/` is type-checked with the app (`typescript.config` in `vite.config.ts`).
+
 Usually you run them all from the repo root: `mise run fix`, then `mise run check`, the gate for both halves. See `../api/README.md`, "Checks". The generated client (`src/lib/client/`) is excluded from ESLint and Prettier. `exactOptionalPropertyTypes` is off only because the generated client fails it, and svelte-check can't exclude imported files.
 
 `npm audit` currently reports two issues. Neither affects this project, and the suggested "fixes" are downgrades, so don't run them:

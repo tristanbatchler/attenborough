@@ -73,6 +73,11 @@ description = "vite build"
 dir = "web"
 run = "npm run build"
 
+[tasks.web-magic-strings]
+description = "List magic-string candidates to judge (see the magic-strings skill); not a gate"
+dir = "web"
+run = "node scripts/find-magic-strings.ts"
+
 [tasks.web-gen-types]
 description = "Regenerate the API client from api/src/openapi.json"
 dir = "web"

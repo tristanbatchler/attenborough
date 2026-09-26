@@ -20,6 +20,15 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 
+			// Type-check the repo's own scripts (scripts/*.ts, run directly by Node) with the app.
+			typescript: {
+				// SvelteKit types the generated tsconfig as Record<string, any>; `include` is a string[].
+				config: ({ include, ...config }) => ({
+					...config,
+					include: [...(include as string[]), '../scripts/**/*.ts']
+				})
+			},
+
 			// Self-hosted Node server (`node build`), deployed behind the same reverse proxy as the
 			// API. See web/README.md, "Deployment".
 			adapter: adapter()
