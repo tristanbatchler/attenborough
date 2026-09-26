@@ -19,6 +19,13 @@ class SystemRouter(Router):
         return RouterGroup.SYSTEM
 
 
+class IngestRouter(Router):
+    @property
+    @override
+    def group(self) -> RouterGroup:
+        return RouterGroup.INGEST
+
+
 class HoneypotRouter(Router):
     @property
     @override

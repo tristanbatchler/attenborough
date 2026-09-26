@@ -97,9 +97,12 @@ WHERE s.token_hash = %(p1)s
 
 CREATE_TELEMETRY_HIT: typing.Final[typing.LiteralString] = """-- name: CreateTelemetryHit :exec
 INSERT INTO telemetry_hits (
-    ip_address, method, path, router_group, user_agent, headers, status_code
+    ip_address, method, path, query, router_group, user_agent, headers, body, body_size, status_code
 )
-VALUES (%(p1)s, %(p2)s, %(p3)s, %(p4)s, %(p5)s, %(p6)s, %(p7)s)
+VALUES (
+    %(p1)s, %(p2)s, %(p3)s, %(p4)s, %(p5)s,
+    %(p6)s, %(p7)s, %(p8)s, %(p9)s, %(p10)s
+)
 """
 
 CREATE_CREDENTIAL_STUFFING_ATTEMPT: typing.Final[typing.LiteralString] = """-- name: CreateCredentialStuffingAttempt :exec
@@ -126,7 +129,7 @@ VALUES (%(p1)s, %(p2)s, %(p3)s, %(p4)s)
 RETURNING id, ip_address, added, expires, reason, added_by_user_id, revoked_at, revoked_by_user_id, revocation_reason
 """
 
-LIST_IP_ACTIVITY: typing.Final[typing.LiteralString] = """-- name: ListIpActivity :many
+LIST_IP_ACTIVITY: typing.Final[typing.LiteralString] = r"""-- name: ListIpActivity :many
 SELECT
     event_at,
     event_type,
@@ -139,8 +142,12 @@ FROM (
         th.occurred_at AS event_at,
         ('hit_' || th.router_group)::TEXT AS event_type,
         NULL::BIGINT AS target_id,
-        th.path::TEXT AS target_slug,
-        ('status=' || th.status_code::text || ' | method=' || th.method)::TEXT AS details
+        (th.path || COALESCE('?' || th.query, ''))::TEXT AS target_slug,
+        -- The body's first KiB (non-printable bytes as \ooo), and its full size when longer.
+        ('status=' || th.status_code::text || ' | method=' || th.method
+            || COALESCE(' | body=' || NULLIF(encode(substring(th.body FROM 1 FOR 1024), 'escape'), ''), '')
+            || CASE WHEN th.body_size > 1024 THEN ' | body_size=' || th.body_size::text ELSE '' END
+        )::TEXT AS details
     FROM telemetry_hits th
     WHERE th.ip_address = %(p1)s::inet
       -- Only visitor traffic (the honeypot group), not the exhibit's or system's own requests.
@@ -214,7 +221,7 @@ LIMIT %(p4)s::int
 OFFSET %(p3)s::int
 """
 
-LIST_RECENT_ACTIVITY: typing.Final[typing.LiteralString] = """-- name: ListRecentActivity :many
+LIST_RECENT_ACTIVITY: typing.Final[typing.LiteralString] = r"""-- name: ListRecentActivity :many
 SELECT
     event_at,
     event_type,
@@ -228,8 +235,12 @@ FROM (
         ('hit_' || th.router_group)::TEXT AS event_type,
         th.ip_address,
         NULL::BIGINT AS target_id,
-        th.path::TEXT AS target_slug,
-        ('status=' || th.status_code::text || ' | method=' || th.method)::TEXT AS details
+        (th.path || COALESCE('?' || th.query, ''))::TEXT AS target_slug,
+        -- The body's first KiB (non-printable bytes as \ooo), and its full size when longer.
+        ('status=' || th.status_code::text || ' | method=' || th.method
+            || COALESCE(' | body=' || NULLIF(encode(substring(th.body FROM 1 FOR 1024), 'escape'), ''), '')
+            || CASE WHEN th.body_size > 1024 THEN ' | body_size=' || th.body_size::text ELSE '' END
+        )::TEXT AS details
     FROM telemetry_hits th
     WHERE th.router_group = %(p1)s
 
@@ -363,8 +374,8 @@ async def get_user_by_session_token_hash(conn: ConnectionLike, *, token_hash: st
     return models.User(id_=row[0], google_sub=row[1], email=row[2], name=row[3], created=row[4], last_login=row[5], is_admin=row[6])
 
 
-async def create_telemetry_hit(conn: ConnectionLike, *, ip_address: str, method: str, path: str, router_group: str, user_agent: str | None, headers: str, status_code: int) -> None:
-    await conn.execute(CREATE_TELEMETRY_HIT, {"p1": ip_address, "p2": method, "p3": path, "p4": router_group, "p5": user_agent, "p6": headers, "p7": status_code})
+async def create_telemetry_hit(conn: ConnectionLike, *, ip_address: str, method: str, path: str, query: str | None, router_group: str, user_agent: str | None, headers: str, body: memoryview | None, body_size: int | None, status_code: int) -> None:
+    await conn.execute(CREATE_TELEMETRY_HIT, {"p1": ip_address, "p2": method, "p3": path, "p4": query, "p5": router_group, "p6": user_agent, "p7": headers, "p8": body, "p9": body_size, "p10": status_code})
 
 
 async def create_credential_stuffing_attempt(conn: ConnectionLike, *, ip_address: str, endpoint_path: str, username: str, password: str, was_fake_success: bool) -> None:

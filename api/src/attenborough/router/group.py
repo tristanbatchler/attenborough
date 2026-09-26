@@ -7,3 +7,5 @@ class RouterGroup(enum.StrEnum):
     EXHIBIT = "exhibit"
     SYSTEM = "system"
     HONEYPOT = "honeypot"
+    # The decoy app (decoy/) reporting its visitors' requests: records, not visits.
+    INGEST = "ingest"

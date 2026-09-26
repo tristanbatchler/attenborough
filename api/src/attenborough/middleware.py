@@ -1,24 +1,35 @@
-import json
 import logging
 from enum import StrEnum
 
 from fastapi import HTTPException
 from fastapi.routing import APIRoute
-from psycopg import Error as PsycopgError
 from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from attenborough.db import queries
-from attenborough.db.ops import get_db_context
 from attenborough.dependencies import get_request_origin
 from attenborough.router.group import RouterGroup
+from attenborough.telemetry import record_hit
 
 logger = logging.getLogger(__name__)
 
-# The request header recorded as each hit's user agent.
-USER_AGENT_HEADER = "user-agent"
+
+# How the request line's bytes become text: one character per byte, so nothing is lost or decoded.
+# Node reads a request line the same way, so the decoy app's reports match.
+_REQUEST_LINE_ENCODING = "latin-1"
+
+
+def _request_target(request: Request) -> tuple[str, str | None]:
+    """The path and query exactly as the client sent them, not decoded or normalised. ASGI can't
+    tell `/a?` from `/a`, so an empty query is recorded as none."""
+    match request.scope:
+        case {"raw_path": bytes(raw_path), "query_string": bytes(query_string)}:
+            query = query_string.decode(_REQUEST_LINE_ENCODING) or None
+            return raw_path.decode(_REQUEST_LINE_ENCODING), query
+        case _:
+            # uvicorn always sets both; raw_path is optional in ASGI, so fall back to the decoded URL.
+            return request.url.path, request.url.query or None
 
 
 class _AsgiType(StrEnum):
@@ -56,22 +67,18 @@ async def _record_telemetry_hit(
         )
         return
 
-    try:
-        async with get_db_context() as db_conn:
-            await queries.create_telemetry_hit(
-                db_conn,
-                ip_address=str(origin),
-                method=request.method,
-                path=request.url.path,
-                router_group=router_group.value,
-                user_agent=request.headers.get(USER_AGENT_HEADER),
-                headers=json.dumps(dict(request.headers)),
-                status_code=status_code,
-            )
-    except PsycopgError:
-        logger.exception(
-            "Failed to record telemetry for %s %r", request.method, request.url.path
-        )
+    path, query = _request_target(request)
+    await record_hit(
+        ip_address=str(origin),
+        method=request.method,
+        path=path,
+        query=query,
+        router_group=router_group,
+        headers=request.headers,
+        # The API serves its own routes without capturing bodies.
+        body=None,
+        status_code=status_code,
+    )
 
 
 class TelemetryMiddleware:
@@ -105,12 +112,15 @@ class TelemetryMiddleware:
         try:
             await self.app(scope, receive, send_wrapper)
         finally:
-            # A Starlette background task (what FastAPI's BackgroundTasks are built on), run the
-            # way Starlette's Response.__call__ runs response.background: after the response has
-            # been sent, within the request. The client never waits for it, and uvicorn's graceful
-            # shutdown does. Only an unhandled exception's 500 is sent after it (by
-            # ServerErrorMiddleware, which sits outside this middleware).
-            telemetry = BackgroundTask(
-                _record_telemetry_hit, Request(scope), _router_group(scope), status_code
-            )
-            await telemetry()
+            router_group = _router_group(scope)
+            # The decoy app's reports are records of other requests (telemetry.py), not visits.
+            if router_group is not RouterGroup.INGEST:
+                # A Starlette background task (what FastAPI's BackgroundTasks are built on), run
+                # the way Starlette's Response.__call__ runs response.background: after the
+                # response has been sent, within the request. The client never waits for it, and
+                # uvicorn's graceful shutdown does. Only an unhandled exception's 500 is sent after
+                # it (by ServerErrorMiddleware, which sits outside this middleware).
+                telemetry = BackgroundTask(
+                    _record_telemetry_hit, Request(scope), router_group, status_code
+                )
+                await telemetry()

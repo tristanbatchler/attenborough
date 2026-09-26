@@ -19,9 +19,12 @@ WHERE s.token_hash = sqlc.arg(token_hash)
 
 -- name: CreateTelemetryHit :exec
 INSERT INTO telemetry_hits (
-    ip_address, method, path, router_group, user_agent, headers, status_code
+    ip_address, method, path, query, router_group, user_agent, headers, body, body_size, status_code
 )
-VALUES (sqlc.arg(ip_address), sqlc.arg(method), sqlc.arg(path), sqlc.arg(router_group), sqlc.arg(user_agent), sqlc.arg(headers), sqlc.arg(status_code));
+VALUES (
+    sqlc.arg(ip_address), sqlc.arg(method), sqlc.arg(path), sqlc.narg(query), sqlc.arg(router_group),
+    sqlc.arg(user_agent), sqlc.arg(headers), sqlc.narg(body), sqlc.narg(body_size), sqlc.arg(status_code)
+);
 
 -- name: CreateCredentialStuffingAttempt :exec
 INSERT INTO credential_stuffing_attempts (
@@ -57,8 +60,12 @@ FROM (
         th.occurred_at AS event_at,
         ('hit_' || th.router_group)::TEXT AS event_type,
         NULL::BIGINT AS target_id,
-        th.path::TEXT AS target_slug,
-        ('status=' || th.status_code::text || ' | method=' || th.method)::TEXT AS details
+        (th.path || COALESCE('?' || th.query, ''))::TEXT AS target_slug,
+        -- The body's first KiB (non-printable bytes as \ooo), and its full size when longer.
+        ('status=' || th.status_code::text || ' | method=' || th.method
+            || COALESCE(' | body=' || NULLIF(encode(substring(th.body FROM 1 FOR 1024), 'escape'), ''), '')
+            || CASE WHEN th.body_size > 1024 THEN ' | body_size=' || th.body_size::text ELSE '' END
+        )::TEXT AS details
     FROM telemetry_hits th
     WHERE th.ip_address = sqlc.arg(ip_address)::inet
       -- Only visitor traffic (the honeypot group), not the exhibit's or system's own requests.
@@ -148,8 +155,12 @@ FROM (
         ('hit_' || th.router_group)::TEXT AS event_type,
         th.ip_address,
         NULL::BIGINT AS target_id,
-        th.path::TEXT AS target_slug,
-        ('status=' || th.status_code::text || ' | method=' || th.method)::TEXT AS details
+        (th.path || COALESCE('?' || th.query, ''))::TEXT AS target_slug,
+        -- The body's first KiB (non-printable bytes as \ooo), and its full size when longer.
+        ('status=' || th.status_code::text || ' | method=' || th.method
+            || COALESCE(' | body=' || NULLIF(encode(substring(th.body FROM 1 FOR 1024), 'escape'), ''), '')
+            || CASE WHEN th.body_size > 1024 THEN ' | body_size=' || th.body_size::text ELSE '' END
+        )::TEXT AS details
     FROM telemetry_hits th
     WHERE th.router_group = sqlc.arg(router_group)
 

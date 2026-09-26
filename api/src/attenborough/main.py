@@ -16,9 +16,10 @@ from attenborough.db import ops
 from attenborough.db.schema import SchemaStatus, reset_schema, schema_status
 from attenborough.exhibit.routers import exported_routers as exhibit_routers
 from attenborough.honeypot.routers import exported_routers as honeypot_routers
+from attenborough.ingest.routers import exported_routers as ingest_routers
 from attenborough.middleware import TelemetryMiddleware
 from attenborough.response_models import Message
-from attenborough.router import ExhibitRouter, Router
+from attenborough.router import ExhibitRouter, IngestRouter, Router
 from attenborough.settings import write_example_env
 from attenborough.util import ROOT_LOGGER_NAME
 
@@ -113,7 +114,9 @@ def include_routers(parent: FastAPI | Router, routers: Iterable[Router]):
 
 exhibit_router = ExhibitRouter(prefix="/exhibit")
 include_routers(exhibit_router, exhibit_routers)
-include_routers(app, honeypot_routers + [exhibit_router])
+ingest_router = IngestRouter(prefix="/ingest")
+include_routers(ingest_router, ingest_routers)
+include_routers(app, honeypot_routers + [exhibit_router, ingest_router])
 
 
 @app.get("/")

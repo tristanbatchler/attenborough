@@ -176,9 +176,12 @@ class TelemetryHit(pydantic.BaseModel):
     ip_address: str
     method: str
     path: str
+    query: str | None
     router_group: str
     user_agent: str | None
     headers: str
+    body: memoryview | None
+    body_size: int | None
     status_code: int
     occurred_at: datetime.datetime
 

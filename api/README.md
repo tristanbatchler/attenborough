@@ -107,6 +107,7 @@ Every record the honeypot keeps is attributed to a client IP: telemetry, credent
 |---|---|
 | No proxy; clients connect straight to the app | leave the default (`127.0.0.1`). Internet clients are never trusted. |
 | nginx on the same host, proxying to `127.0.0.1` | leave the default |
+| The decoy app (`../decoy`) on the same host, reporting its visitors | leave the default. Elsewhere: exactly its address. See `../decoy/README.md`, "Deployment". |
 | nginx in another container or host | exactly the proxy's address, or the smallest CIDR that contains it. Every peer inside that range can set its own attribution. |
 | CDN (e.g. Cloudflare) in front of nginx | as above for nginx, and configure nginx's real-IP module (below) |
 
@@ -162,4 +163,5 @@ If either forged address shows the hit, attribution can be spoofed; fix the prox
 
 ### Known gaps
 
+- **`/ingest/...` has no authentication.** Only the decoy app (`../decoy`) should call it, and the plan is for the API to be reachable only by it and the exhibit's server. Until the decoys have moved there and the API stops being public, anyone who can reach the API can post reports. The IP rule still holds, so such reports are attributed to the sender's own address, like any other request they send.
 - There are no migrations: any schema change resets the database and loses its data. Fine for v1; revisit before data must be kept.

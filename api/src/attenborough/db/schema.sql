@@ -101,17 +101,30 @@ CREATE TABLE decoy_revocations (
 -- 3. COMPREHENSIVE HONEYPOT & TELEMETRY LOGGING
 ------------------------------------------------------------------
 
--- Raw HTTP requests hitting any endpoint (Exhibit or Honeypot routers: admin, auth, backup, etc.)
+-- Every HTTP request received: served by the API itself, or by the decoy app and reported to it.
+-- The request line is kept exactly as sent (one character per byte), never decoded or normalised:
+-- `/cgi-bin/.%2e/.%2e/etc/passwd` is the attack, `/etc/passwd` would not be.
 CREATE TABLE telemetry_hits (
     id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     ip_address   INET NOT NULL,
     method       TEXT NOT NULL,
     path         TEXT NOT NULL,
+    -- After the `?`, as sent; NULL when the request line had no `?`.
+    query        TEXT,
     router_group TEXT NOT NULL, 
     user_agent   TEXT,
     headers      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- The body's first bytes (the decoy app keeps 64 KiB) and its full length, so a cut-off body is
+    -- visible as body_size > octet_length(body). Both NULL when the body wasn't captured: the API
+    -- doesn't capture bodies for the requests it serves itself.
+    body         BYTEA,
+    body_size    INTEGER,
     status_code  INTEGER NOT NULL,
-    occurred_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    occurred_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_telemetry_hits_body CHECK (
+        (body IS NULL) = (body_size IS NULL) AND body_size >= octet_length(body)
+    )
 );
 
 -- BRIN index is optimal for high-volume, append-only time-series telemetry
