@@ -16,7 +16,7 @@ mise run api-magic-strings                              # from the repo root; or
 uv run python scripts/find_magic_strings.py            # src/ and scripts/
 uv run python scripts/find_magic_strings.py <paths...> # narrower
 
-mise run web-magic-strings                              # from the repo root; or, from web/:
+mise run web-magic-strings                              # from the repo root (decoy/: decoy-magic-strings); or, from web/:
 node scripts/find-magic-strings.ts                     # src/ and scripts/
 node scripts/find-magic-strings.ts <paths...>          # narrower
 ```

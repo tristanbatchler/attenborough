@@ -1,9 +1,11 @@
 ---
 name: generated-api-client
-description: Check that the Attenborough web frontend never calls the API by hand (fetch, string endpoints, copied types) and always uses the hey-api generated client in web/src/lib/client. Use after any change in web/, when adding or changing a page that loads API data, when reviewing frontend code, and whenever an API route or model changes.
+description: Check that the Attenborough frontends (web/ and decoy/) never call the API by hand (fetch, string endpoints, copied types) and always use the hey-api generated client in their src/lib/client. Use after any change in web/ or decoy/, when adding or changing a page that loads API data, when reviewing frontend code, and whenever an API route or model changes.
 ---
 
 # The generated API client, and nothing else
+
+The decoy app (`decoy/`) follows the same rules, with its own client limited to `/ingest/...`, its own `API_BY_HAND` list in `decoy/eslint.config.js`, and `apiOptions(event)` instead of `apiOptions(fetch)` (see `decoy/README.md`). Check both apps the same way.
 
 Every call from `web/` to the API goes through the SDK that `@hey-api/openapi-ts` generates into `web/src/lib/client/` from `api/src/openapi.json`. That means no hand-written `fetch`, no endpoint strings, no copied request or response types, and no edits to `src/lib/client/`. The pattern, in a server `load` function (`+page.server.ts`), is described in `web/README.md` ("The API client is generated"):
 

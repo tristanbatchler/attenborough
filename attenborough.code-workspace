@@ -11,6 +11,10 @@
     {
       "name": "Web (Frontend)",
       "path": "web"
+    },
+    {
+      "name": "Decoy (Fake sites)",
+      "path": "decoy"
     }
   ],
   "settings": {

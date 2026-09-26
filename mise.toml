@@ -9,7 +9,7 @@
 #
 # Checks always run: no `sources`, because mise would skip a task whose sources look unchanged,
 # and results also depend on configuration and installed tools. Only the generators (sqlc,
-# web-gen-types) are skipped when their inputs haven't changed.
+# web-gen-types, decoy-gen-types) are skipped when their inputs haven't changed.
 
 [tools]
 uv = "latest"
@@ -84,11 +84,45 @@ dir = "web"
 run = "npm run gen-types"
 sources = ["api/src/openapi.json", "web/openapi-ts.config.ts"]
 
+# --- Decoy (decoy/) -------------------------------------------------------------------------
+# The fake sites visitors see. Same tools and scripts as web/.
+
+[tasks.decoy-check]
+description = "svelte-check (TypeScript and Svelte type checker; warnings fail)"
+dir = "decoy"
+run = "npm run check"
+
+[tasks.decoy-lint]
+description = "eslint (linter, strict type-aware rules)"
+dir = "decoy"
+run = "npm run lint"
+
+[tasks.decoy-format-check]
+description = "prettier --check (formatter, no changes)"
+dir = "decoy"
+run = "npm run format:check"
+
+[tasks.decoy-build]
+description = "vite build"
+dir = "decoy"
+run = "npm run build"
+
+[tasks.decoy-magic-strings]
+description = "List magic-string candidates to judge (web/'s scanner); not a gate"
+dir = "decoy"
+run = "node ../web/scripts/find-magic-strings.ts src"
+
+[tasks.decoy-gen-types]
+description = "Regenerate the API client from api/src/openapi.json"
+dir = "decoy"
+run = "npm run gen-types"
+sources = ["api/src/openapi.json", "decoy/openapi-ts.config.ts"]
+
 # --- Aggregates -----------------------------------------------------------------------------
 
 [tasks.check]
-description = "Every check, API then web; no changes; stops at the first failure"
-# Sequential on purpose: the web tasks all regenerate .svelte-kit/.
+description = "Every check, API then web then decoy; no changes; stops at the first failure"
+# Sequential on purpose: each app's tasks all regenerate its .svelte-kit/.
 run = [
 	{ task = "api-lint" },
 	{ task = "api-format-check" },
@@ -98,6 +132,10 @@ run = [
 	{ task = "web-lint" },
 	{ task = "web-format-check" },
 	{ task = "web-build" },
+	{ task = "decoy-check" },
+	{ task = "decoy-lint" },
+	{ task = "decoy-format-check" },
+	{ task = "decoy-build" },
 ]
 
 [tasks.fix]
@@ -105,6 +143,7 @@ description = "Apply every auto-fix and formatter (ruff, eslint, prettier)"
 run = [
 	"cd api && uv run ruff check --fix && uv run ruff format",
 	"cd web && npm run lint:fix && npm run format",
+	"cd decoy && npm run lint:fix && npm run format",
 ]
 
 [tasks.default]
