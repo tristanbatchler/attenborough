@@ -8,7 +8,7 @@ Reports string literals that are either
     and `.get()`/`.pop()`/`.setdefault()` keys,
 together with each occurrence's location and role. It is a candidate list, not a verdict: judge
 each finding with the `magic-strings` skill. Docstrings, f-string fragments, and generated sqlc
-modules are skipped. Exits 1 when there are candidates, so it can gate a checklist.
+modules are skipped. Always exits 0: accepted candidates remain, so this is a review list, not a gate.
 """
 
 import ast
@@ -166,7 +166,7 @@ def main() -> int:
         for o in found:
             print(f"    {o.path}:{o.line}  {o.role}")
     print(f"\n{len(candidates)} candidate string(s)")
-    return 1 if candidates else 0
+    return 0
 
 
 if __name__ == "__main__":

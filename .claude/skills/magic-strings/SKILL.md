@@ -12,11 +12,12 @@ The user dislikes magic strings and repeated strings, and prefers enums or named
 From `api/`:
 
 ```sh
+mise run api-magic-strings                              # from the repo root; or, from api/:
 uv run python scripts/find_magic_strings.py            # src/ and scripts/
 uv run python scripts/find_magic_strings.py <paths...> # narrower
 ```
 
-It lists every string literal that is **repeated** (same value more than once across the scanned files) or used as a **key or compared value** (`==`, `!=`, `in`, `match` patterns, subscripts, `.get()`/`.pop()`/`.setdefault()`), with each location and role. It skips docstrings, f-string fragments, route-decorator arguments, and generated sqlc modules. It exits 1 whenever any candidate exists, because some candidates are legitimately accepted (below). **The exit code is not the verdict; your judgement of each finding is.**
+It lists every string literal that is **repeated** (same value more than once across the scanned files) or used as a **key or compared value** (`==`, `!=`, `in`, `match` patterns, subscripts, `.get()`/`.pop()`/`.setdefault()`), with each location and role. It skips docstrings, f-string fragments, route-decorator arguments, and generated sqlc modules. It always exits 0: some candidates are legitimately accepted (below), so it is a review list, not a gate, and isn't part of `mise run check`. **Your judgement of each finding is the verdict.**
 
 The scanner cannot see strings hidden inside other strings, such as a header name inside an SQL literal (`headers->>'x-probe'`) or a URL inside an HTML form. Check new code for those by eye; pass such values as query parameters or interpolate the named constant instead.
 

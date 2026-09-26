@@ -1,0 +1,107 @@
+# Tooling and checks for the whole repository. `mise run check` is the gate: every linter,
+# formatter check, type checker, test and build, for the API and the web frontend. It changes no
+# files and stops at the first failure. `mise run fix` applies every auto-fix and formatter.
+#
+# The checks pair up across the two halves:
+#   linter        ruff check       <-> eslint
+#   formatter     ruff format      <-> prettier
+#   type checker  basedpyright     <-> svelte-check (TypeScript)
+#
+# Checks always run: no `sources`, because mise would skip a task whose sources look unchanged,
+# and results also depend on configuration and installed tools. Only the generators (sqlc,
+# web-gen-types) are skipped when their inputs haven't changed.
+
+[tools]
+uv = "latest"
+python = "3.14"
+node = "24"
+
+# --- API (api/) -----------------------------------------------------------------------------
+# Every API task runs from api/: ruff and basedpyright read their config from api/pyproject.toml
+# in the current directory.
+
+[tasks.api-lint]
+description = "ruff check (linter)"
+dir = "api"
+run = "uv run ruff check"
+
+[tasks.api-format-check]
+description = "ruff format --check (formatter, no changes)"
+dir = "api"
+run = "uv run ruff format --check"
+
+[tasks.api-typecheck]
+description = "basedpyright (typeCheckingMode all)"
+dir = "api"
+run = "uv run basedpyright"
+
+[tasks.api-test]
+description = "pytest"
+dir = "api"
+run = "uv run pytest -q"
+
+[tasks.api-magic-strings]
+description = "List magic-string candidates to judge (see the magic-strings skill); not a gate"
+dir = "api"
+run = "uv run python scripts/find_magic_strings.py"
+
+[tasks.sqlc]
+description = "Regenerate the typed query code from schema.sql and queries.sql"
+dir = "api"
+run = "uv run sqlc generate --file src/attenborough/db/sqlc.yaml"
+sources = ["api/src/attenborough/db/*.sql", "api/src/attenborough/db/sqlc.yaml"]
+
+# --- Web (web/) -----------------------------------------------------------------------------
+
+[tasks.web-check]
+description = "svelte-check (TypeScript and Svelte type checker; warnings fail)"
+dir = "web"
+run = "npm run check"
+
+[tasks.web-lint]
+description = "eslint (linter, strict type-aware rules)"
+dir = "web"
+run = "npm run lint"
+
+[tasks.web-format-check]
+description = "prettier --check (formatter, no changes)"
+dir = "web"
+run = "npm run format:check"
+
+[tasks.web-build]
+description = "vite build"
+dir = "web"
+run = "npm run build"
+
+[tasks.web-gen-types]
+description = "Regenerate the API client from api/src/openapi.json"
+dir = "web"
+run = "npm run gen-types"
+sources = ["api/src/openapi.json", "web/openapi-ts.config.ts"]
+
+# --- Aggregates -----------------------------------------------------------------------------
+
+[tasks.check]
+description = "Every check, API then web; no changes; stops at the first failure"
+# Sequential on purpose: the web tasks all regenerate .svelte-kit/.
+run = [
+	{ task = "api-lint" },
+	{ task = "api-format-check" },
+	{ task = "api-typecheck" },
+	{ task = "api-test" },
+	{ task = "web-check" },
+	{ task = "web-lint" },
+	{ task = "web-format-check" },
+	{ task = "web-build" },
+]
+
+[tasks.fix]
+description = "Apply every auto-fix and formatter (ruff, eslint, prettier)"
+run = [
+	"cd api && uv run ruff check --fix && uv run ruff format",
+	"cd web && npm run lint:fix && npm run format",
+]
+
+[tasks.default]
+description = "Same as fix (as in stashit, for `mise watch default`)"
+run = [{ task = "fix" }]

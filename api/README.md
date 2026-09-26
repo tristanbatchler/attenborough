@@ -68,15 +68,21 @@ The reset runs as the configured database user, which must own the `public` sche
 
 ## Checks
 
+From the repo root, with [mise](https://mise.jdx.dev) (`mise.toml` pins Python, Node and uv):
+
 ```sh
-uv run ruff check && uv run ruff format
-uv run basedpyright                            # typeCheckingMode "all"; must report 0 errors, 0 warnings
-uv run pytest
-uv run python scripts/find_magic_strings.py    # candidates to judge, not automatic failures
+mise run fix     # ruff check --fix, ruff format (and the web's eslint --fix, prettier)
+mise run check   # the gate: ruff, basedpyright, pytest, then the web's checks; must exit 0
+```
+
+`check` never skips a task and stops at the first failure. Each check is also its own task (`mise tasks ls`): `api-lint`, `api-format-check`, `api-typecheck` (basedpyright, `typeCheckingMode "all"`), `api-test`. To rerun on save: `mise watch -w api/src check`. Two more checks sit outside the gate:
+
+```sh
+mise run api-magic-strings                         # candidates to judge, not automatic failures
 uv run python scripts/telemetry_probe.py verify   # end-to-end: needs a running server; writes tagged test rows
 ```
 
-Run `basedpyright` from this directory. It reads its config from the current directory, so running it from the repo root gives different, misleading results.
+Generated sqlc code is excluded from ruff and basedpyright (`pyproject.toml`). If you run basedpyright by hand, run it from this directory. It reads its config from the current directory, so running it from the repo root gives different, misleading results.
 
 ## Deployment
 

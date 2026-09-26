@@ -15,5 +15,15 @@
   ],
   "settings": {
     // Global workspace settings go here (optional)
+  },
+  "extensions": {
+    // The editor side of `mise run check`: the same tools show their findings as you type.
+    "recommendations": [
+      "detachhead.basedpyright",
+      "charliermarsh.ruff",
+      "svelte.svelte-vscode",
+      "dbaeumer.vscode-eslint",
+      "esbenp.prettier-vscode"
+    ]
   }
 }
