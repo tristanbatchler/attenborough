@@ -154,6 +154,13 @@ def request_matrix() -> list[Case]:
             RouterGroup.EXHIBIT,
         ),
         Case("exhibit-meta", HTTPMethod.GET, "/exhibit/meta", RouterGroup.EXHIBIT),
+        # Past APP_MAX_PAGE: rejected (422). This page once overflowed the query's OFFSET (500).
+        Case(
+            "page-too-large",
+            HTTPMethod.GET,
+            "/exhibit/ip/127.0.0.1/activity?page=2147483647",
+            RouterGroup.EXHIBIT,
+        ),
     ]
 
 

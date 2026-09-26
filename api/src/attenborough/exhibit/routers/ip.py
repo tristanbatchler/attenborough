@@ -22,7 +22,7 @@ router = ExhibitRouter(prefix="/ip")
 async def get_ip_activity(
     ip_addr: IPvAnyAddress,
     db_conn: DBConn,
-    page: Annotated[int, Query(ge=1)] = 1,
+    page: Annotated[int, Query(ge=1, le=settings.APP_MAX_PAGE)] = 1,
     take: Annotated[
         int, Query(ge=1, le=settings.APP_MAX_PAGE_TAKE)
     ] = settings.APP_DEFAULT_PAGE_TAKE,

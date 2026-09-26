@@ -24,3 +24,4 @@ class ExhibitMeta(BaseModel):
 
     default_page_take: int
     max_page_take: int
+    max_page: int

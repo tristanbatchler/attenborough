@@ -18,6 +18,10 @@ export type ExhibitMeta = {
      * Max Page Take
      */
     max_page_take: number;
+    /**
+     * Max Page
+     */
+    max_page: number;
 };
 
 /**

@@ -7,14 +7,19 @@ const PAGE_PARAM = 'page';
 const FIRST_PAGE = 1;
 
 export const load: PageServerLoad = async ({ params, url, fetch }) => {
+	const api = apiOptions(fetch);
+	// Paging limits are the API's settings (/exhibit/meta), not constants here.
+	const meta = unwrap(await metaGetMeta(api));
+
 	const page = Number(url.searchParams.get(PAGE_PARAM) ?? FIRST_PAGE);
-	if (!Number.isInteger(page) || page < FIRST_PAGE) {
-		error(400, 'Page must be a whole number, starting from 1.');
+	if (!Number.isInteger(page) || page < FIRST_PAGE || page > meta.max_page) {
+		error(
+			400,
+			`Page must be a whole number from ${String(FIRST_PAGE)} to ${String(meta.max_page)}.`
+		);
 	}
 
-	const api = apiOptions(fetch);
-	// The page size is the API's setting (APP_DEFAULT_PAGE_TAKE), not the frontend's.
-	const { default_page_take: take } = unwrap(await metaGetMeta(api));
+	const take = meta.default_page_take;
 	const rows = unwrap(
 		await ipGetIpActivity({ ...api, path: { ip_addr: params.address }, query: { page, take } }),
 		'That is not a valid IP address.'

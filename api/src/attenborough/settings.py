@@ -15,6 +15,8 @@ app_directory = Path(__file__).parent.parent.parent
 settings_path = app_directory / ".env"
 
 _ADMIN_EMAILS_VALIDATION_ALIAS = "ADMIN_EMAILS"
+# PostgreSQL `int` (int4): queries.sql casts LIMIT and OFFSET with `::int`.
+_POSTGRES_INT_MAX = 2**31 - 1
 
 
 class _Settings(BaseSettings):
@@ -43,6 +45,11 @@ class _Settings(BaseSettings):
         if self.APP_DEFAULT_PAGE_TAKE > self.APP_MAX_PAGE_TAKE:
             raise ValueError("APP_DEFAULT_PAGE_TAKE cannot exceed APP_MAX_PAGE_TAKE")
         return self
+
+    @property
+    def APP_MAX_PAGE(self) -> int:
+        """The last page whose OFFSET still fits a PostgreSQL int at the largest allowed take."""
+        return _POSTGRES_INT_MAX // self.APP_MAX_PAGE_TAKE + 1
 
     DB_DATABASE: str = Field(default=...)
     DB_USERNAME: str = Field(default=...)
