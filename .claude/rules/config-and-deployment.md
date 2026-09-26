@@ -15,7 +15,7 @@ paths:
 
 # Configuration and deployment
 
-- **API settings:** `api/src/attenborough/settings.py` (Pydantic `Settings`), read from `api/.env` with environment variables taking precedence. `api/.example.env` is **generated** from the `Settings` fields at every startup: change a field, never edit the example by hand. Code gets settings through the app (`from attenborough import settings` / `get_settings()`); scripts too, never by re-parsing `.env`.
+- **API settings:** `api/src/attenborough/settings.py` (Pydantic `Settings`), read from `api/.env` with environment variables taking precedence. `api/.example.env` is **generated** from the `Settings` fields by `write_example_env()`, which only the server's lifespan (`main.py`) calls, once per start: change a field, never edit the example by hand. Loading settings (`get_settings()`) has no side effects, except creating a missing `api/.env` from the template and exiting. Keep file writes out of the `Settings` class and out of import time. Code gets settings through the app (`from attenborough import settings` / `get_settings()`); scripts too, never by re-parsing `.env`.
 - **Web settings:** `web/.env` (from `web/.env.example`), read with `$env/dynamic/private` in `$lib/server/`. Required values are validated at startup in `src/hooks.server.ts` (`init`).
 - **Tools:** `mise.toml` pins Python, Node and uv and defines every check. Match stashit's pins unless there's a reason not to.
 - There is no Docker, compose or nginx config in the repo yet. The deployment requirements (reverse proxy, `FORWARDED_ALLOW_IPS`, bind addresses, least privilege) are in `api/README.md` and `web/README.md` ("Deployment"). Keep new deployment config consistent with them.

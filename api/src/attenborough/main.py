@@ -19,6 +19,7 @@ from attenborough.honeypot.routers import exported_routers as honeypot_routers
 from attenborough.middleware import TelemetryMiddleware
 from attenborough.response_models import Message
 from attenborough.router import ExhibitRouter, Router
+from attenborough.settings import write_example_env
 from attenborough.util import ROOT_LOGGER_NAME
 
 logging.basicConfig(level=logging.DEBUG if settings.DEBUG else logging.INFO)
@@ -69,9 +70,11 @@ async def _ensure_current_schema() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    # The two tracked files a server start rewrites: the API spec and the settings template.
     openapi_json_path = Path(__file__).parent.parent / "openapi.json"
     _ = openapi_json_path.write_text(json.dumps(app.openapi()))
     logger.info("Wrote %s", openapi_json_path)
+    write_example_env()
 
     await ops.db_conn_pool.open()
     try:

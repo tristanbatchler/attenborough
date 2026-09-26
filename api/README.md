@@ -7,7 +7,7 @@ FastAPI on Python 3.14, async psycopg against PostgreSQL, and sqlc-generated que
 ## Running locally
 
 1. `mise install` (repo root; installs the pinned Python and uv), then `uv sync`
-2. Create `.env`. Starting the server with no `.env` present creates one from the same template as `.example.env`, then exits. Fill in the required values, and set `DEBUG = True` for development: it turns on DEBUG-level logging (INFO otherwise) and every router's `/test` debug route. Any setting can also come from an environment variable, which takes precedence over `.env`.
+2. Create `.env`. Starting the server (or any script) with no `.env` present creates one from the same template as `.example.env`, then exits. Fill in the required values, and set `DEBUG = True` for development: it turns on DEBUG-level logging (INFO otherwise) and every router's `/test` debug route. Any setting can also come from an environment variable, which takes precedence over `.env`.
 3. Make sure the PostgreSQL database named in `DB_DATABASE` exists, e.g. `createdb attenborough`. It can be empty; the app never creates the database itself.
 4. Start the server from a terminal:
 
@@ -17,7 +17,12 @@ FastAPI on Python 3.14, async psycopg against PostgreSQL, and sqlc-generated que
 
    The first time, the app sees that the database has no schema and asks whether to create it (see [Database](#database)); answer `y`. The VS Code launch configuration does the same. Plain `uvicorn` and `fastapi dev` bind to `127.0.0.1`; **`fastapi run` binds to `0.0.0.0`** (see [Deployment](#deployment)).
 
-Every startup writes `src/openapi.json` and `.example.env`. Both are deterministic and tracked, so a diff in either means the API or the settings changed.
+### Settings, and the files the app writes
+
+Settings are the fields of `Settings` in `src/attenborough/settings.py`, read from `.env`, with environment variables taking precedence. `get_settings()` loads and validates them once. The first import of the `attenborough` package calls it, so a bad or missing required value stops the app, a test or a script immediately.
+
+- **Loading settings only reads.** The one exception is when `.env` doesn't exist: `get_settings()` creates it from the template and exits, so you get a file to fill in rather than a validation error for every required field.
+- **Each server start rewrites two tracked files,** in the lifespan in `src/attenborough/main.py`: `src/openapi.json` (the API spec, which generates the web client) and `.example.env` (the settings template, from `write_example_env()`). Both are deterministic, so a diff in either means the API or the settings changed; commit it with that change. Importing the app, running tests and running scripts write neither.
 
 ## Database
 

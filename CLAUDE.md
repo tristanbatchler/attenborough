@@ -53,7 +53,7 @@ Layout: `api/` (FastAPI backend, see `api/README.md`), `web/` (SvelteKit exhibit
 - Do not hand-edit generated API clients or other build outputs. Identify and modify their source or generation step.
 - Generated code is excluded from every checker that allows it: ruff and basedpyright (`api/pyproject.toml`), ESLint and Prettier (`web/`). Keep any new generated file excluded too. svelte-check can't exclude imported files, which is why `exactOptionalPropertyTypes` stays off.
 - Before regenerating files, inspect the command and expected output scope. Review the resulting diff for unrelated churn (`git diff -w` for sqlc output).
-- Startup rewrites two tracked files, `api/src/openapi.json` and `api/.example.env`. Both are deterministic, so any diff means the API or the settings changed: commit it with the change that caused it.
+- A server start (the lifespan in `main.py`) rewrites two tracked files, `api/src/openapi.json` and `api/.example.env` (`settings.write_example_env`). Both are deterministic, so any diff means the API or the settings changed: commit it with the change that caused it. Importing the app, tests and scripts write neither; loading settings only creates `api/.env` if it's missing, then exits. See `api/README.md`, "Settings, and the files the app writes".
 
 ## Testing and troubleshooting tools
 

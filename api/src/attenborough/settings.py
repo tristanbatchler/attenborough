@@ -13,6 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 app_directory = Path(__file__).parent.parent.parent
 settings_path = app_directory / ".env"
+example_settings_path = app_directory / ".example.env"
 
 _ADMIN_EMAILS_VALIDATION_ALIAS = "ADMIN_EMAILS"
 # PostgreSQL `int` (int4): queries.sql casts LIMIT and OFFSET with `::int`.
@@ -20,10 +21,6 @@ _POSTGRES_INT_MAX = 2**31 - 1
 
 
 class _Settings(BaseSettings):
-    def __new__(cls) -> Self:
-        cls.write_example()
-        return super().__new__(cls)
-
     @field_validator(_ADMIN_EMAILS_VALIDATION_ALIAS, mode="before")
     @classmethod
     def normalize_admin_emails(cls, v: object) -> set[str]:
@@ -87,31 +84,40 @@ class _Settings(BaseSettings):
         env_ignore_empty=True,
     )
 
-    @staticmethod
-    def write_example() -> None:
-        # Write the settings example file based on Settings defaults
-        example_lines: list[str] = []
-        for field_name, field_info in _Settings.model_fields.items():
-            default = cast(object, field_info.default)
-            if default is not PydanticUndefined:
-                line = f"# {field_name} = {default} # Optional"
-            else:
-                line = f"{field_name} = "
-            example_lines.append(line)
 
-        example_text = "\n".join(example_lines)
-        example_settings_path = app_directory / ".example.env"
-        _ = example_settings_path.write_text(example_text)
+def _example_env() -> str:
+    """The settings template: required fields blank, optional ones commented out with their default."""
+    example_lines: list[str] = []
+    for field_name, field_info in _Settings.model_fields.items():
+        default = cast(object, field_info.default)
+        if default is not PydanticUndefined:
+            line = f"# {field_name} = {default} # Optional"
+        else:
+            line = f"{field_name} = "
+        example_lines.append(line)
+    return "\n".join(example_lines)
 
-        # If the settings file doesn't exist, copy the example on there too
-        if not settings_path.is_file():
-            _ = settings_path.write_text(example_text)
-            logging.fatal(
-                f"Settings file {settings_path} not present so I have created it for you - please fill out the required fields"
-            )
-            sys.exit(1)
+
+def write_example_env() -> None:
+    """Rewrite the tracked .example.env from the fields above.
+
+    Called once per server start, in main.py's lifespan (next to openapi.json), so a changed field
+    shows up as a diff. Nothing else writes it: importing the app, tests and scripts don't.
+    """
+    _ = example_settings_path.write_text(_example_env())
 
 
 @lru_cache
 def get_settings() -> _Settings:
+    """The settings, loaded and validated once.
+
+    Without a .env, first creates one from the template and exits, so the user gets a file to fill
+    in rather than a validation error for every required field.
+    """
+    if not settings_path.is_file():
+        _ = settings_path.write_text(_example_env())
+        logging.fatal(
+            f"Settings file {settings_path} not present so I have created it for you - please fill out the required fields"
+        )
+        sys.exit(1)
     return _Settings()
