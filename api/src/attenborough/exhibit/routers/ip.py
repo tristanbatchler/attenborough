@@ -1,5 +1,7 @@
 from collections.abc import Sequence
+from typing import Annotated
 
+from fastapi import Query
 from starlette.status import HTTP_404_NOT_FOUND
 
 from attenborough import settings
@@ -19,8 +21,10 @@ router = ExhibitRouter(prefix="/ip")
 async def get_ip_activity(
     ip_addr: str,
     db_conn: DBConn,
-    page: int = 1,
-    take: int = settings.APP_DEFAULT_PAGE_TAKE,
+    page: Annotated[int, Query(ge=1)] = 1,
+    take: Annotated[
+        int, Query(ge=1, le=settings.APP_MAX_PAGE_TAKE)
+    ] = settings.APP_DEFAULT_PAGE_TAKE,
 ) -> Sequence[queries.ListIpActivityRow]:
     ip_activity = await queries.list_ip_activity(
         db_conn, ip_address=ip_addr, offset=(page - 1) * take, limit=take
