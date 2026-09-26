@@ -8,6 +8,7 @@ from __future__ import annotations
 __all__: collections.abc.Sequence[str] = (
     "GetIpThreatSummaryRow",
     "ListIpActivityRow",
+    "ListRecentActivityRow",
     "QueryResults",
     "create_active_ip_ban",
     "create_credential_stuffing_attempt",
@@ -20,6 +21,7 @@ __all__: collections.abc.Sequence[str] = (
     "get_schema_fingerprint",
     "get_user_by_session_token_hash",
     "list_ip_activity",
+    "list_recent_activity",
     "set_schema_fingerprint",
     "upsert_decoy",
     "upsert_user",
@@ -56,6 +58,17 @@ class ListIpActivityRow(pydantic.BaseModel):
 
     event_at: datetime.datetime
     event_type: str
+    target_id: int
+    target_slug: str
+    details: str
+
+
+class ListRecentActivityRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    event_at: datetime.datetime
+    event_type: str
+    ip_address: str
     target_id: int
     target_slug: str
     details: str
@@ -130,6 +143,8 @@ FROM (
         ('status=' || th.status_code::text || ' | method=' || th.method)::TEXT AS details
     FROM telemetry_hits th
     WHERE th.ip_address = %(p1)s::inet
+      -- Only visitor traffic (the honeypot group), not the exhibit's or system's own requests.
+      AND th.router_group = %(p2)s
 
     UNION ALL
 
@@ -194,6 +209,65 @@ FROM (
     WHERE b.ip_address = %(p1)s::inet
 ) events
 WHERE event_at IS NOT NULL
+ORDER BY event_at DESC
+LIMIT %(p4)s::int
+OFFSET %(p3)s::int
+"""
+
+LIST_RECENT_ACTIVITY: typing.Final[typing.LiteralString] = """-- name: ListRecentActivity :many
+SELECT
+    event_at,
+    event_type,
+    host(ip_address)::TEXT AS ip_address,
+    COALESCE(target_id, 0)::BIGINT AS target_id,
+    COALESCE(target_slug, '')::TEXT AS target_slug,
+    COALESCE(details, '')::TEXT AS details
+FROM (
+    SELECT
+        th.occurred_at AS event_at,
+        ('hit_' || th.router_group)::TEXT AS event_type,
+        th.ip_address,
+        NULL::BIGINT AS target_id,
+        th.path::TEXT AS target_slug,
+        ('status=' || th.status_code::text || ' | method=' || th.method)::TEXT AS details
+    FROM telemetry_hits th
+    WHERE th.router_group = %(p1)s
+
+    UNION ALL
+
+    SELECT
+        csa.attempted_at AS event_at,
+        CASE WHEN csa.was_fake_success THEN 'credential_stuffing_fake_success' ELSE 'credential_stuffing' END::TEXT AS event_type,
+        csa.ip_address,
+        NULL::BIGINT AS target_id,
+        csa.endpoint_path::TEXT AS target_slug,
+        ('username=' || csa.username || ' | password=' || csa.password)::TEXT AS details
+    FROM credential_stuffing_attempts csa
+
+    UNION ALL
+
+    SELECT
+        dv.viewed_at AS event_at,
+        CASE WHEN d.type = 'binary' THEN 'decoy_downloaded' ELSE 'decoy_viewed' END::TEXT AS event_type,
+        dv.ip_address,
+        d.id::BIGINT AS target_id,
+        d.slug::TEXT AS target_slug,
+        NULL::TEXT AS details
+    FROM decoy_views dv
+    INNER JOIN decoys d ON d.id = dv.decoy_id
+
+    UNION ALL
+
+    SELECT
+        dpa.attempted_at AS event_at,
+        CASE WHEN dpa.successful THEN 'decoy_password_success' ELSE 'decoy_password_failure' END::TEXT AS event_type,
+        dpa.ip_address,
+        d.id::BIGINT AS target_id,
+        d.slug::TEXT AS target_slug,
+        NULL::TEXT AS details
+    FROM decoy_password_attempts dpa
+    INNER JOIN decoys d ON d.id = dpa.decoy_id
+) events
 ORDER BY event_at DESC
 LIMIT %(p3)s::int
 OFFSET %(p2)s::int
@@ -311,11 +385,18 @@ async def create_active_ip_ban(conn: ConnectionLike, *, ip_address: str, expires
     return models.IpBan(id_=row[0], ip_address=str(row[1]), added=row[2], expires=row[3], reason=row[4], added_by_user_id=row[5], revoked_at=row[6], revoked_by_user_id=row[7], revocation_reason=row[8])
 
 
-def list_ip_activity(conn: ConnectionLike, *, ip_address: str, offset: int, limit: int) -> QueryResults[ListIpActivityRow]:
+def list_ip_activity(conn: ConnectionLike, *, ip_address: str, router_group: str, offset: int, limit: int) -> QueryResults[ListIpActivityRow]:
     def _decode_hook(row: psycopg.rows.TupleRow) -> ListIpActivityRow:
         return ListIpActivityRow(event_at=row[0], event_type=row[1], target_id=row[2], target_slug=row[3], details=row[4])
 
-    return QueryResults(conn, LIST_IP_ACTIVITY, _decode_hook, {"p1": ip_address, "p2": offset, "p3": limit})
+    return QueryResults(conn, LIST_IP_ACTIVITY, _decode_hook, {"p1": ip_address, "p2": router_group, "p3": offset, "p4": limit})
+
+
+def list_recent_activity(conn: ConnectionLike, *, router_group: str, offset: int, limit: int) -> QueryResults[ListRecentActivityRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> ListRecentActivityRow:
+        return ListRecentActivityRow(event_at=row[0], event_type=row[1], ip_address=row[2], target_id=row[3], target_slug=row[4], details=row[5])
+
+    return QueryResults(conn, LIST_RECENT_ACTIVITY, _decode_hook, {"p1": router_group, "p2": offset, "p3": limit})
 
 
 async def upsert_decoy(conn: ConnectionLike, *, type: enums.DecoyType, slug: str, added_by_ip: str) -> int | None:

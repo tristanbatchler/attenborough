@@ -1,12 +1,14 @@
 from ipaddress import AddressValueError, IPv4Address, IPv6Address
 from typing import Annotated
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Query
 from fastapi.requests import Request
 from psycopg import AsyncConnection
+from pydantic import BaseModel, Field
 from pydantic.networks import IPvAnyAddress
 from starlette.status import HTTP_400_BAD_REQUEST
 
+from attenborough import settings
 from attenborough.db.ops import get_db_conn
 
 
@@ -33,3 +35,19 @@ async def get_request_origin(request: Request) -> IPvAnyAddress:
 
 RequestOrigin = Annotated[IPvAnyAddress, Depends(get_request_origin)]
 DBConn = Annotated[AsyncConnection, Depends(get_db_conn)]
+
+
+class Paging(BaseModel):
+    """The `page` and `take` query parameters shared by the exhibit's listing endpoints."""
+
+    page: int = Field(default=1, ge=1, le=settings.APP_MAX_PAGE)
+    take: int = Field(
+        default=settings.APP_DEFAULT_PAGE_TAKE, ge=1, le=settings.APP_MAX_PAGE_TAKE
+    )
+
+    @property
+    def offset(self) -> int:
+        return (self.page - 1) * self.take
+
+
+PagingQuery = Annotated[Paging, Query()]

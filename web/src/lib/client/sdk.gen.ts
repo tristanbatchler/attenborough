@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { IpGetIpActivityData, IpGetIpActivityErrors, IpGetIpActivityResponses, MetaGetMetaData, MetaGetMetaErrors, MetaGetMetaResponses } from './types.gen';
+import type { FeedListRecentData, FeedListRecentErrors, FeedListRecentResponses, IpGetIpActivityData, IpGetIpActivityErrors, IpGetIpActivityResponses, MetaGetMetaData, MetaGetMetaErrors, MetaGetMetaResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -17,6 +17,13 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
      */
     meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
 };
+
+/**
+ * List Recent
+ *
+ * The latest visitor activity from every IP address, newest first.
+ */
+export const feedListRecent = <ThrowOnError extends boolean = false>(options?: Options<FeedListRecentData, ThrowOnError>): RequestResult<FeedListRecentResponses, FeedListRecentErrors, ThrowOnError> => (options?.client ?? client).get<FeedListRecentResponses, FeedListRecentErrors, ThrowOnError>({ url: '/exhibit/feed', ...options });
 
 /**
  * Get Ip Activity

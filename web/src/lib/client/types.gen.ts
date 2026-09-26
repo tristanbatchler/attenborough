@@ -61,6 +61,36 @@ export type ListIpActivityRow = {
 };
 
 /**
+ * ListRecentActivityRow
+ */
+export type ListRecentActivityRow = {
+    /**
+     * Event At
+     */
+    event_at: string;
+    /**
+     * Event Type
+     */
+    event_type: string;
+    /**
+     * Ip Address
+     */
+    ip_address: string;
+    /**
+     * Target Id
+     */
+    target_id: number;
+    /**
+     * Target Slug
+     */
+    target_slug: string;
+    /**
+     * Details
+     */
+    details: string;
+};
+
+/**
  * Message
  */
 export type Message = {
@@ -97,6 +127,46 @@ export type ValidationError = {
         [key: string]: unknown;
     };
 };
+
+export type FeedListRecentData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Page
+         */
+        page?: number;
+        /**
+         * Take
+         */
+        take?: number;
+    };
+    url: '/exhibit/feed';
+};
+
+export type FeedListRecentErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * Internal Server Error
+     */
+    500: Message;
+};
+
+export type FeedListRecentError = FeedListRecentErrors[keyof FeedListRecentErrors];
+
+export type FeedListRecentResponses = {
+    /**
+     * Response Feed.List Recent
+     *
+     * Successful Response
+     */
+    200: Array<ListRecentActivityRow>;
+};
+
+export type FeedListRecentResponse = FeedListRecentResponses[keyof FeedListRecentResponses];
 
 export type IpGetIpActivityData = {
     body?: never;

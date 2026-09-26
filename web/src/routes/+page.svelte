@@ -1,5 +1,12 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import ActivityTable from '$lib/components/ActivityTable.svelte';
+	import Pagination from '$lib/components/Pagination.svelte';
+	import type { PageProps } from './$types';
+
+	let { data }: PageProps = $props();
+
+	const pageHref = (page: number) => resolve(`/?page=${String(page)}`);
 </script>
 
 <svelte:head>
@@ -26,4 +33,17 @@
 		</label>
 		<button type="submit">View activity</button>
 	</form>
+</section>
+
+<section>
+	<h2>Latest activity</h2>
+	<p>The most recent attempts from every address, newest first. Times are in UTC.</p>
+	{#if data.rows.length === 0}
+		<p>
+			{data.page === 1 ? 'Nothing has been recorded yet.' : 'There is no older activity.'}
+		</p>
+	{:else}
+		<ActivityTable rows={data.rows} />
+	{/if}
+	<Pagination page={data.page} hasNextPage={data.hasNextPage} href={pageHref} />
 </section>

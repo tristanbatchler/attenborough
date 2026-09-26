@@ -61,6 +61,8 @@ FROM (
         ('status=' || th.status_code::text || ' | method=' || th.method)::TEXT AS details
     FROM telemetry_hits th
     WHERE th.ip_address = sqlc.arg(ip_address)::inet
+      -- Only visitor traffic (the honeypot group), not the exhibit's or system's own requests.
+      AND th.router_group = sqlc.arg(router_group)
 
     UNION ALL
 
@@ -125,6 +127,67 @@ FROM (
     WHERE b.ip_address = sqlc.arg(ip_address)::inet
 ) events
 WHERE event_at IS NOT NULL
+ORDER BY event_at DESC
+LIMIT sqlc.arg('limit')::int
+OFFSET sqlc.arg('offset')::int;
+
+-- name: ListRecentActivity :many
+-- The latest visitor activity from every IP address, newest first: honeypot requests,
+-- credential attempts, and decoy views and password attempts. Bans are the project's own
+-- actions, not a visitor's, so they are not listed here.
+SELECT
+    event_at,
+    event_type,
+    host(ip_address)::TEXT AS ip_address,
+    COALESCE(target_id, 0)::BIGINT AS target_id,
+    COALESCE(target_slug, '')::TEXT AS target_slug,
+    COALESCE(details, '')::TEXT AS details
+FROM (
+    SELECT
+        th.occurred_at AS event_at,
+        ('hit_' || th.router_group)::TEXT AS event_type,
+        th.ip_address,
+        NULL::BIGINT AS target_id,
+        th.path::TEXT AS target_slug,
+        ('status=' || th.status_code::text || ' | method=' || th.method)::TEXT AS details
+    FROM telemetry_hits th
+    WHERE th.router_group = sqlc.arg(router_group)
+
+    UNION ALL
+
+    SELECT
+        csa.attempted_at AS event_at,
+        CASE WHEN csa.was_fake_success THEN 'credential_stuffing_fake_success' ELSE 'credential_stuffing' END::TEXT AS event_type,
+        csa.ip_address,
+        NULL::BIGINT AS target_id,
+        csa.endpoint_path::TEXT AS target_slug,
+        ('username=' || csa.username || ' | password=' || csa.password)::TEXT AS details
+    FROM credential_stuffing_attempts csa
+
+    UNION ALL
+
+    SELECT
+        dv.viewed_at AS event_at,
+        CASE WHEN d.type = 'binary' THEN 'decoy_downloaded' ELSE 'decoy_viewed' END::TEXT AS event_type,
+        dv.ip_address,
+        d.id::BIGINT AS target_id,
+        d.slug::TEXT AS target_slug,
+        NULL::TEXT AS details
+    FROM decoy_views dv
+    INNER JOIN decoys d ON d.id = dv.decoy_id
+
+    UNION ALL
+
+    SELECT
+        dpa.attempted_at AS event_at,
+        CASE WHEN dpa.successful THEN 'decoy_password_success' ELSE 'decoy_password_failure' END::TEXT AS event_type,
+        dpa.ip_address,
+        d.id::BIGINT AS target_id,
+        d.slug::TEXT AS target_slug,
+        NULL::TEXT AS details
+    FROM decoy_password_attempts dpa
+    INNER JOIN decoys d ON d.id = dpa.decoy_id
+) events
 ORDER BY event_at DESC
 LIMIT sqlc.arg('limit')::int
 OFFSET sqlc.arg('offset')::int;

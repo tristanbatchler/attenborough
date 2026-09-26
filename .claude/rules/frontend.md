@@ -14,6 +14,7 @@ paths:
 - Sass: `quietDeps: true` (in `vite.config.ts`) silences deprecation warnings from third-party stylesheets such as Pico only; warnings about our own SCSS still show and must be fixed.
 - Preserve the distinction between public exhibit data and authenticated/admin data.
 - Captured request data (IPs, paths, credentials, user agents, headers) is shown in full, as text only: plain `{…}` expressions, never `{@html}`.
+- Reuse the shared pieces rather than re-creating them: `paging(url, api)` from `$lib/server/paging` for `?page=` (validated against `/exhibit/meta`), and `ActivityTable` and `Pagination` from `$lib/components`. `Pagination`'s `href` returns `ResolvedPathname`, so callers must pass `resolve()`d links. Typing a prop or return value as `ResolvedPathname` is how to satisfy `svelte/no-navigation-without-resolve` in shared components; never disable the rule.
 - Handle loading, empty, error and pagination states for exhibit timelines and summaries. Times are UTC and labelled as such (`$lib/format.ts`).
 - Avoid adding dependencies or a new state-management or design system for a small change. When adding one, pin exact versions where the project's docs ask for it (hey-api does).
 - Code style, as for the API: no magic or repeated strings (module-level `const`s such as `PAGE_SIZE`, or a small helper such as `pageHref`, instead of repeating a literal or an expression); no pointless type annotations where inference already gives the type; explicit types at boundaries (props via `PageProps`/`LayoutProps`, load functions via `./$types`).

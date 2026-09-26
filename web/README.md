@@ -41,15 +41,16 @@ Settings the frontend needs from the API, such as the page size (`APP_DEFAULT_PA
 
 ## Structure
 
-| Path                  | What                                                                                                                         |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `src/app.scss`        | The design system: Pico (classless, semantic containers) plus Attenborough's variables. Style elements, not utility classes. |
-| `src/routes/`         | Pages. `+page.server.ts` loads data on the server; `+page.svelte` renders it.                                                |
-| `src/lib/client/`     | **Generated** API client. Don't edit.                                                                                        |
-| `src/lib/server/`     | Server-only code, never bundled for the browser, e.g. the API's address.                                                     |
-| `src/hooks.server.ts` | `init`: refuses to start without `API_BASE_URL`.                                                                             |
-| `static/`             | Served from the site root as-is: favicons and `site.webmanifest` (linked in `src/app.html`), `robots.txt`.                   |
-| `vite.config.ts`      | Vite, and the SvelteKit config (adapter, compiler options). There's no `svelte.config.js`.                                   |
+| Path                  | What                                                                                                                                           |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/app.scss`        | The design system: Pico (classless, semantic containers) plus Attenborough's variables. Style elements, not utility classes.                   |
+| `src/routes/`         | Pages. `+page.server.ts` loads data on the server; `+page.svelte` renders it.                                                                  |
+| `src/lib/client/`     | **Generated** API client. Don't edit.                                                                                                          |
+| `src/lib/server/`     | Server-only code, never bundled for the browser: `api.ts` (the API's address, `unwrap`), `paging.ts` (`?page=` within the API's limits).       |
+| `src/lib/components/` | Shared page parts: `ActivityTable` (with an address column when rows carry one) and `Pagination` (its `href` must return a `resolve()`d path). |
+| `src/hooks.server.ts` | `init`: refuses to start without `API_BASE_URL`.                                                                                               |
+| `static/`             | Served from the site root as-is: favicons and `site.webmanifest` (linked in `src/app.html`), `robots.txt`.                                     |
+| `vite.config.ts`      | Vite, and the SvelteKit config (adapter, compiler options). There's no `svelte.config.js`.                                                     |
 
 Captured data (IPs, paths, credentials, headers) is shown in full, but always as text. Svelte escapes `{…}` expressions, so never use `{@html}` on it.
 

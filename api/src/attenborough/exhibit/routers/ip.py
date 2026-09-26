@@ -1,15 +1,13 @@
 from collections.abc import Sequence
-from typing import Annotated
 
-from fastapi import Query
 from pydantic import IPvAnyAddress
 from starlette.status import HTTP_404_NOT_FOUND
 
-from attenborough import settings
 from attenborough.db import queries
-from attenborough.dependencies import DBConn
+from attenborough.dependencies import DBConn, PagingQuery
 from attenborough.response_models import Message
 from attenborough.router import ExhibitRouter
+from attenborough.router.group import RouterGroup
 
 router = ExhibitRouter(prefix="/ip")
 
@@ -20,14 +18,12 @@ router = ExhibitRouter(prefix="/ip")
     responses=Message.for_statuses([HTTP_404_NOT_FOUND]),
 )
 async def get_ip_activity(
-    ip_addr: IPvAnyAddress,
-    db_conn: DBConn,
-    page: Annotated[int, Query(ge=1, le=settings.APP_MAX_PAGE)] = 1,
-    take: Annotated[
-        int, Query(ge=1, le=settings.APP_MAX_PAGE_TAKE)
-    ] = settings.APP_DEFAULT_PAGE_TAKE,
+    ip_addr: IPvAnyAddress, db_conn: DBConn, paging: PagingQuery
 ) -> Sequence[queries.ListIpActivityRow]:
-    ip_activity = await queries.list_ip_activity(
-        db_conn, ip_address=str(ip_addr), offset=(page - 1) * take, limit=take
+    return await queries.list_ip_activity(
+        db_conn,
+        ip_address=str(ip_addr),
+        router_group=RouterGroup.HONEYPOT,
+        offset=paging.offset,
+        limit=paging.take,
     )
-    return ip_activity
