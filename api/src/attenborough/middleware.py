@@ -15,7 +15,10 @@ from attenborough.db.ops import get_db_context
 from attenborough.dependencies import get_request_origin
 from attenborough.router.group import RouterGroup
 
-logger = logging.getLogger("attenborough.middleware")
+logger = logging.getLogger(__name__)
+
+# The request header recorded as each hit's user agent.
+USER_AGENT_HEADER = "user-agent"
 
 
 class _AsgiType(StrEnum):
@@ -61,7 +64,7 @@ async def _record_telemetry_hit(
                 method=request.method,
                 path=request.url.path,
                 router_group=router_group.value,
-                user_agent=request.headers.get("user-agent"),
+                user_agent=request.headers.get(USER_AGENT_HEADER),
                 headers=json.dumps(dict(request.headers)),
                 status_code=status_code,
             )

@@ -1,9 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { metaGetMeta } from '$lib/client';
+import { FIRST_PAGE, PAGE_PARAM } from '$lib/params';
 import { type ApiOptions, unwrap } from '$lib/server/api';
-
-const PAGE_PARAM = 'page';
-const FIRST_PAGE = 1;
 
 export interface Paging {
 	page: number;

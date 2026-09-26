@@ -10,9 +10,9 @@ from starlette.responses import JSONResponse
 
 from attenborough.dependencies import RequestOrigin
 from attenborough.router.group import RouterGroup
-from attenborough.util import ROOT_LOGGER_NAME, inherit_signature
+from attenborough.util import ROOT_LOGGER_NAME, inherit_signature, url_path_segments
 
-logger = getLogger(name="attenborough.router.abstract")
+logger = getLogger(__name__)
 
 _NAMESPACE_SEPARATOR = "."
 
@@ -28,9 +28,7 @@ class Router(APIRouter, ABC):
         super().__init__(*args, **kwargs)
 
         # This router's prefix as a dotted namespace, e.g. "/admin" -> "admin", "" -> "".
-        self._namespace: str = (
-            str(self.prefix).strip("/").replace("/", _NAMESPACE_SEPARATOR)
-        )
+        self._namespace: str = _dotted(*url_path_segments(self.prefix))
         self.logger: Logger = getLogger(name=_dotted(ROOT_LOGGER_NAME, self._namespace))
 
         self._endpoint_registry: dict[Callable[..., object], str] = {}

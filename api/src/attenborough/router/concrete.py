@@ -2,6 +2,7 @@ from typing import override
 
 from attenborough.router.abstract import Router
 from attenborough.router.group import RouterGroup
+from attenborough.util import relative_url_path
 
 
 class ExhibitRouter(Router):
@@ -26,4 +27,4 @@ class HoneypotRouter(Router):
 
     def decoy_slug(self, path: str) -> str:
         """A decoy's stable identity in the database: its full URL path without the leading slash."""
-        return f"{self.prefix}{path}".removeprefix("/")
+        return relative_url_path(f"{self.prefix}{path}")

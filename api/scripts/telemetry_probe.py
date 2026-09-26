@@ -35,6 +35,7 @@ from psycopg import AsyncConnection
 from psycopg.rows import class_row
 
 from attenborough.db import ops
+from attenborough.middleware import USER_AGENT_HEADER
 from attenborough.router.group import RouterGroup
 from attenborough.settings import get_settings
 
@@ -290,7 +291,7 @@ async def send_all(base_url: str, run: str, burst: int) -> list[Sent]:
         base_url=base_url,
         follow_redirects=False,
         timeout=30,
-        headers={"user-agent": PROBE_USER_AGENT_PREFIX + run},
+        headers={USER_AGENT_HEADER: PROBE_USER_AGENT_PREFIX + run},
     ) as client:
 
         async def send(case: Case) -> Sent:

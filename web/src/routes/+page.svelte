@@ -2,11 +2,12 @@
 	import { resolve } from '$app/paths';
 	import ActivityTable from '$lib/components/ActivityTable.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
+	import { PAGE_PARAM } from '$lib/params';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
-	const pageHref = (page: number) => resolve(`/?page=${String(page)}`);
+	const pageHref = (page: number) => resolve(`/?${PAGE_PARAM}=${String(page)}`);
 </script>
 
 <svelte:head>
