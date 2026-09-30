@@ -1,6 +1,8 @@
 # Attenborough API
 
-The backend of Attenborough, a public honeypot. It serves decoy resources to scanners and bots, records every request, and publishes what it observed on the public **exhibit** (`/exhibit/...`).
+The backend of Attenborough, a public honeypot. The decoy app (`../decoy`) serves the fake sites and reports every visit and login attempt here (`/ingest/...`); the API records them, decides every outcome, and publishes what it observed on the public **exhibit** (`/exhibit/...`). Requests to any other path of the API itself are recorded too, as honeypot 404s.
+
+The code is small and flat: `main.py` composes the app (middleware, routers, startup), `exhibit.py` and `ingest.py` are the two routers, `telemetry.py` records every request (`record_hit`, `TelemetryMiddleware`), `dependencies.py` has the client address and database dependencies, and `db/` the schema, queries and connection pool.
 
 FastAPI on Python 3.14, async psycopg against PostgreSQL, and sqlc-generated query code. Commands below run from this `api/` directory, except the `mise` tasks, which run from the repo root.
 
@@ -93,7 +95,7 @@ Generated sqlc code is excluded from ruff and basedpyright (`pyproject.toml`). I
 
 ### Client IP attribution (security-critical)
 
-Every record the honeypot keeps is attributed to a client IP: telemetry, credential attempts, decoy views. The exhibit publishes that attribution. If a client could choose its own IP, it could hide itself or frame someone else in public.
+Every record the honeypot keeps is attributed to a client IP: telemetry and credential attempts. The exhibit publishes that attribution. If a client could choose its own IP, it could hide itself or frame someone else in public.
 
 **How the app decides the client IP.** The app installs uvicorn's `ProxyHeadersMiddleware` itself (in `main.py`), so the same rule applies however the server is started:
 
@@ -145,10 +147,10 @@ The proxy is only a boundary if clients can't get around it:
 From a machine outside your network, send forged headers:
 
 ```sh
-curl -s -o /dev/null -H 'X-Forwarded-For: 203.0.113.99' -H 'X-Real-IP: 203.0.113.98' https://<host>/admin/dashboard
+curl -s -o /dev/null -H 'X-Forwarded-For: 203.0.113.99' -H 'X-Real-IP: 203.0.113.98' https://<host>/wp-login.php
 curl -s https://<host>/exhibit/ip/203.0.113.99/activity   # must be []
 curl -s https://<host>/exhibit/ip/203.0.113.98/activity   # must be []
-curl -s https://<host>/exhibit/ip/<your public IP>/activity   # must show the /admin/dashboard hit
+curl -s https://<host>/exhibit/ip/<your public IP>/activity   # must show the /wp-login.php hit
 ```
 
 If either forged address shows the hit, attribution can be spoofed; fix the proxy setup before going public.
@@ -163,5 +165,5 @@ If either forged address shows the hit, attribution can be spoofed; fix the prox
 
 ### Known gaps
 
-- **`/ingest/...` has no authentication.** Only the decoy app (`../decoy`) should call it, and the plan is for the API to be reachable only by it and the exhibit's server. Until the decoys have moved there and the API stops being public, anyone who can reach the API can post reports. The IP rule still holds, so such reports are attributed to the sender's own address, like any other request they send.
+- **`/ingest/...` has no authentication.** Only the decoy app (`../decoy`) should call it, and the plan is for the API to be reachable only by it and the exhibit's server. Until the API stops being reachable publicly, anyone who can reach it can post reports. The IP rule still holds, so such reports are attributed to the sender's own address, like any other request they send.
 - There are no migrations: any schema change resets the database and loses its data. Fine for v1; revisit before data must be kept.

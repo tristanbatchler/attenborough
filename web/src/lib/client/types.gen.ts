@@ -5,26 +5,6 @@ export type ClientOptions = {
 };
 
 /**
- * ExhibitMeta
- *
- * What exhibit clients need to know about the API, such as its page sizes.
- */
-export type ExhibitMeta = {
-    /**
-     * Default Page Take
-     */
-    default_page_take: number;
-    /**
-     * Max Page Take
-     */
-    max_page_take: number;
-    /**
-     * Max Page
-     */
-    max_page: number;
-};
-
-/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -91,13 +71,31 @@ export type ListRecentActivityRow = {
 };
 
 /**
- * Message
+ * Page[ListIpActivityRow]
  */
-export type Message = {
+export type PageListIpActivityRow = {
     /**
-     * Detail
+     * Items
      */
-    detail: string;
+    items: Array<ListIpActivityRow>;
+    /**
+     * Has Next
+     */
+    has_next: boolean;
+};
+
+/**
+ * Page[ListRecentActivityRow]
+ */
+export type PageListRecentActivityRow = {
+    /**
+     * Items
+     */
+    items: Array<ListRecentActivityRow>;
+    /**
+     * Has Next
+     */
+    has_next: boolean;
 };
 
 /**
@@ -128,7 +126,7 @@ export type ValidationError = {
     };
 };
 
-export type FeedListRecentData = {
+export type ListRecentActivityData = {
     body?: never;
     path?: never;
     query?: {
@@ -144,31 +142,25 @@ export type FeedListRecentData = {
     url: '/exhibit/feed';
 };
 
-export type FeedListRecentErrors = {
+export type ListRecentActivityErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
-    /**
-     * Internal Server Error
-     */
-    500: Message;
 };
 
-export type FeedListRecentError = FeedListRecentErrors[keyof FeedListRecentErrors];
+export type ListRecentActivityError = ListRecentActivityErrors[keyof ListRecentActivityErrors];
 
-export type FeedListRecentResponses = {
+export type ListRecentActivityResponses = {
     /**
-     * Response Feed.List Recent
-     *
      * Successful Response
      */
-    200: Array<ListRecentActivityRow>;
+    200: PageListRecentActivityRow;
 };
 
-export type FeedListRecentResponse = FeedListRecentResponses[keyof FeedListRecentResponses];
+export type ListRecentActivityResponse = ListRecentActivityResponses[keyof ListRecentActivityResponses];
 
-export type IpGetIpActivityData = {
+export type GetIpActivityData = {
     body?: never;
     path: {
         /**
@@ -189,55 +181,20 @@ export type IpGetIpActivityData = {
     url: '/exhibit/ip/{ip_addr}/activity';
 };
 
-export type IpGetIpActivityErrors = {
-    /**
-     * Not Found
-     */
-    404: Message;
+export type GetIpActivityErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
-    /**
-     * Internal Server Error
-     */
-    500: Message;
 };
 
-export type IpGetIpActivityError = IpGetIpActivityErrors[keyof IpGetIpActivityErrors];
+export type GetIpActivityError = GetIpActivityErrors[keyof GetIpActivityErrors];
 
-export type IpGetIpActivityResponses = {
-    /**
-     * Response Ip.Get Ip Activity
-     *
-     * Successful Response
-     */
-    200: Array<ListIpActivityRow>;
-};
-
-export type IpGetIpActivityResponse = IpGetIpActivityResponses[keyof IpGetIpActivityResponses];
-
-export type MetaGetMetaData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/exhibit/meta';
-};
-
-export type MetaGetMetaErrors = {
-    /**
-     * Internal Server Error
-     */
-    500: Message;
-};
-
-export type MetaGetMetaError = MetaGetMetaErrors[keyof MetaGetMetaErrors];
-
-export type MetaGetMetaResponses = {
+export type GetIpActivityResponses = {
     /**
      * Successful Response
      */
-    200: ExhibitMeta;
+    200: PageListIpActivityRow;
 };
 
-export type MetaGetMetaResponse = MetaGetMetaResponses[keyof MetaGetMetaResponses];
+export type GetIpActivityResponse = GetIpActivityResponses[keyof GetIpActivityResponses];

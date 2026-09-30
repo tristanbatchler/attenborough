@@ -14,15 +14,15 @@ import argparse
 import asyncio
 import sys
 
-from attenborough.db import ops
+from attenborough.db.ops import db_conn_pool
 from attenborough.db.schema import reset_schema, schema_status
 
 CONFIRM_OPTION = "--yes"
 
 
 async def reset() -> None:
-    # The app's own pool and connection helper, opened just for this command.
-    async with ops.db_conn_pool, ops.get_db_context() as conn:
+    # The app's own pool, opened just for this command.
+    async with db_conn_pool, db_conn_pool.connection() as conn:
         before = await schema_status(conn)
         await reset_schema(conn)
         after = await schema_status(conn)

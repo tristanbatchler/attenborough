@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { FeedListRecentData, FeedListRecentErrors, FeedListRecentResponses, IpGetIpActivityData, IpGetIpActivityErrors, IpGetIpActivityResponses, MetaGetMetaData, MetaGetMetaErrors, MetaGetMetaResponses } from './types.gen';
+import type { GetIpActivityData, GetIpActivityErrors, GetIpActivityResponses, ListRecentActivityData, ListRecentActivityErrors, ListRecentActivityResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -19,18 +19,15 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 };
 
 /**
- * List Recent
+ * List Recent Activity
  *
  * The latest visitor activity from every IP address, newest first.
  */
-export const feedListRecent = <ThrowOnError extends boolean = false>(options?: Options<FeedListRecentData, ThrowOnError>): RequestResult<FeedListRecentResponses, FeedListRecentErrors, ThrowOnError> => (options?.client ?? client).get<FeedListRecentResponses, FeedListRecentErrors, ThrowOnError>({ url: '/exhibit/feed', ...options });
+export const listRecentActivity = <ThrowOnError extends boolean = false>(options?: Options<ListRecentActivityData, ThrowOnError>): RequestResult<ListRecentActivityResponses, ListRecentActivityErrors, ThrowOnError> => (options?.client ?? client).get<ListRecentActivityResponses, ListRecentActivityErrors, ThrowOnError>({ url: '/exhibit/feed', ...options });
 
 /**
  * Get Ip Activity
+ *
+ * Everything one IP address did, newest first.
  */
-export const ipGetIpActivity = <ThrowOnError extends boolean = false>(options: Options<IpGetIpActivityData, ThrowOnError>): RequestResult<IpGetIpActivityResponses, IpGetIpActivityErrors, ThrowOnError> => (options.client ?? client).get<IpGetIpActivityResponses, IpGetIpActivityErrors, ThrowOnError>({ url: '/exhibit/ip/{ip_addr}/activity', ...options });
-
-/**
- * Get Meta
- */
-export const metaGetMeta = <ThrowOnError extends boolean = false>(options?: Options<MetaGetMetaData, ThrowOnError>): RequestResult<MetaGetMetaResponses, MetaGetMetaErrors, ThrowOnError> => (options?.client ?? client).get<MetaGetMetaResponses, MetaGetMetaErrors, ThrowOnError>({ url: '/exhibit/meta', ...options });
+export const getIpActivity = <ThrowOnError extends boolean = false>(options: Options<GetIpActivityData, ThrowOnError>): RequestResult<GetIpActivityResponses, GetIpActivityErrors, ThrowOnError> => (options.client ?? client).get<GetIpActivityResponses, GetIpActivityErrors, ThrowOnError>({ url: '/exhibit/ip/{ip_addr}/activity', ...options });

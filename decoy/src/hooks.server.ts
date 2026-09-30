@@ -1,6 +1,6 @@
 import type { Handle, RequestEvent, ServerInit } from '@sveltejs/kit';
 import { constants } from 'node:http2';
-import { hitsRecordDecoyHit } from '$lib/client';
+import { reportHit } from '$lib/client';
 import { apiBaseUrl, apiOptions } from '$lib/server/api';
 import { nginxError } from '$lib/server/nginx';
 import { captureVisit, type Visit } from '$lib/server/visit';
@@ -22,8 +22,8 @@ export const init: ServerInit = () => {
  * Report one served request to the API, which records it as a honeypot hit. A failure is logged
  * and never changes the visitor's response.
  */
-async function reportHit(event: RequestEvent, visit: Visit, status: number): Promise<void> {
-	const result = await hitsRecordDecoyHit({
+async function reportVisit(event: RequestEvent, visit: Visit, status: number): Promise<void> {
+	const result = await reportHit({
 		...apiOptions(event),
 		body: {
 			...visit,
@@ -45,6 +45,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const response = visit.path.endsWith(SVELTEKIT_DATA_SUFFIX)
 		? nginxError(constants.HTTP_STATUS_NOT_FOUND)
 		: await resolve(event);
-	await reportHit(event, visit, response.status);
+	await reportVisit(event, visit, response.status);
 	return response;
 };

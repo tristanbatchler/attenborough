@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { HitsRecordDecoyHitData, HitsRecordDecoyHitErrors, HitsRecordDecoyHitResponses, LoginsAttemptLoginData, LoginsAttemptLoginErrors, LoginsAttemptLoginResponses } from './types.gen';
+import type { ReportHitData, ReportHitErrors, ReportHitResponses, ReportLoginData, ReportLoginErrors, ReportLoginResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -19,14 +19,13 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 };
 
 /**
- * Record Decoy Hit
+ * Report Hit
  *
- * Record a request the decoy app served. The visitor is `origin`: the decoy app names them in
- * X-Forwarded-For, which only counts because its address is in FORWARDED_ALLOW_IPS.
+ * Record a request the decoy app served, as a honeypot hit.
  *
  * Written after this response, so the decoy app waits only for the round trip, not the database.
  */
-export const hitsRecordDecoyHit = <ThrowOnError extends boolean = false>(options: Options<HitsRecordDecoyHitData, ThrowOnError>): RequestResult<HitsRecordDecoyHitResponses, HitsRecordDecoyHitErrors, ThrowOnError> => (options.client ?? client).post<HitsRecordDecoyHitResponses, HitsRecordDecoyHitErrors, ThrowOnError>({
+export const reportHit = <ThrowOnError extends boolean = false>(options: Options<ReportHitData, ThrowOnError>): RequestResult<ReportHitResponses, ReportHitErrors, ThrowOnError> => (options.client ?? client).post<ReportHitResponses, ReportHitErrors, ThrowOnError>({
     url: '/ingest/hits',
     ...options,
     headers: {
@@ -36,11 +35,11 @@ export const hitsRecordDecoyHit = <ThrowOnError extends boolean = false>(options
 });
 
 /**
- * Attempt Login
+ * Report Login
  *
  * Record submitted credentials and decide the outcome the decoy app shows.
  */
-export const loginsAttemptLogin = <ThrowOnError extends boolean = false>(options: Options<LoginsAttemptLoginData, ThrowOnError>): RequestResult<LoginsAttemptLoginResponses, LoginsAttemptLoginErrors, ThrowOnError> => (options.client ?? client).post<LoginsAttemptLoginResponses, LoginsAttemptLoginErrors, ThrowOnError>({
+export const reportLogin = <ThrowOnError extends boolean = false>(options: Options<ReportLoginData, ThrowOnError>): RequestResult<ReportLoginResponses, ReportLoginErrors, ThrowOnError> => (options.client ?? client).post<ReportLoginResponses, ReportLoginErrors, ThrowOnError>({
     url: '/ingest/logins',
     ...options,
     headers: {

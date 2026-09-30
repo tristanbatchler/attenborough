@@ -11,7 +11,7 @@ Every call from `web/` to the API goes through the SDK that `@hey-api/openapi-ts
 
 ```ts
 const api = apiOptions(fetch); // $lib/server/api: the API's address, plus SvelteKit's fetch
-const rows = unwrap(await ipGetIpActivity({ ...api, path: { ip_addr }, query: { take } }));
+const activity = unwrap(await getIpActivity({ ...api, path: { ip_addr }, query: { page } }));
 ```
 
 Passing SvelteKit's `fetch` into `apiOptions(fetch)` is correct: it hands the client the function to call, and doesn't make a request itself.
@@ -22,7 +22,7 @@ It is an ESLint rule (`no-restricted-syntax` in `web/eslint.config.js`, the `API
 
 - a call to `fetch(...)`, `globalThis.fetch(...)` or `event.fetch(...)`
 - `new XMLHttpRequest`, `EventSource`, `WebSocket` or `Request`
-- an API path written out as a string or template literal: `'/exhibit/meta'`, `` `/exhibit/ip/${ip}/activity` ``
+- an API path written out as a string or template literal: `'/exhibit/feed'`, `` `/exhibit/ip/${ip}/activity` ``
 - importing the client's internals (`$lib/client/client…`, `$lib/client/core…`), e.g. for `client.get({ url })` or `createClient`
 
 Never disable or narrow the rule, or add `eslint-disable`, to get code through. If there's a genuine non-API need for `fetch` (e.g. a third-party service), stop and ask the user.
@@ -35,7 +35,7 @@ Lint only sees JavaScript syntax. Check changed code by eye for:
 - **API paths hidden in markup or other strings:** `<form action="/exhibit/…">`, a URL built with `new URL(…)`, `API_BASE_URL` concatenated with a path. Only `$lib/server/api.ts` may read `API_BASE_URL`.
 - **Calls from the browser.** The API is called only from server `load` functions, never from `+page.ts`, `+page.svelte` or components.
 - **Hand-rolled error handling.** Every result goes through `unwrap` from `$lib/server/api`, not through checks on `response.status` in each page.
-- **Duplicated API settings.** Values such as the page size come from `metaGetMeta` (`GET /exhibit/meta`), not from constants in `web/`.
+- **Duplicated API settings.** Page sizes and limits belong to the API (listings return `{ items, has_next }`), not to constants in `web/`.
 
 A quick sweep for the markup and URL cases (from the repo root):
 
@@ -44,13 +44,13 @@ grep -rnE "/exhibit|API_BASE_URL|new URL\(" web/src --include=*.ts --include=*.s
   | grep -vE "^web/src/lib/(client/|server/api\.ts)"
 ```
 
-Anything it prints needs judging: a mention in a comment is fine (`paging.ts` names `/exhibit/meta` in its doc comment), a URL is not.
+Anything it prints needs judging: a mention in a comment is fine, a URL is not.
 
 ## 3. If the client is missing what you need
 
 Don't work around it. Change the API instead, and regenerate:
 
-1. Add or change the route or model in `api/`. If a generated function name reads badly, fix the operation ID in the API (`main.py:_operation_id`, `Router` route names).
+1. Add or change the route or model in `api/`. If a generated function name reads badly, rename the route function in the API (operation IDs are function names, `main.py:_operation_id`).
 2. Restart the API (it rewrites `api/src/openapi.json`), then `mise run web-gen-types`.
 3. The client only includes `/exhibit/…` operations (`web/openapi-ts.config.ts`); the `DEBUG`-only `/test` routes aren't in the spec at all. A route outside `/exhibit` isn't meant for the frontend.
 4. Commit the regenerated `web/src/lib/client/` together with the API change.

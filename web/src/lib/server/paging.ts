@@ -1,26 +1,18 @@
 import { error } from '@sveltejs/kit';
 import { constants } from 'node:http2';
-import { metaGetMeta } from '$lib/client';
 import { FIRST_PAGE, PAGE_PARAM } from '$lib/params';
-import { type ApiOptions, unwrap } from '$lib/server/api';
-
-export interface Paging {
-	page: number;
-	take: number;
-}
 
 /**
- * The requested page (`?page=`, default 1) and the page size, both within the API's own limits
- * (`/exhibit/meta`): paging settings belong to the API, not to constants here.
+ * The requested page (`?page=`, default 1). Only its form is checked here; the API owns the page
+ * limits and rejects a page past them (422, which `unwrap` turns into a 400).
  */
-export async function paging(url: URL, api: ApiOptions): Promise<Paging> {
-	const meta = unwrap(await metaGetMeta(api));
+export function requestedPage(url: URL): number {
 	const page = Number(url.searchParams.get(PAGE_PARAM) ?? FIRST_PAGE);
-	if (!Number.isInteger(page) || page < FIRST_PAGE || page > meta.max_page) {
+	if (!Number.isInteger(page) || page < FIRST_PAGE) {
 		error(
 			constants.HTTP_STATUS_BAD_REQUEST,
-			`Page must be a whole number from ${String(FIRST_PAGE)} to ${String(meta.max_page)}.`
+			`Page must be a whole number from ${String(FIRST_PAGE)}.`
 		);
 	}
-	return { page, take: meta.default_page_take };
+	return page;
 }

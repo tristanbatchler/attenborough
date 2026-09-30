@@ -1,6 +1,6 @@
 import { redirect, type Cookies, type RequestEvent } from '@sveltejs/kit';
 import { constants } from 'node:http2';
-import { loginsAttemptLogin } from '$lib/client';
+import { reportLogin } from '$lib/client';
 import { apiOptions } from '$lib/server/api';
 import { CONTENT_TYPE_HEADER } from '$lib/server/headers';
 import { htmlPage } from '$lib/server/html';
@@ -54,7 +54,7 @@ function field(form: FormData | null, name: string): string {
 
 /** Record the attempt; the API decides whether it succeeds. */
 async function attemptLogin(event: RequestEvent, username: string, password: string) {
-	const result = await loginsAttemptLogin({
+	const result = await reportLogin({
 		...apiOptions(event),
 		body: { path: event.url.pathname, username, password }
 	});

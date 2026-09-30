@@ -17,8 +17,8 @@ Subcommands:
 
 Every probe request carries `User-Agent: attenborough-probe/<run>` and a unique `x-probe: <run>-<n>-<label>`
 header, so rows map one-to-one onto requests and test data can be identified later. `verify` writes real
-rows (telemetry, credential attempts, decoy events) to the configured database; the inspection commands
-only read.
+rows to the configured database (telemetry, and through the decoy app credential attempts); the
+inspection commands only read.
 """
 
 import argparse
@@ -38,28 +38,24 @@ import httpx
 from psycopg import AsyncConnection
 from psycopg.rows import class_row
 
-from attenborough.db import ops
-from attenborough.router.group import RouterGroup
+from attenborough.db.ops import db_conn_pool
 from attenborough.settings import get_settings
-from attenborough.telemetry import USER_AGENT_HEADER
+from attenborough.telemetry import USER_AGENT_HEADER, RouterGroup
 
 PROBE_USER_AGENT_PREFIX = "attenborough-probe/"
 PROBE_HEADER = "x-probe"
 PROBE_CREDENTIAL = "probe"
-CREDENTIALS = {"username": PROBE_CREDENTIAL, "password": PROBE_CREDENTIAL}
 DEFAULT_API_URL = "http://127.0.0.1:8765"
 DEFAULT_DECOY_URL = "http://127.0.0.1:8766"
 DEFAULT_BURST = 100
 RUN_OPTION = "--run"
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
-AUTH_LOGIN_PATH = "/auth/login"
-PROTECTED_SECRET_PATH = "/protected/secret"
-NESTED_EXHIBIT_PATH = "/exhibit/feed?take=1"
-ADMIN_DASHBOARD_PATH = "/admin/dashboard"
+EXHIBIT_FEED_PATH = "/exhibit/feed?take=1"
+OPENAPI_PATH = "/openapi.json"
 NOT_FOUND_PATH = "/this/does/not/exist"
 BURST_NOT_FOUND_PATH = "/burst/not/found"
 WP_LOGIN_PATH = "/wp-login.php"
-# WordPress's login form fields, as its login page (the API's and the decoy app's) expects them.
+# WordPress's login form fields, as the decoy app's login page expects them.
 WP_LOGIN_FORM = {"log": PROBE_CREDENTIAL, "pwd": PROBE_CREDENTIAL}
 INDEX_PATH = "/index.php"
 CONTENT_TYPE_HEADER = "Content-Type"
@@ -104,87 +100,53 @@ class Case:
 
 
 def request_matrix() -> list[Case]:
-    """One case per outcome the telemetry must record identically: OK, redirect, returned and raised
-    errors, framework errors (404/405/422), and framework routes. There is no unhandled-exception
-    case, because nothing in the API deliberately crashes."""
+    """One case per outcome the telemetry must record identically: OK, framework errors
+    (404/405/422), framework routes, and IP attribution. There is no unhandled-exception case,
+    because nothing in the API deliberately crashes. The API's own honeypot traffic is anything
+    that matches no route; its /ingest reports are never recorded, so they have no case here."""
     return [
-        Case("root", HTTPMethod.GET, "/", RouterGroup.SYSTEM),
-        Case("html", HTTPMethod.GET, ADMIN_DASHBOARD_PATH, RouterGroup.HONEYPOT),
-        Case("router-test", HTTPMethod.GET, "/admin/test", RouterGroup.HONEYPOT),
-        Case(
-            "nested-exhibit", HTTPMethod.GET, NESTED_EXHIBIT_PATH, RouterGroup.EXHIBIT
-        ),
+        Case("exhibit-feed", HTTPMethod.GET, EXHIBIT_FEED_PATH, RouterGroup.EXHIBIT),
         Case(
             "exhibit-ip",
             HTTPMethod.GET,
             "/exhibit/ip/127.0.0.1/activity?take=1",
             RouterGroup.EXHIBIT,
         ),
-        Case("gitconfig", HTTPMethod.GET, "/.git/config", RouterGroup.HONEYPOT),
-        Case("wp-get", HTTPMethod.GET, WP_LOGIN_PATH, RouterGroup.HONEYPOT),
-        Case("zip-decoy", HTTPMethod.GET, "/backup/db.zip", RouterGroup.HONEYPOT),
-        Case(
-            "401-returned", HTTPMethod.GET, PROTECTED_SECRET_PATH, RouterGroup.HONEYPOT
-        ),
-        Case(
-            "401-returned-post",
-            HTTPMethod.POST,
-            "/protected/secret/unlock",
-            RouterGroup.HONEYPOT,
-            json="wrong",
-        ),
-        Case(
-            "wp-post",
-            HTTPMethod.POST,
-            f"{WP_LOGIN_PATH}?log={PROBE_CREDENTIAL}&pwd={PROBE_CREDENTIAL}",
-            RouterGroup.HONEYPOT,
-        ),
-        # Randomised decoys: repeated so both the success (303) and raised-error branches are hit.
-        Case(
-            "auth-login",
-            HTTPMethod.POST,
-            AUTH_LOGIN_PATH,
-            RouterGroup.HONEYPOT,
-            json=CREDENTIALS,
-            repeat=10,
-        ),
-        Case(
-            "admin-login",
-            HTTPMethod.POST,
-            "/admin/login",
-            RouterGroup.HONEYPOT,
-            json=CREDENTIALS,
-            repeat=10,
-        ),
+        Case("root", HTTPMethod.GET, "/", RouterGroup.HONEYPOT),
         Case("404", HTTPMethod.GET, NOT_FOUND_PATH, RouterGroup.HONEYPOT),
-        Case("405", HTTPMethod.DELETE, ADMIN_DASHBOARD_PATH, RouterGroup.HONEYPOT),
-        Case("422", HTTPMethod.POST, AUTH_LOGIN_PATH, RouterGroup.HONEYPOT, json={}),
+        # The API doesn't capture bodies of the requests it serves: recorded as NULL.
+        Case(
+            "404-post",
+            HTTPMethod.POST,
+            NOT_FOUND_PATH,
+            RouterGroup.HONEYPOT,
+            form=WP_LOGIN_FORM,
+        ),
+        Case("405", HTTPMethod.DELETE, EXHIBIT_FEED_PATH, RouterGroup.EXHIBIT),
         # IP attribution: a client-set header must never choose the recorded origin.
         Case(
             "forged-x-real-ip",
             HTTPMethod.GET,
-            ADMIN_DASHBOARD_PATH,
+            NOT_FOUND_PATH,
             RouterGroup.HONEYPOT,
             headers={REAL_IP_HEADER: FORGED_IP},
         ),
         Case(
             "forwarded-chain",
             HTTPMethod.GET,
-            ADMIN_DASHBOARD_PATH,
+            NOT_FOUND_PATH,
             RouterGroup.HONEYPOT,
             forwarded_client=FORWARDED_CLIENT_IP,
         ),
         Case("docs", HTTPMethod.GET, "/docs", RouterGroup.SYSTEM),
-        Case("openapi", HTTPMethod.GET, "/openapi.json", RouterGroup.SYSTEM),
-        # Rejected input (FastAPI validation, 422). Nothing in the API deliberately crashes, so
-        # the unhandled-exception path (recorded as 500) currently has no case here.
+        Case("openapi", HTTPMethod.GET, OPENAPI_PATH, RouterGroup.SYSTEM),
+        # Rejected input (FastAPI validation, 422).
         Case(
             "invalid-ip",
             HTTPMethod.GET,
             "/exhibit/ip/not-an-ip/activity",
             RouterGroup.EXHIBIT,
         ),
-        Case("exhibit-meta", HTTPMethod.GET, "/exhibit/meta", RouterGroup.EXHIBIT),
         # Past APP_MAX_PAGE: rejected (422). This page once overflowed the query's OFFSET (500).
         Case(
             "page-too-large",
@@ -297,10 +259,9 @@ DECOY_BURST_CASES = [
 
 
 BURST_CASES = [
-    Case("burst-ok", HTTPMethod.GET, ADMIN_DASHBOARD_PATH, RouterGroup.HONEYPOT),
+    Case("burst-feed", HTTPMethod.GET, EXHIBIT_FEED_PATH, RouterGroup.EXHIBIT),
     Case("burst-404", HTTPMethod.GET, BURST_NOT_FOUND_PATH, RouterGroup.HONEYPOT),
-    Case("burst-401", HTTPMethod.GET, PROTECTED_SECRET_PATH, RouterGroup.HONEYPOT),
-    Case("burst-nested", HTTPMethod.GET, NESTED_EXHIBIT_PATH, RouterGroup.EXHIBIT),
+    Case("burst-openapi", HTTPMethod.GET, OPENAPI_PATH, RouterGroup.SYSTEM),
 ]
 
 
@@ -355,7 +316,7 @@ class ProbeRunCount:
 async def read_only_connection() -> AsyncGenerator[AsyncConnection]:
     """A connection from the app's pool whose session can only read: this tool inspects, and the
     server under test does all the writing. Needs the pool open (see `run`)."""
-    async with ops.get_db_context() as conn:
+    async with db_conn_pool.connection() as conn:
         _ = await conn.execute("SET default_transaction_read_only = on")
         yield conn
 
@@ -609,7 +570,7 @@ class Args(argparse.Namespace):
 
 async def run(args: Args) -> int:
     # The app's pool, opened for this command only; every connection below is borrowed from it.
-    async with ops.db_conn_pool:
+    async with db_conn_pool:
         match Command(args.command):
             case Command.SUMMARY:
                 return await summary()

@@ -81,16 +81,6 @@ export type LoginOutcome = {
 };
 
 /**
- * Message
- */
-export type Message = {
-    /**
-     * Detail
-     */
-    detail: string;
-};
-
-/**
  * ValidationError
  */
 export type ValidationError = {
@@ -118,60 +108,52 @@ export type ValidationError = {
     };
 };
 
-export type HitsRecordDecoyHitData = {
+export type ReportHitData = {
     body: DecoyHit;
     path?: never;
     query?: never;
     url: '/ingest/hits';
 };
 
-export type HitsRecordDecoyHitErrors = {
+export type ReportHitErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
-    /**
-     * Internal Server Error
-     */
-    500: Message;
 };
 
-export type HitsRecordDecoyHitError = HitsRecordDecoyHitErrors[keyof HitsRecordDecoyHitErrors];
+export type ReportHitError = ReportHitErrors[keyof ReportHitErrors];
 
-export type HitsRecordDecoyHitResponses = {
+export type ReportHitResponses = {
     /**
      * Successful Response
      */
     204: void;
 };
 
-export type HitsRecordDecoyHitResponse = HitsRecordDecoyHitResponses[keyof HitsRecordDecoyHitResponses];
+export type ReportHitResponse = ReportHitResponses[keyof ReportHitResponses];
 
-export type LoginsAttemptLoginData = {
+export type ReportLoginData = {
     body: LoginAttempt;
     path?: never;
     query?: never;
     url: '/ingest/logins';
 };
 
-export type LoginsAttemptLoginErrors = {
+export type ReportLoginErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
-    /**
-     * Internal Server Error
-     */
-    500: Message;
 };
 
-export type LoginsAttemptLoginError = LoginsAttemptLoginErrors[keyof LoginsAttemptLoginErrors];
+export type ReportLoginError = ReportLoginErrors[keyof ReportLoginErrors];
 
-export type LoginsAttemptLoginResponses = {
+export type ReportLoginResponses = {
     /**
      * Successful Response
      */
     200: LoginOutcome;
 };
 
-export type LoginsAttemptLoginResponse = LoginsAttemptLoginResponses[keyof LoginsAttemptLoginResponses];
+export type ReportLoginResponse = ReportLoginResponses[keyof ReportLoginResponses];

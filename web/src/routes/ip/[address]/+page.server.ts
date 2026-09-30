@@ -1,21 +1,17 @@
-import { ipGetIpActivity } from '$lib/client';
+import { getIpActivity } from '$lib/client';
 import { apiOptions, unwrap } from '$lib/server/api';
-import { paging } from '$lib/server/paging';
+import { requestedPage } from '$lib/server/paging';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, url, fetch }) => {
-	const api = apiOptions(fetch);
-	const { page, take } = await paging(url, api);
-	const rows = unwrap(
-		await ipGetIpActivity({ ...api, path: { ip_addr: params.address }, query: { page, take } }),
-		'That is not a valid IP address.'
+	const page = requestedPage(url);
+	const activity = unwrap(
+		await getIpActivity({
+			...apiOptions(fetch),
+			path: { ip_addr: params.address },
+			query: { page }
+		}),
+		'That is not a valid IP address, or that page does not exist.'
 	);
-
-	return {
-		address: params.address,
-		page,
-		rows,
-		// A full page means there may be more; the API has no total count yet.
-		hasNextPage: rows.length === take
-	};
+	return { address: params.address, page, activity };
 };

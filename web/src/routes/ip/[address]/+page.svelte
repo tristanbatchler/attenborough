@@ -20,14 +20,14 @@
 	<p>Everything this address did, most recent first. Times are in UTC.</p>
 </hgroup>
 
-{#if data.rows.length === 0}
+{#if data.activity.items.length === 0}
 	<p>
 		{data.page === FIRST_PAGE
 			? 'No activity has been recorded from this address.'
 			: 'There is no more activity for this address.'}
 	</p>
 {:else}
-	<ActivityTable rows={data.rows} />
+	<ActivityTable rows={data.activity.items} />
 {/if}
 
-<Pagination page={data.page} hasNextPage={data.hasNextPage} href={pageHref} />
+<Pagination page={data.page} hasNextPage={data.activity.has_next} href={pageHref} />

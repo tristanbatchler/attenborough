@@ -40,7 +40,7 @@ The scanner cannot see strings hidden inside other strings, such as a header nam
 - it is human-facing text used once: log messages, exception details, decoy HTML, help text.
 - it is an idiom that tools exempt too: `""`, `"__main__"`.
 - TypeScript already checks its spelling and it is an independent choice: option values typed as literal unions, such as `dateStyle: 'medium'` and `timeStyle: 'medium'` in `$lib/format.ts`.
-- it is a test, or a probe acting as an external client, that deliberately restates the expected value or URL independently of the implementation (`assert response.json() == {"content": "Hello, world!"}`). Repeats *within* that test code still get constants.
+- it is a test, or a probe acting as an external client, that deliberately restates the expected value or URL independently of the implementation (`(HTTPMethod.GET, "/docs", HTTPStatus.OK, RouterGroup.SYSTEM)`). Repeats *within* that test code still get constants.
 - it is a coincidence: equal values with unrelated meanings (`"/"` as a route and as a separator in `.replace("/", ".")`). Do not merge unrelated meanings into one constant.
 - it is in generated code. Change the SQL source instead (`.claude/rules/database.md`).
 

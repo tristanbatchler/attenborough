@@ -9,11 +9,6 @@ import { env } from '$env/dynamic/private';
 // Server-only ($lib/server): the API's address is private configuration, and SvelteKit refuses
 // to bundle this module for the browser.
 
-export interface ApiOptions {
-	baseUrl: string;
-	fetch: typeof fetch;
-}
-
 /** The API's address. Throws if unset; `init` in hooks.server.ts calls this at startup. */
 export function apiBaseUrl(): string {
 	const baseUrl = env.API_BASE_URL;
@@ -27,7 +22,7 @@ export function apiBaseUrl(): string {
 }
 
 /** Options to spread into any generated SDK call made from a server `load` function. */
-export function apiOptions(fetch: typeof globalThis.fetch): ApiOptions {
+export function apiOptions(fetch: typeof globalThis.fetch) {
 	return { baseUrl: apiBaseUrl(), fetch };
 }
 

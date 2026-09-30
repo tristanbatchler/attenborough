@@ -1,5 +1,4 @@
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
 
 from psycopg import AsyncConnection
 from psycopg.conninfo import make_conninfo
@@ -7,15 +6,18 @@ from psycopg_pool import AsyncConnectionPool
 
 from attenborough import settings
 
-db_conn_info = make_conninfo(
-    host=settings.DB_HOST,
-    port=settings.DB_PORT,
-    user=settings.DB_USERNAME,
-    password=settings.DB_PASSWORD,
-    dbname=settings.DB_DATABASE,
-)
+# The one source of database connections. Every connection is in autocommit mode: each query
+# commits on its own, and `async with conn.transaction():` groups queries where that matters.
+# Code outside a request (startup, middleware, scripts) borrows with `db_conn_pool.connection()`.
 db_conn_pool = AsyncConnectionPool(
-    db_conn_info,
+    make_conninfo(
+        host=settings.DB_HOST,
+        port=settings.DB_PORT,
+        user=settings.DB_USERNAME,
+        password=settings.DB_PASSWORD,
+        dbname=settings.DB_DATABASE,
+    ),
+    kwargs={"autocommit": True},
     open=False,
     min_size=settings.DB_MIN_POOL_SIZE,
     max_size=settings.DB_MAX_POOL_SIZE,
@@ -28,14 +30,6 @@ db_conn_pool = AsyncConnectionPool(
 
 
 async def get_db_conn() -> AsyncGenerator[AsyncConnection]:
+    """The request handlers' connection (the `DBConn` dependency)."""
     async with db_conn_pool.connection() as conn:
-        # Autocommit queries to run outside the usual `async with db_conn.transaction(): ...` block. This can be useful if
-        # you are planning on throwing an exception later and don't want your query to roll back, e.g. in stashes password
-        # attempt logging.
-        await conn.set_autocommit(True)
         yield conn
-
-
-def get_db_context():
-    """This helps in the case that dependency injection is not available, e.g. in a middleware"""
-    return asynccontextmanager(get_db_conn)()

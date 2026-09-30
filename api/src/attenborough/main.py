@@ -1,34 +1,30 @@
 import asyncio
 import json
 import logging
-from collections.abc import AsyncGenerator, Iterable
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
-from starlette.responses import JSONResponse
-from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from attenborough import settings
-from attenborough.db import ops
+from attenborough import exhibit, ingest, settings
+from attenborough.db.ops import db_conn_pool
 from attenborough.db.schema import SchemaStatus, reset_schema, schema_status
-from attenborough.exhibit.routers import exported_routers as exhibit_routers
-from attenborough.honeypot.routers import exported_routers as honeypot_routers
-from attenborough.ingest.routers import exported_routers as ingest_routers
-from attenborough.middleware import TelemetryMiddleware
-from attenborough.response_models import Message
-from attenborough.router import ExhibitRouter, IngestRouter, Router
+from attenborough.dependencies import RequestOrigin
 from attenborough.settings import write_example_env
-from attenborough.util import ROOT_LOGGER_NAME
+from attenborough.telemetry import TelemetryMiddleware
 
 logging.basicConfig(level=logging.DEBUG if settings.DEBUG else logging.INFO)
 
-logger = logging.getLogger(name=ROOT_LOGGER_NAME)
+logger = logging.getLogger(__name__)
 
 _TERMINAL = Path("/dev/tty")
 _YES_ANSWERS = frozenset({"y", "yes"})
+# The API spec, written at every start; the web and decoy clients are generated from it.
+_OPENAPI_JSON = Path(__file__).parent.parent / "openapi.json"
 
 
 def _confirm_on_terminal(question: str) -> bool:
@@ -50,7 +46,7 @@ def _confirm_on_terminal(question: str) -> bool:
 
 async def _ensure_current_schema() -> None:
     """Refuse to serve from a database that doesn't match schema.sql, unless the user resets it."""
-    async with ops.get_db_context() as conn:
+    async with db_conn_pool.connection() as conn:
         match await schema_status(conn):
             case SchemaStatus.CURRENT:
                 return
@@ -72,53 +68,43 @@ async def _ensure_current_schema() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # The two tracked files a server start rewrites: the API spec and the settings template.
-    openapi_json_path = Path(__file__).parent.parent / "openapi.json"
-    _ = openapi_json_path.write_text(json.dumps(app.openapi()))
-    logger.info("Wrote %s", openapi_json_path)
+    _ = _OPENAPI_JSON.write_text(json.dumps(app.openapi()))
+    logger.info("Wrote %s", _OPENAPI_JSON)
     write_example_env()
 
-    await ops.db_conn_pool.open()
-    try:
+    async with db_conn_pool:
         # Before serving anything: the database must match schema.sql (api/README.md, "Database").
         await _ensure_current_schema()
         yield
-    finally:
-        await ops.db_conn_pool.close()
 
 
 def _operation_id(route: APIRoute) -> str:
-    """The route's namespaced name (e.g. "ip.get_ip_activity"), already unique and stable.
+    """The route's function name (e.g. "get_ip_activity"), which must be unique across the API.
 
-    It names the frontend's generated client functions (web/, hey-api), so FastAPI's default,
-    which appends the path and method, would make them unreadable.
+    It names the generated clients' functions (getIpActivity), so FastAPI's default, which
+    appends the path and method, would make them unreadable.
     """
     return route.name
 
 
-app = FastAPI(
-    responses=Message.for_statuses([HTTP_500_INTERNAL_SERVER_ERROR]),
-    lifespan=lifespan,
-    generate_unique_id_function=_operation_id,
-)
+app = FastAPI(lifespan=lifespan, generate_unique_id_function=_operation_id)
 
 app.add_middleware(TelemetryMiddleware)
 # Added last so it runs first: telemetry and every handler see the real client address. Installing it
 # here, not via uvicorn flags, applies the trust setting however the app is started.
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.FORWARDED_ALLOW_IPS)
 
+app.include_router(exhibit.router)
+app.include_router(ingest.router)
 
-def include_routers(parent: FastAPI | Router, routers: Iterable[Router]):
-    for router in routers:
-        parent.include_router(router)
+# Development only. Left out of the OpenAPI spec so that openapi.json (tracked, and rewritten at
+# startup) doesn't depend on the setting.
+if settings.DEBUG:
 
-
-exhibit_router = ExhibitRouter(prefix="/exhibit")
-include_routers(exhibit_router, exhibit_routers)
-ingest_router = IngestRouter(prefix="/ingest")
-include_routers(ingest_router, ingest_routers)
-include_routers(app, honeypot_routers + [exhibit_router, ingest_router])
-
-
-@app.get("/")
-async def root():
-    return JSONResponse(content={"content": "Hello, world!"})
+    @app.get("/test", include_in_schema=False)
+    async def test(request_origin: RequestOrigin) -> dict[str, str]:
+        """The server's view of the request: whom it attributes the request to, and when."""
+        return {
+            "server_time": datetime.now(tz=UTC).isoformat(),
+            "request_origin": str(request_origin),
+        }

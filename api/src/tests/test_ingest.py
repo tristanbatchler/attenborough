@@ -4,7 +4,7 @@ from collections.abc import Callable
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from attenborough.ingest.models import DecoyHit, LoginAttempt
+from attenborough.ingest import DecoyHit, LoginAttempt
 
 # The parametrized argument: a function building one report.
 REPORT = "report"

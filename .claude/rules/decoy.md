@@ -5,7 +5,7 @@ paths:
 
 # Decoy app (decoy/)
 
-- A SvelteKit app, separate from the exhibit, that serves the fake sites visitors see. Read `decoy/README.md` first. The general frontend conventions in `.claude/rules/frontend.md` apply here too (TypeScript strictness, the generated client, checks, no magic strings or numbers), except the exhibit-specific ones (Pico, paging, `/exhibit/meta`).
+- A SvelteKit app, separate from the exhibit, that serves the fake sites visitors see. Read `decoy/README.md` first. The general frontend conventions in `.claude/rules/frontend.md` apply here too (TypeScript strictness, the generated client, checks, no magic strings or numbers), except the exhibit-specific ones (Pico, paging).
 - It only presents. Every request is reported once by the `handle` hook (`/ingest/hits`); submitted credentials go to an `/ingest/...` endpoint, which records them and decides the outcome. Never decide an outcome, or write anything, in the decoy app. A new kind of submission needs a new ingest endpoint in `api/src/attenborough/ingest/`, then `mise run decoy-gen-types`.
 - API calls spread in `apiOptions(event)` (`$lib/server/api`), which names the visitor in `X-Forwarded-For`. Never forward the visitor's own headers to the API, and never pass SvelteKit's `event.fetch` (it would send the visitor's cookies).
 - A report must never change the visitor's response: failures are logged, and the page is served as usual.
