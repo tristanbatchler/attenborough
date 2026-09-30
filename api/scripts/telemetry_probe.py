@@ -408,7 +408,7 @@ async def summary() -> int:
     print(f"\nProbe runs (test data, {PROBE_USER_AGENT_PREFIX}*):")
     for r in probe_runs:
         print(
-            f"  {r.user_agent:40} {r.hits:5} rows  from {r.first_seen:%Y-%m-%d %H:%M:%S%z}"
+            f"  {r.user_agent!r:42} {r.hits:5} rows  from {r.first_seen:%Y-%m-%d %H:%M:%S%z}"
         )
     return 0
 
@@ -418,7 +418,7 @@ async def rows(run: str, since: datetime) -> int:
         found = await fetch_run_rows(conn, run, since)
     for r in found:
         print(
-            f"{r.id:6} {r.probe or '-':36} {r.ip:15} {r.method:6} {r.status_code}",
+            f"{r.id:6} {r.probe or '-'!r:38} {r.ip:15} {r.method!r:8} {r.status_code}",
             f"{r.router_group:9} {r.path[:60]!r}",
         )
     print(f"({len(found)} rows)")

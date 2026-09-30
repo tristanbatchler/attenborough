@@ -44,7 +44,7 @@ async def post_login(
 
     success = random.random() < 0.1
     router.logger.info(
-        "Auth login attempt %s from %s (success=%s)", username, origin, success
+        "Auth login attempt %r from %s (success=%s)", username, origin, success
     )
 
     async with db_conn.transaction():

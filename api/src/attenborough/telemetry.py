@@ -53,4 +53,4 @@ async def record_hit(
                 status_code=status_code,
             )
     except PsycopgError:
-        logger.exception("Failed to record telemetry for %s %r", method, path)
+        logger.exception("Failed to record telemetry for %r %r", method, path)
