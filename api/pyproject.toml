@@ -9,13 +9,8 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "fastapi[standard]>=0.141.1",
-    "httpx>=0.28.1",
     "psycopg[binary,pool]>=3.3.5",
-    "pytest>=9.1.1",
 ]
-
-[project.scripts]
-api = "attenborough:main"
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
@@ -24,6 +19,8 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "basedpyright>=1.39.10",
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
     "ruff>=0.16.4",
     "sqlc-bin>=1.31.1.post1",
 ]
@@ -47,6 +44,10 @@ ignore = [
 ]
 typeCheckingMode = "all"
 
+
+[tool.pytest.ini_options]
+# A warning is a failure, as in the other checkers (e.g. FastAPI's "Duplicate Operation ID").
+filterwarnings = ["error"]
 
 [tool.fastapi]
 entrypoint = "attenborough.main:app"
