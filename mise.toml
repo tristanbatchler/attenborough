@@ -80,6 +80,13 @@ description = "List magic-string candidates to judge (see the magic-strings skil
 dir = "web"
 run = "node scripts/find-magic-strings.ts"
 
+# The autofixer reads each file alone, without types: it flags Pagination's links "without
+# resolve()", which ESLint accepts because `href` returns a ResolvedPathname. Judge, don't obey.
+[tasks.web-svelte-autofixer]
+description = "Svelte's own best-practice suggestions for every component (e.g. $effect that should be $derived); not a gate"
+dir = "web"
+run = "find src -name '*.svelte' -o -name '*.svelte.ts' | sort | while read -r f; do echo \"== $f\"; npx -y @sveltejs/mcp@0.1.26 svelte-autofixer \"$f\"; done"
+
 [tasks.web-gen-types]
 description = "Regenerate the API client from api/src/openapi.json"
 dir = "web"
@@ -113,6 +120,11 @@ run = "npm run build"
 description = "List magic-string candidates to judge (web/'s scanner); not a gate"
 dir = "decoy"
 run = "node ../web/scripts/find-magic-strings.ts src"
+
+[tasks.decoy-svelte-autofixer]
+description = "Svelte's own best-practice suggestions for every component (e.g. $effect that should be $derived); not a gate"
+dir = "decoy"
+run = "find src -name '*.svelte' -o -name '*.svelte.ts' | sort | while read -r f; do echo \"== $f\"; npx -y @sveltejs/mcp@0.1.26 svelte-autofixer \"$f\"; done"
 
 [tasks.decoy-gen-types]
 description = "Regenerate the API client from api/src/openapi.json"

@@ -62,6 +62,7 @@ Layout: `api/` (FastAPI backend, see `api/README.md`), `web/` (SvelteKit exhibit
 - `api/scripts/telemetry_probe.py`: inspect `telemetry_hits` read-only (`summary`, `rows`), and verify end to end that every request to a running server is recorded exactly once with the right status, group and IP (`verify`, with `--target decoy` for the decoy app). Use the `telemetry-testing` skill for the full procedure: starting and stopping the server safely, handling test data in the real LAN database, and interpreting failures.
 - `api/scripts/reset_db.py --yes`: reset the database to `schema.sql` (deletes all data; approved for v1).
 - `api/scripts/find_magic_strings.py` (`mise run api-magic-strings`) and `web/scripts/find-magic-strings.ts` (`mise run web-magic-strings`, and `decoy-magic-strings` for `decoy/`): magic-string candidates, judged with the `magic-strings` skill.
+- `mise run web-svelte-autofixer` / `decoy-svelte-autofixer`: Svelte's own best-practice checker (`@sveltejs/mcp`) on every component, e.g. an `$effect` that should be a `$derived`, which svelte-check misses. Run it after changing `.svelte` files and judge each suggestion; it isn't part of `check`, because it always exits 0 and reads files without types.
 - Put reusable tooling in the repo (`api/scripts/`, typed and checked like the app), and procedures in `.claude/skills/`. Never leave them only in a session scratchpad.
 
 ## Completion
