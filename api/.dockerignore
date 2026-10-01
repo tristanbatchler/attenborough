@@ -1,0 +1,9 @@
+# An allowlist: only what the image needs reaches the build, so .env and other local files never can.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!src/attenborough
+!scripts/migrate.py
+!scripts/exhibit_latency.py
+**/__pycache__

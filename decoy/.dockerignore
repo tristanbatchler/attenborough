@@ -1,0 +1,8 @@
+# An allowlist: only what the build needs, so .env and local builds never reach it.
+*
+!package.json
+!package-lock.json
+!vite.config.ts
+!tsconfig.json
+!src
+!static

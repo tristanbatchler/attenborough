@@ -1,0 +1,2 @@
+# Deployment settings (see .env.example): passwords, and the honeypot's own names and address.
+.env

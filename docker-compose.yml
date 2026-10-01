@@ -1,0 +1,134 @@
+# Attenborough in production: the API, the exhibit's server (web) and the decoy, on one host with
+# nginx and PostgreSQL. Settings come from .env beside this file (see .env.example), and
+# deploy/README.md has the whole procedure.
+#
+# The decoy faces the internet, so nothing here can reach anything it doesn't need:
+#   - No ports are published. nginx on the host reaches the decoy and web through unix sockets in
+#     /run/attenborough (deploy/tmpfiles.conf), which only nginx's group can enter.
+#   - The decoy and web each share one internal network with the API, and nothing else. The
+#     networks are `internal` with gateway mode `isolated`: no route out, and no address on the
+#     host either, so a container can't reach the internet, the LAN, the host's own services or
+#     the other containers. The decoy can't reach web, and neither can reach PostgreSQL.
+#   - The API reaches PostgreSQL through its unix socket, mounted read-only, and has no other way
+#     out. It connects as the app role, which can read and write rows but never change the schema.
+#   - Every container runs as an unprivileged uid with a read-only filesystem, no capabilities,
+#     no privilege escalation, and limits on memory, CPU and processes.
+
+x-hardened: &hardened
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 256
+  cpus: 1
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "5"
+
+# The API's database connection, through PostgreSQL's socket directory on the host.
+x-database: &database
+  DB_HOST: /var/run/postgresql
+  DB_DATABASE: ${DB_DATABASE:?set DB_DATABASE in .env}
+
+x-postgres-socket: &postgres-socket
+  type: bind
+  source: /var/run/postgresql
+  target: /var/run/postgresql
+  read_only: true
+
+services:
+  api:
+    <<: *hardened
+    build: ./api
+    mem_limit: 512m
+    environment:
+      <<: *database
+      DB_USERNAME: ${DB_APP_USERNAME:?set DB_APP_USERNAME in .env}
+      DB_PASSWORD: ${DB_APP_PASSWORD:?set DB_APP_PASSWORD in .env}
+      HONEYPOT_ADDRESSES: ${HONEYPOT_ADDRESSES:?set HONEYPOT_ADDRESSES in .env}
+      # Only the decoy may name a visitor in X-Forwarded-For: its fixed address below. Never `*`,
+      # never a range: web shares no network with the decoy, but must not be trusted either.
+      FORWARDED_ALLOW_IPS: 10.89.1.10
+    volumes:
+      - *postgres-socket
+    networks:
+      decoy:
+      web:
+
+  decoy:
+    <<: *hardened
+    build: ./decoy
+    mem_limit: 256m
+    depends_on: [api]
+    environment:
+      API_BASE_URL: http://api:8000
+      SOCKET_PATH: /run/decoy/decoy.sock
+      # nginx overwrites X-Forwarded-For with the visitor's address (deploy/nginx/).
+      ADDRESS_HEADER: x-forwarded-for
+      XFF_DEPTH: "1"
+      PROTOCOL_HEADER: x-forwarded-proto
+      # As decoy/.env.example: nginx's client_max_body_size, and the API's limit for a reported body.
+      BODY_SIZE_LIMIT: 1M
+    volumes:
+      - type: bind
+        source: /run/attenborough/decoy
+        target: /run/decoy
+        bind:
+          create_host_path: false
+    networks:
+      decoy:
+        ipv4_address: 10.89.1.10
+
+  web:
+    <<: *hardened
+    build: ./web
+    mem_limit: 256m
+    depends_on: [api]
+    environment:
+      API_BASE_URL: http://api:8000
+      SOCKET_PATH: /run/web/web.sock
+      ORIGIN: https://${EXHIBIT_DOMAIN:?set EXHIBIT_DOMAIN in .env}
+    volumes:
+      - type: bind
+        source: /run/attenborough/web
+        target: /run/web
+        bind:
+          create_host_path: false
+    networks:
+      web:
+
+  # Applies pending migrations as the schema's owner, then exits: `docker compose run --rm migrate`.
+  # The only place the owner's password is used; the API never sees it.
+  migrate:
+    <<: *hardened
+    build: ./api
+    restart: "no"
+    profiles: [tools]
+    command: ["python", "scripts/migrate.py"]
+    environment:
+      <<: *database
+      DB_USERNAME: ${DB_OWNER_USERNAME:?set DB_OWNER_USERNAME in .env}
+      DB_PASSWORD: ${DB_OWNER_PASSWORD:?set DB_OWNER_PASSWORD in .env}
+      HONEYPOT_ADDRESSES: ${HONEYPOT_ADDRESSES:?set HONEYPOT_ADDRESSES in .env}
+    volumes:
+      - *postgres-socket
+    network_mode: none
+
+networks:
+  decoy:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+    ipam:
+      config:
+        - subnet: 10.89.1.0/24
+  web:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+    ipam:
+      config:
+        - subnet: 10.89.2.0/24
