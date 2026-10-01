@@ -25,7 +25,7 @@ What remains is a flaw in the kernel or Docker itself that lets a process out of
 
 Run from the repository's root on the host, e.g. `~/attenborough`, cloned from GitHub (`git clone https://github.com/tristanbatchler/attenborough.git`). The repository is public: everything that identifies the honeypot lives only in `.env` and in the rendered nginx site, which are never committed.
 
-1. **DNS.** The decoy's domain: an `A` record to the host's public IP, **DNS only** (never proxied: Cloudflare would block or challenge the scanners the honeypot exists to see, and replace their addresses with its own). The exhibit's domain: **proxied** through Cloudflare, with SSL/TLS mode **Full (strict)**. Ports 80 and 443 forwarded to the host.
+1. **DNS.** The decoy's domain, a domain of its own unrelated to the exhibit's: `A` records for the domain itself and `www`, both straight to the host's public IP (no `CNAME` to another of your names, and no registrar redirect: either would name or bypass the host), **DNS only** (never proxied: Cloudflare would block or challenge the scanners the honeypot exists to see, and replace their addresses with its own). The exhibit's domain: **proxied** through Cloudflare, with SSL/TLS mode **Full (strict)**. Ports 80 and 443 forwarded to the host.
 
 2. **Settings.** `cp .env.example .env && chmod 600 .env`, then fill it in. `HONEYPOT_ADDRESSES` must list the decoy's domain and the host's public IP: the exhibit hides each of them (`../api/README.md`, "Hiding where the honeypot is"). If the public IP ever changes, add the new one and keep the old.
 
@@ -44,18 +44,27 @@ Run from the repository's root on the host, e.g. `~/attenborough`, cloned from G
    sudo systemd-tmpfiles --create /etc/tmpfiles.d/attenborough.conf
    ```
 
-5. **nginx.** A certificate that names nothing, for connections to the bare IP; the decoy's shared proxy settings; and the site, rendered from `.env`:
+5. **nginx.** A certificate that names nothing, for connections to the bare IP; the decoy's shared proxy settings, with the directory Let's Encrypt's challenges are served from; and the site, rendered from `.env`. The decoy domain's certificate can only be issued once nginx answers for it, so the first render borrows the exhibit's certificate for it, then certbot issues the real one and the site is rendered again:
 
    ```sh
-   sudo mkdir -p /etc/nginx/attenborough
+   sudo mkdir -p /etc/nginx/attenborough /var/www/attenborough-acme
    sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj '/CN=localhost' \
        -keyout /etc/nginx/attenborough/nameless.key -out /etc/nginx/attenborough/nameless.crt
    sudo cp deploy/nginx/decoy-proxy.conf /etc/nginx/attenborough/
-   set -a && . ./.env && set +a && envsubst '${DECOY_DOMAIN} ${EXHIBIT_DOMAIN} ${TLS_CERTIFICATE_DIR}' \
-       < deploy/nginx/attenborough.conf | sudo tee /etc/nginx/sites-available/attenborough > /dev/null
+   render() { (set -a && . ./.env && set +a
+       [ "${1:-}" = first ] && DECOY_TLS_CERTIFICATE_DIR=$EXHIBIT_TLS_CERTIFICATE_DIR
+       envsubst '${DECOY_DOMAIN} ${EXHIBIT_DOMAIN} ${DECOY_TLS_CERTIFICATE_DIR} ${EXHIBIT_TLS_CERTIFICATE_DIR}' \
+           < deploy/nginx/attenborough.conf | sudo tee /etc/nginx/sites-available/attenborough > /dev/null) }
+   render first   # borrows the exhibit's certificate for the decoy, until it has its own
    sudo ln -s /etc/nginx/sites-available/attenborough /etc/nginx/sites-enabled/attenborough
    sudo nginx -t && sudo systemctl reload nginx
+   . ./.env && sudo certbot certonly --webroot -w /var/www/attenborough-acme \
+       -d "$DECOY_DOMAIN" -d "www.$DECOY_DOMAIN" --deploy-hook 'systemctl reload nginx'
+   render
+   sudo nginx -t && sudo systemctl reload nginx
    ```
+
+   certbot's timer renews the decoy's certificate through the same directory, and reloads nginx. Each issuance is published in the Certificate Transparency logs, which scanners watch for new names: that is the decoy's main advertisement, and why it has a certificate of its own rather than a wildcard shared with other names.
 
    The site makes the decoy nginx's `default_server` on ports 80 and 443: every request that matches no other site on this host now reaches the decoy, instead of the first site in `sites-enabled`. No other site may also claim `default_server`.
 
@@ -78,7 +87,15 @@ docker compose run --rm migrate      # applies any new migrations, as the owner 
 docker compose up -d
 ```
 
-Then run the checks. If `deploy/nginx/` changed, render and reload it again (step 5, without the certificate and the link).
+Then run the checks. If `deploy/nginx/` changed, copy `decoy-proxy.conf` again and render and reload the site (step 5's `render` and the reload).
+
+## Changing the decoy's domain
+
+1. DNS for the new domain as in step 1. Leave the old name's record in place until the new one works.
+2. In `.env`: the new `DECOY_DOMAIN`, `DECOY_TLS_CERTIFICATE_DIR=/etc/letsencrypt/live/<new domain>`, and the new domain **added** to `HONEYPOT_ADDRESSES` (keep the old one: older records contain it).
+3. Issue the certificate and render the site: step 5's `certbot` command, then `render` and the reload. The old site still answers for the new name meanwhile, as the `default_server`, so the challenge succeeds.
+4. `docker compose up -d`: recreates the API with the new `HONEYPOT_ADDRESSES`.
+5. Check the new domain from outside your network, then remove the old name's DNS record.
 
 **If the API won't start,** read why: `docker compose logs api`. Without a terminal it never changes the schema itself, so a database that needs migrations makes it refuse with `refusing to start` and the command to run. A database whose applied migrations differ from `migrations/` (`diverged`) means a migration was edited after it was applied: never reset production; write a new migration that gets from what was applied to what is wanted.
 
