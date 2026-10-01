@@ -2,12 +2,13 @@
 	import { resolve } from '$app/paths';
 	import ActivityTable from '$lib/components/ActivityTable.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
-	import { ADDRESS_PARAM, FIRST_PAGE, PAGE_PARAM } from '$lib/params';
+	import { ADDRESS_PARAM, beforeSearch } from '$lib/params';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
-	const pageHref = (page: number) => resolve(`/?${PAGE_PARAM}=${String(page)}`);
+	const pageHref = (before?: string) =>
+		resolve(before === undefined ? '/' : `/?${beforeSearch(before)}`);
 </script>
 
 <svelte:head>
@@ -47,10 +48,10 @@
 	<p>The most recent attempts from every address, newest first. Times are in UTC.</p>
 	{#if data.events.items.length === 0}
 		<p>
-			{data.page === FIRST_PAGE ? 'Nothing has been recorded yet.' : 'There is no older activity.'}
+			{data.isFirstPage ? 'Nothing has been recorded yet.' : 'There is no older activity.'}
 		</p>
 	{:else}
 		<ActivityTable events={data.events.items} showAddress />
 	{/if}
-	<Pagination page={data.page} hasNextPage={data.events.has_next} href={pageHref} />
+	<Pagination isFirstPage={data.isFirstPage} nextCursor={data.events.next_cursor} href={pageHref} />
 </section>

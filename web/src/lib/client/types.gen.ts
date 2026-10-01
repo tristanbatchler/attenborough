@@ -77,9 +77,9 @@ export type EventPage = {
      */
     items: Array<HitEvent | LoginAttemptEvent | DecoyViewEvent | DecoyPasswordAttemptEvent>;
     /**
-     * Has Next
+     * Next Cursor
      */
-    has_next: boolean;
+    next_cursor: string | null;
 };
 
 /**
@@ -305,9 +305,9 @@ export type ListRecentEventsData = {
     path?: never;
     query?: {
         /**
-         * Page
+         * Before
          */
-        page?: number;
+        before?: string | null;
         /**
          * Take
          */
@@ -344,9 +344,9 @@ export type GetIpEventsData = {
     };
     query?: {
         /**
-         * Page
+         * Before
          */
-        page?: number;
+        before?: string | null;
         /**
          * Take
          */

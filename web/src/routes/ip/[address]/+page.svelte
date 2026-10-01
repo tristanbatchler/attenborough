@@ -3,13 +3,15 @@
 	import ActivityTable from '$lib/components/ActivityTable.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
 	import { formatUtc } from '$lib/format';
-	import { FIRST_PAGE, PAGE_PARAM } from '$lib/params';
+	import { beforeSearch } from '$lib/params';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
-	const pageHref = (page: number) =>
-		resolve(`/ip/[address]?${PAGE_PARAM}=${String(page)}`, { address: data.address });
+	const pageHref = (before?: string) =>
+		before === undefined
+			? resolve('/ip/[address]', { address: data.address })
+			: resolve(`/ip/[address]?${beforeSearch(before)}`, { address: data.address });
 </script>
 
 <svelte:head>
@@ -51,7 +53,7 @@
 
 {#if data.events.items.length === 0}
 	<p>
-		{data.page === FIRST_PAGE
+		{data.isFirstPage
 			? 'No activity has been recorded from this address.'
 			: 'There is no more activity for this address.'}
 	</p>
@@ -59,4 +61,4 @@
 	<ActivityTable events={data.events.items} />
 {/if}
 
-<Pagination page={data.page} hasNextPage={data.events.has_next} href={pageHref} />
+<Pagination isFirstPage={data.isFirstPage} nextCursor={data.events.next_cursor} href={pageHref} />

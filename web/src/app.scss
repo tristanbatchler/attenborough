@@ -27,11 +27,19 @@ h3 {
 	letter-spacing: 0.01em;
 }
 
-// Observed values (IPs, paths, methods) are data, not prose.
+// Observed values (IPs, paths, methods) are data, not prose. Paths can be thousands of characters
+// with no spaces, so they break anywhere rather than widen the table.
 td code,
 h1 code {
 	font-size: 0.95em;
 	word-break: break-all;
+}
+
+// An address in a table (the links to its own page) stays on one line: it is short, and read
+// whole. Narrow screens scroll the table instead.
+td a[href^='/ip/'] code {
+	white-space: nowrap;
+	word-break: normal;
 }
 
 time {

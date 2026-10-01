@@ -1,25 +1,31 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 
-	// `href` must return a resolve()d path: the type makes callers resolve their links, and lets
-	// svelte/no-navigation-without-resolve accept the links below.
+	// Pages are keyset pages: each starts after the API's `next_cursor` from the one before, so a
+	// listing only goes older, or back to the newest page. `href` must return a resolve()d path:
+	// the type makes callers resolve their links, and lets svelte/no-navigation-without-resolve
+	// accept the links below.
 	let {
-		page,
-		hasNextPage,
+		isFirstPage,
+		nextCursor,
 		href
-	}: { page: number; hasNextPage: boolean; href: (page: number) => ResolvedPathname } = $props();
+	}: {
+		isFirstPage: boolean;
+		nextCursor: string | null;
+		href: (before?: string) => ResolvedPathname;
+	} = $props();
 </script>
 
-{#if page > 1 || hasNextPage}
+{#if !isFirstPage || nextCursor !== null}
 	<nav aria-label="Pages">
 		<ul>
-			{#if page > 1}
-				<li><a href={href(page - 1)} rel="prev">← Newer</a></li>
+			{#if !isFirstPage}
+				<li><a href={href()}>← Newest</a></li>
 			{/if}
 		</ul>
 		<ul>
-			{#if hasNextPage}
-				<li><a href={href(page + 1)} rel="next">Older →</a></li>
+			{#if nextCursor !== null}
+				<li><a href={href(nextCursor)} rel="next">Older →</a></li>
 			{/if}
 		</ul>
 	</nav>
