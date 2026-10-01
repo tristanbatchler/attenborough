@@ -22,34 +22,35 @@ When the API changes:
 2. `mise run web-gen-types` from the repo root, or `npm run gen-types` here
 3. Commit the regenerated `src/lib/client/` together with the API change.
 
-`openapi-ts.config.ts` limits the client to the public exhibit (`/exhibit/…`). The API's `DEBUG`-only `/test` routes are left out of the spec. Function names come from the API's operation IDs, which are its route functions' names: `get_ip_activity` becomes `getIpActivity`.
+`openapi-ts.config.ts` limits the client to the public exhibit (`/exhibit/…`). The API's `DEBUG`-only `/test` routes are left out of the spec. Function names come from the API's operation IDs, which are its route functions' names: `get_ip_events` becomes `getIpEvents`.
 
 **How to call the API:** only from server `load` functions (`+page.server.ts`), spreading in `apiOptions(fetch)` from `$lib/server/api`, which supplies the API's address and SvelteKit's `fetch`:
 
 ```ts
 const page = requestedPage(url);
-const activity = unwrap(
-	await getIpActivity({ ...apiOptions(fetch), path: { ip_addr: params.address }, query: { page } }),
+const events = unwrap(
+	await getIpEvents({ ...apiOptions(fetch), path: { ip_addr: params.address }, query: { page } }),
 	'That is not a valid IP address, or that page does not exist.'
 );
 ```
 
-A call never throws for an HTTP error or an unreachable API; it returns `{ data, error, response }`. `unwrap` (also in `$lib/server/api`) returns the data or shows the right error page: 503 if the API was unreachable, 400 with your message if it rejected the input (422), and 502 otherwise.
+A call never throws for an HTTP error or an unreachable API; it returns `{ data, error, response }`. `unwrap` (also in `$lib/server/api`) returns the data or shows the right error page: 503 if the API was unreachable, 400 with your message if it rejected the input (422), 404 if there is no such thing, and 502 otherwise.
 
 Paging belongs to the API. A listing returns one page, `{ items, has_next }`, at the API's default page size; `requestedPage(url)` (`$lib/server/paging`) only checks that `?page=` is a whole number from 1, and the API rejects a page past its limit. Don't duplicate page sizes or limits as constants here.
 
 ## Structure
 
-| Path                  | What                                                                                                                                           |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/app.scss`        | The design system: Pico (classless, semantic containers) plus Attenborough's variables. Style elements, not utility classes.                   |
-| `src/routes/`         | Pages. `+page.server.ts` loads data on the server; `+page.svelte` renders it.                                                                  |
-| `src/lib/client/`     | **Generated** API client. Don't edit.                                                                                                          |
-| `src/lib/server/`     | Server-only code, never bundled for the browser: `api.ts` (the API's address, `unwrap`), `paging.ts` (`?page=`, checked for form only).        |
-| `src/lib/components/` | Shared page parts: `ActivityTable` (with an address column when rows carry one) and `Pagination` (its `href` must return a `resolve()`d path). |
-| `src/hooks.server.ts` | `init`: refuses to start without `API_BASE_URL`.                                                                                               |
-| `static/`             | Served from the site root as-is: favicons and `site.webmanifest` (linked in `src/app.html`), `robots.txt`.                                     |
-| `vite.config.ts`      | Vite, and the SvelteKit config (adapter, compiler options). There's no `svelte.config.js`.                                                     |
+| Path                  | What                                                                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/app.scss`        | The design system: Pico (classless, semantic containers) plus Attenborough's variables. Style elements, not utility classes.                                 |
+| `src/routes/`         | Pages. `+page.server.ts` loads data on the server; `+page.svelte` renders it.                                                                                |
+| `src/lib/client/`     | **Generated** API client. Don't edit.                                                                                                                        |
+| `src/lib/server/`     | Server-only code, never bundled for the browser: `api.ts` (the API's address, `unwrap`), `paging.ts` (`?page=`, checked for form only).                      |
+| `src/lib/components/` | Shared page parts: `ActivityTable` (one row per event, by `kind`; `showAddress` for the feed) and `Pagination` (its `href` must return a `resolve()`d path). |
+| `src/params/`         | Route param matchers: `id` (a record id, for `/hits/[id=id]`).                                                                                               |
+| `src/hooks.server.ts` | `init`: refuses to start without `API_BASE_URL`.                                                                                                             |
+| `static/`             | Served from the site root as-is: favicons and `site.webmanifest` (linked in `src/app.html`), `robots.txt`.                                                   |
+| `vite.config.ts`      | Vite, and the SvelteKit config (adapter, compiler options). There's no `svelte.config.js`.                                                                   |
 
 Captured data (IPs, paths, credentials, headers) is shown in full, but always as text. Svelte escapes `{…}` expressions, so never use `{@html}` on it.
 

@@ -148,8 +148,8 @@ From a machine outside your network, send forged headers:
 
 ```sh
 curl -s -o /dev/null -H 'X-Forwarded-For: 203.0.113.99' -H 'X-Real-IP: 203.0.113.98' https://<host>/wp-login.php
-curl -s https://<host>/exhibit/ip/203.0.113.99/activity   # must be []
-curl -s https://<host>/exhibit/ip/203.0.113.98/activity   # must be []
+curl -s https://<host>/exhibit/ip/203.0.113.99/activity   # items must be []
+curl -s https://<host>/exhibit/ip/203.0.113.98/activity   # items must be []
 curl -s https://<host>/exhibit/ip/<your public IP>/activity   # must show the /wp-login.php hit
 ```
 

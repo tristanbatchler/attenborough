@@ -11,7 +11,7 @@ Every call from `web/` to the API goes through the SDK that `@hey-api/openapi-ts
 
 ```ts
 const api = apiOptions(fetch); // $lib/server/api: the API's address, plus SvelteKit's fetch
-const activity = unwrap(await getIpActivity({ ...api, path: { ip_addr }, query: { page } }));
+const events = unwrap(await getIpEvents({ ...api, path: { ip_addr }, query: { page } }));
 ```
 
 Passing SvelteKit's `fetch` into `apiOptions(fetch)` is correct: it hands the client the function to call, and doesn't make a request itself.
