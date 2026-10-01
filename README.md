@@ -7,6 +7,8 @@ A public honeypot with an exhibit. Decoy resources are served to internet scanne
 | `api/` | FastAPI backend: telemetry, the decoy app's ingest endpoints, and the exhibit API. Python 3.14, PostgreSQL, sqlc. | [`api/README.md`](api/README.md) |
 | `web/` | SvelteKit frontend for the exhibit, with a client generated from the API's OpenAPI spec. | [`web/README.md`](web/README.md) |
 | `decoy/` | SvelteKit app serving the fake sites visitors see. It reports every request to the API, which records it and decides every outcome. | [`decoy/README.md`](decoy/README.md) |
+| `deploy/`, `docker-compose.yml` | Production: the three apps in locked-down containers, behind nginx on the host, with PostgreSQL on the host. | [`deploy/README.md`](deploy/README.md) |
+| `docs/` | Plans for each milestone, and notes on what the honeypot observed. | |
 
 ## Getting started
 

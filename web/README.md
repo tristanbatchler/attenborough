@@ -27,30 +27,30 @@ When the API changes:
 **How to call the API:** only from server `load` functions (`+page.server.ts`), spreading in `apiOptions(fetch)` from `$lib/server/api`, which supplies the API's address and SvelteKit's `fetch`:
 
 ```ts
-const page = requestedPage(url);
+const before = requestedCursor(url);
 const events = unwrap(
-	await getIpEvents({ ...apiOptions(fetch), path: { ip_addr: params.address }, query: { page } }),
+	await getIpEvents({ ...apiOptions(fetch), path: { ip_addr: params.address }, query: { before } }),
 	'That is not a valid IP address, or that page does not exist.'
 );
 ```
 
 A call never throws for an HTTP error or an unreachable API; it returns `{ data, error, response }`. `unwrap` (also in `$lib/server/api`) returns the data or shows the right error page: 503 if the API was unreachable, 400 with your message if it rejected the input (422), 404 if there is no such thing, and 502 otherwise.
 
-Paging belongs to the API. A listing returns one page, `{ items, has_next }`, at the API's default page size; `requestedPage(url)` (`$lib/server/paging`) only checks that `?page=` is a whole number from 1, and the API rejects a page past its limit. Don't duplicate page sizes or limits as constants here.
+Paging belongs to the API, which pages by keyset: a listing returns one page, `{ items, next_cursor }`, at the API's default page size, and the next, older page is the one `before` that cursor (`null` on the last page). The cursor is the API's own opaque token: `requestedCursor(url)` (`$lib/server/paging`) passes `?before=` back unread, and the API rejects one it didn't make (422, so a 400 page). Pages only go older, or back to the newest (`Pagination`); there are no page numbers. Don't duplicate page sizes or limits as constants here.
 
 ## Structure
 
-| Path                  | What                                                                                                                                                         |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/app.scss`        | The design system: Pico (classless, semantic containers) plus Attenborough's variables. Style elements, not utility classes.                                 |
-| `src/routes/`         | Pages. `+page.server.ts` loads data on the server; `+page.svelte` renders it.                                                                                |
-| `src/lib/client/`     | **Generated** API client. Don't edit.                                                                                                                        |
-| `src/lib/server/`     | Server-only code, never bundled for the browser: `api.ts` (the API's address, `unwrap`), `paging.ts` (`?page=`, checked for form only).                      |
-| `src/lib/components/` | Shared page parts: `ActivityTable` (one row per event, by `kind`; `showAddress` for the feed) and `Pagination` (its `href` must return a `resolve()`d path). |
-| `src/params/`         | Route param matchers: `id` (a record id, for `/hits/[id=id]`).                                                                                               |
-| `src/hooks.server.ts` | `init`: refuses to start without `API_BASE_URL`.                                                                                                             |
-| `static/`             | Served from the site root as-is: favicons and `site.webmanifest` (linked in `src/app.html`), `robots.txt`.                                                   |
-| `vite.config.ts`      | Vite, and the SvelteKit config (adapter, compiler options). There's no `svelte.config.js`.                                                                   |
+| Path                  | What                                                                                                                                                                               |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/app.scss`        | The design system: Pico (classless, semantic containers) plus Attenborough's variables. Style elements, not utility classes.                                                       |
+| `src/routes/`         | Pages. `+page.server.ts` loads data on the server; `+page.svelte` renders it.                                                                                                      |
+| `src/lib/client/`     | **Generated** API client. Don't edit.                                                                                                                                              |
+| `src/lib/server/`     | Server-only code, never bundled for the browser: `api.ts` (the API's address, `unwrap`), `paging.ts` (`?before=`, passed through).                                                 |
+| `src/lib/components/` | Shared page parts: `ActivityTable` (one row per event, by `kind`; `showAddress` for the feed) and `Pagination` (Newest / Older links; its `href` must return a `resolve()`d path). |
+| `src/params/`         | Route param matchers: `id` (a record id, for `/hits/[id=id]`).                                                                                                                     |
+| `src/hooks.server.ts` | `init`: refuses to start without `API_BASE_URL`.                                                                                                                                   |
+| `static/`             | Served from the site root as-is: favicons and `site.webmanifest` (linked in `src/app.html`), `robots.txt`.                                                                         |
+| `vite.config.ts`      | Vite, and the SvelteKit config (adapter, compiler options). There's no `svelte.config.js`.                                                                                         |
 
 Captured data (IPs, paths, credentials, headers) is shown in full, but always as text. Svelte escapes `{…}` expressions, so never use `{@html}` on it.
 
@@ -82,8 +82,11 @@ Usually you run them all from the repo root: `mise run fix`, then `mise run chec
 | -------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `API_BASE_URL` | Where this server reaches the API, e.g. `http://127.0.0.1:8000`. Required.                                              |
 | `HOST`, `PORT` | Where it listens. **`HOST` defaults to `0.0.0.0`**, so set `127.0.0.1` behind a reverse proxy. `PORT` defaults to 3000. |
+| `SOCKET_PATH`  | A unix socket to listen on instead, as in the container deployment (`../docker-compose.yml`).                           |
 | `ORIGIN`       | The public URL, e.g. `https://attenborough.example`, when behind a proxy.                                               |
 
 Only set adapter-node's proxy-header variables (`PROTOCOL_HEADER`, `HOST_HEADER`, `ADDRESS_HEADER`, `XFF_DEPTH`) for a trusted reverse proxy; see the [adapter-node docs](https://svelte.dev/docs/kit/adapter-node). The same trust rules apply as for the API (`../api/README.md`, "Deployment").
+
+In production it runs in a container from `Dockerfile`, behind nginx and Cloudflare; see `../deploy/README.md`.
 
 Pages are rendered on the server, so the API sees _this server_ as the client for exhibit data requests, not the visitor. Those requests are recorded in the API's telemetry under the `exhibit` group, attributed to this server's address.

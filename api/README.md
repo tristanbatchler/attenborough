@@ -21,41 +21,52 @@ FastAPI on Python 3.14, async psycopg against PostgreSQL, and sqlc-generated que
 
 ### Settings, and the files the app writes
 
-Settings are the fields of `Settings` in `src/attenborough/settings.py`, read from `.env`, with environment variables taking precedence. `get_settings()` loads and validates them once. The first import of the `attenborough` package calls it, so a bad or missing required value stops the app, a test or a script immediately.
+Settings are the fields of `Settings` in `src/attenborough/settings.py`, read from `.env`, with environment variables taking precedence. `get_settings()` loads and validates them once. The first import of the `attenborough` package calls it, so a bad or missing required value stops the app, a test or a script immediately. `HONEYPOT_ADDRESSES` is required: for development, `localhost,127.0.0.1` (see [Hiding where the honeypot is](#hiding-where-the-honeypot-is)).
 
-- **Loading settings only reads.** The one exception is when `.env` doesn't exist: `get_settings()` creates it from the template and exits, so you get a file to fill in rather than a validation error for every required field.
-- **Each server start rewrites two tracked files,** in the lifespan in `src/attenborough/main.py`: `src/openapi.json` (the API spec, which generates the web client) and `.example.env` (the settings template, from `write_example_env()`). Both are deterministic, so a diff in either means the API or the settings changed; commit it with that change. Importing the app, running tests and running scripts write neither.
+What the app does with files depends on whether it runs from a **source checkout** (this directory, with `pyproject.toml` beside the package) or as an **installed package** (the container image, which installs it into its virtual environment). `settings.SOURCE_CHECKOUT` tells them apart, so no flag can be forgotten:
+
+- **Loading settings only reads.** The one exception, in a checkout only, is when `.env` doesn't exist: `get_settings()` creates it from the template and exits, so you get a file to fill in rather than a validation error for every required field. An installed package reads the environment only.
+- **In a checkout, each server start rewrites two tracked files,** in the lifespan in `src/attenborough/main.py`: `src/openapi.json` (the API spec, which generates the web and decoy clients) and `.example.env` (the settings template, from `write_example_env()`). Both are deterministic, so a diff in either means the API or the settings changed; commit it with that change. Importing the app, running tests and running scripts write neither, and an installed package never writes them: the container's filesystem is read-only.
 
 ## Database
 
 ### How the schema gets into the database
 
-`src/attenborough/db/schema.sql` is the complete schema, as plain DDL. There are **no migrations**, a deliberate v1 choice: changing the schema means resetting the database, which deletes all its data.
+Two descriptions of the schema, kept equal:
 
-A **reset** (`db/schema.py:reset_schema`) drops the `public` schema, with every table, type and row in it, applies `schema.sql`, and records the file's SHA-256 in the `schema_fingerprint` table. **All of this happens in one transaction:** if `schema.sql` is broken, the reset rolls back and the database, data included, is left exactly as it was.
+- **`src/attenborough/db/migrations/`**: numbered SQL files (`0001_baseline.sql`, `0002_...`), applied in order. They are how every production database is built and changed, so its data is kept. `0001_baseline.sql` is the schema the honeypot went live with.
+- **`src/attenborough/db/schema.sql`**: the complete, current schema, as plain DDL: what all the migrations build. sqlc generates the query code from it, and a development reset applies it directly.
 
-**On every startup**, before serving any request, the app compares the database's recorded fingerprint with the current `schema.sql`:
+`src/tests/test_migrations.py` (part of `mise run check`) builds both side by side in scratch schemas in the development database, inside a transaction it always rolls back, and fails if they differ in any table, column (position included: generated rows are positional), constraint, index, function, trigger, sequence or enum.
+
+Each database records what built it in `schema_migrations`: one row per applied migration, with the file's SHA-256. **Migrating** (`db/schema.py:migrate`) applies the pending migrations in order, each in its own transaction with its row, so a failed migration rolls back and leaves the database at the last one that succeeded. A **reset** (`db/schema.py:reset_schema`, development only) drops the `public` schema, with every table, type and row in it, applies `schema.sql`, and records every migration as applied, all in one transaction.
+
+**On every startup**, before serving any request, the app compares `schema_migrations` with `migrations/`:
 
 | The database is… | What happens |
 |---|---|
-| **current**: built from this exact `schema.sql` | the server starts normally |
-| **outdated**: built from a different `schema.sql` | the app asks on the terminal whether to reset. `y` resets and starts; anything else refuses to start |
-| **missing**: no Attenborough schema, e.g. a new database | same question and outcomes as *outdated* |
+| **current**: every migration applied, none changed since | the server starts normally |
+| **pending**: the first migrations applied, unchanged; more to apply | the app asks on the terminal whether to apply them. `y` migrates and starts; anything else refuses to start |
+| **diverged**: an applied migration was edited, or is unknown here | the app asks whether to **reset**. `y` resets (deleting all data) and starts; anything else refuses to start |
+| **missing**: no `schema_migrations`, e.g. a new database | same question and outcomes as *diverged* |
 
-The question is asked on the controlling terminal, so it works under `--reload` and in the VS Code terminal. The default answer is **no**. With no terminal (Docker, systemd, CI), the app never resets anything: it refuses to start and logs how to reset. To reset without the prompt:
+The question is asked on the controlling terminal, so it works under `--reload` and in the VS Code terminal. The default answer is **no**. With no terminal (Docker, systemd, CI), the app never changes the schema: it refuses to start and logs why and what to run. Without the prompt:
 
 ```sh
-uv run python scripts/reset_db.py --yes   # from api/; DELETES ALL DATA
+uv run python scripts/migrate.py          # apply pending migrations; a new, empty database gets them all
+uv run python scripts/reset_db.py --yes   # development only: DELETES ALL DATA
 ```
 
-Any change to `schema.sql`, even a comment, changes the fingerprint and triggers the question. That's deliberate: it can't tell a harmless edit from a real one.
+In a deployment the API runs as a role that can't change the schema, so migrations run separately, as the schema's owner: `docker compose run --rm migrate` (`../deploy/README.md`). `migrate.py` refuses a diverged database: only a reset can fix that, and production is never reset.
 
 ### Making changes
 
 | You changed… | Then |
 |---|---|
-| `queries.sql` only | regenerate the query code. **No reset needed**; data is kept. |
-| `schema.sql` | regenerate the query code, then restart and answer `y`, or run `scripts/reset_db.py --yes`. **All data is deleted.** |
+| `queries.sql` only | regenerate the query code. Nothing else; data is kept. |
+| the schema | change `schema.sql` **and** add the next migration making the same change (`0002_short_name.sql`), regenerate, and run `scripts/migrate.py` (or restart and answer `y`). `mise run check` fails until the two agree. A new column goes last in `schema.sql`, where `ALTER TABLE ... ADD COLUMN` puts it. |
+
+Never edit a migration that a database you keep has applied: the startup check would call that database diverged. Until then (on a development database), editing it and resetting is fine.
 
 Regenerate with `mise run sqlc` from the repo root, or from here:
 
@@ -63,15 +74,22 @@ Regenerate with `mise run sqlc` from the repo root, or from here:
 uv run sqlc generate --file src/attenborough/db/sqlc.yaml
 ```
 
-Never hand-edit the generated `db/queries.py`, `db/models.py` or `db/enums.py`. Every query the app and the reset run comes from `queries.sql`. The one exception is executing `schema.sql` itself, which is a file, not a query.
+Never hand-edit the generated `db/queries.py`, `db/models.py` or `db/enums.py`. Every query the app, the migrations and the reset run comes from `queries.sql`. The exceptions are executing `schema.sql` and the migration files themselves, which are files, not queries, and the catalog query in `test_migrations.py`.
 
-### Rules for `schema.sql`
+### Rules for `schema.sql` and migrations
 
-- **Plain DDL, no `DO $$ … $$` blocks.** sqlc parses SQL but never executes it, so an enum type created inside a `DO` block is invisible to it. The generated code then uses `typing.Any` instead of the `db/enums.py` enum, and `enums.py` isn't generated at all. PostgreSQL has no `CREATE TYPE IF NOT EXISTS`, and no other workaround keeps the types.
+- **Plain DDL, no `DO $$ … $$` blocks.** sqlc parses SQL but never executes it, so an enum type created inside a `DO` block is invisible to it. The generated code then uses `typing.Any` instead of the `db/enums.py` enum, and `enums.py` isn't generated at all. PostgreSQL has no `CREATE TYPE IF NOT EXISTS`, and no other workaround keeps the types. (`CREATE FUNCTION ... AS $$ ... $$`, for a trigger, is fine: sqlc doesn't need to see inside it.)
 - **`IF NOT EXISTS` only where a brand-new schema can already have the object,** i.e. extensions. Everywhere else it would wrongly suggest the script can be re-run.
-- **Keep the `schema_fingerprint` table.** The startup check depends on it.
+- **Keep the `schema_migrations` table.** The startup check and the migrations depend on it.
+- **A migration runs as the schema's owner.** Tables and sequences it creates are readable and writable by the app role automatically (default privileges, `../deploy/database.sql`). Don't grant to role names in a migration: names are deployment settings.
 
 The reset runs as the configured database user, which must own the `public` schema. The database's owner does by default. It never needs permission to create databases.
+
+### At volume
+
+- **The exhibit's listings page by keyset,** never by `OFFSET`: a page is the events after the previous page's last one, passed as an opaque cursor (`?before=`, the previous page's `next_cursor`). `ListRecentEvents` and `ListIpEvents` read each kind of event from its own `(time, id)` index with its own `LIMIT`, so every page reads about one page of rows from each table, however deep it is. (A single `UNION ALL` view over the four tables let the planner read and sort a whole table instead: 2 s for the first page.)
+- **Per-address totals are kept, not counted.** `ip_activity` holds each address's requests, distinct paths, login attempts and first and last request, kept by insert triggers on `telemetry_hits` and `credential_stuffing_attempts` (`schema.sql`). Counting distinct paths for an address with a million requests took 1.2 s. Nothing deletes events; anything that ever does must recompute the totals.
+- **Measured** on two million hits (half from one address) and 100,000 login attempts: every exhibit query takes under 1 ms in the database, on the first page and the last (`EXPLAIN ANALYZE`). `scripts/seed_db.py` fills a development database with that mix (about ten minutes), and `scripts/exhibit_latency.py` walks a listing through a running API, page by page to the last, timing each. Run it where the API and the database are close: from a laptop over Wi-Fi, the few round trips per page dominate. In the container stack on 500,000 hits, every page of the feed took a median of 3.6 ms, the slowest 21 ms.
 
 ## Checks
 
@@ -82,16 +100,20 @@ mise run fix     # ruff check --fix, ruff format (and the web's eslint --fix, pr
 mise run check   # the gate: ruff, basedpyright, pytest, then the web's checks; must exit 0
 ```
 
-`check` never skips a task and stops at the first failure. Each check is also its own task (`mise tasks ls`): `api-lint`, `api-format-check`, `api-typecheck` (basedpyright, `typeCheckingMode "all"`), `api-test`. To rerun on save: `mise watch -w api/src check`. Two more checks sit outside the gate:
+`check` never skips a task and stops at the first failure. Each check is also its own task (`mise tasks ls`): `api-lint`, `api-format-check`, `api-typecheck` (basedpyright, `typeCheckingMode "all"`), `api-test`. `api-test` needs the development database (`.env`) for `test_migrations.py`; the other tests don't touch it. To rerun on save: `mise watch -w api/src check`. More checks sit outside the gate:
 
 ```sh
-mise run api-magic-strings                         # candidates to judge, not automatic failures
-uv run python scripts/telemetry_probe.py verify   # end-to-end: needs a running server; writes tagged test rows
+mise run api-magic-strings                                   # candidates to judge, not automatic failures
+uv run python scripts/telemetry_probe.py verify              # end-to-end: needs a running server; writes tagged test rows
+uv run python scripts/seed_db.py --database <DB_DATABASE>    # development database only: two million synthetic hits
+uv run python scripts/exhibit_latency.py                     # every page of the feed, timed (--address for one address)
 ```
 
 Generated sqlc code is excluded from ruff and basedpyright (`pyproject.toml`). If you run basedpyright by hand, run it from this directory. It reads its config from the current directory, so running it from the repo root gives different, misleading results.
 
 ## Deployment
+
+The production setup (containers, nginx, the database and its roles, and the checks to run after every deployment) is in `../deploy/README.md`. This section is what the API itself requires of any deployment.
 
 ### Client IP attribution (security-critical)
 
@@ -111,11 +133,14 @@ Every record the honeypot keeps is attributed to a client IP: telemetry and cred
 | nginx on the same host, proxying to `127.0.0.1` | leave the default |
 | The decoy app (`../decoy`) on the same host, reporting its visitors | leave the default. Elsewhere: exactly its address. See `../decoy/README.md`, "Deployment". |
 | nginx in another container or host | exactly the proxy's address, or the smallest CIDR that contains it. Every peer inside that range can set its own attribution. |
+| The containers (`../docker-compose.yml`) | the decoy container's fixed address, `10.89.1.10`, set in the compose file |
 | CDN (e.g. Cloudflare) in front of nginx | as above for nginx, and configure nginx's real-IP module (below) |
 
 **Never use `FORWARDED_ALLOW_IPS=*`.** It lets any peer choose its own IP.
 
 ### nginx
+
+The API itself is never proxied publicly: nginx proxies to the decoy app and to the exhibit's server (`../deploy/nginx/`), and only those two call the API. If you ever put nginx straight in front of the API, it must overwrite the header, never append to it:
 
 ```nginx
 location / {
@@ -134,6 +159,8 @@ set_real_ip_from <each published CDN range>;   # only the CDN's own ranges
 real_ip_header   CF-Connecting-IP;             # or X-Forwarded-For with real_ip_recursive on;
 ```
 
+Never put a CDN in front of the decoy: it would block or challenge the very scanners the honeypot exists to see, and replace their addresses with its own.
+
 ### Keep the app reachable only through the proxy
 
 The proxy is only a boundary if clients can't get around it:
@@ -144,26 +171,34 @@ The proxy is only a boundary if clients can't get around it:
 
 ### Check it after every deployment
 
-From a machine outside your network, send forged headers:
+`../deploy/README.md` has the full list. The attribution check, from a machine outside your network, sends forged headers to the decoy and looks for them on the exhibit:
 
 ```sh
-curl -s -o /dev/null -H 'X-Forwarded-For: 203.0.113.99' -H 'X-Real-IP: 203.0.113.98' https://<host>/wp-login.php
-curl -s https://<host>/exhibit/ip/203.0.113.99/activity   # items must be []
-curl -s https://<host>/exhibit/ip/203.0.113.98/activity   # items must be []
-curl -s https://<host>/exhibit/ip/<your public IP>/activity   # must show the /wp-login.php hit
+curl -s -o /dev/null -H 'X-Forwarded-For: 203.0.113.99' -H 'X-Real-IP: 203.0.113.98' http://<decoy domain>/wp-login.php
+curl -s https://<exhibit domain>/ip/203.0.113.99    # "No activity has been recorded from this address."
+curl -s https://<exhibit domain>/ip/203.0.113.98    # the same
+curl -s https://<exhibit domain>/ip/<your public IP>   # must show the /wp-login.php request
 ```
 
-If either forged address shows the hit, attribution can be spoofed; fix the proxy setup before going public.
+If either forged address shows the request, attribution can be spoofed; fix the proxy setup before going public.
+
+### Hiding where the honeypot is
+
+The exhibit must not tell its readers where the honeypot is, but visitors' requests name the server they reached: the `Host` header, `Origin` and `Referer`, full URLs in the request line, and bodies (WordPress's login form posts `redirect_to=https://<decoy domain>/wp-admin/`). So the exhibit endpoints replace each of `HONEYPOT_ADDRESSES` (the decoy's domains and the host's public IPs, past ones too) with `[honeypot]` wherever a visitor's text contains it: path, query, user agent, header names and values, bodies, and submitted usernames and passwords (`events.py`, `hide_honeypot`). The database keeps everything exactly as sent; only what the exhibit shows changes.
+
+- The match ignores case and finds a name inside longer text (`www.<domain>`, `https%3A%2F%2F<domain>`), but an address is never found inside a longer number (`203.0.113.5` in `203.0.113.50`).
+- It's best effort. A name sent in another encoding (base64, `%2E` for its dots) isn't recognised, and a body cut short (the stored 64 KiB, or a listing's 1 KiB preview) can end partway through a name.
+- The web server never learns the names: it only ever sees what the API returns.
+- Don't browse the decoy from the honeypot's own network: your public IP, which is the honeypot's, would be recorded as a visitor's address, and addresses are never hidden.
 
 ### Other security notes
 
 - **The exhibit shows attacker data in full, by design.** Submitted usernames and passwords, headers, user agents and paths are published without redaction. Wherever it is rendered, render it as inert data: escape it, and never interpret it as HTML or script.
-- **Never publish the project's own data:** `.env` (git-ignored), DB and OAuth credentials, admin users and sessions, audit logs, internal errors.
-- **Least privilege:** in production, run the app as a role that can only read and write rows, so it can never reset anything. A reset in production then has to be deliberate: run `scripts/reset_db.py --yes` as the schema owner, with `DB_USERNAME` and `DB_PASSWORD` set in the environment for that one command, since environment variables override `.env`. Then grant the app role only what it needs, e.g. `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app;` plus `GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO app;`, which `BIGSERIAL` columns need. The startup check only reads `schema_fingerprint`. These grants haven't been tested yet, so verify them when you set the role up.
-- **Writable source directory:** startup writes `src/openapi.json` and `.example.env`, so the app needs write access to its own directory. A read-only container filesystem will fail at startup.
+- **Never publish the project's own data:** `.env` (git-ignored), DB credentials, the honeypot's own names and address (above), admin users and sessions, audit logs, internal errors.
+- **Least privilege:** in production the app connects as a role that may only `SELECT`, `INSERT` and `UPDATE` rows in the owner's tables: no DDL, no `DELETE` or `TRUNCATE`, no temporary tables. The schema's owner, a separate role, applies migrations and is used for nothing else. `../deploy/database.sql` creates both, with default privileges so that every table a migration creates is covered. Tested against PostgreSQL 18: the app role inserts hits, login attempts and decoy events (with their triggers), upserts decoys and reads the exhibit; it is refused `CREATE`, `DROP`, `ALTER`, `DELETE`, `TRUNCATE` and `CREATE TEMP`, and can't migrate. What it can still do: `UPDATE` any row (it needs `UPDATE` for decoys and the per-address totals), including `schema_migrations`, which could only make the app refuse to start.
+- **Read-only filesystem:** the installed package writes no files (see [Settings](#settings-and-the-files-the-app-writes)), so the container runs with a read-only root filesystem.
 - **Logs:** they contain attacker-controlled paths and user agents. Treat them as untrusted input in any log viewer. Leave `DEBUG` off in production: it logs at DEBUG level and enables the `/test` debug routes.
 
 ### Known gaps
 
-- **`/ingest/...` has no authentication.** Only the decoy app (`../decoy`) should call it, and the plan is for the API to be reachable only by it and the exhibit's server. Until the API stops being reachable publicly, anyone who can reach it can post reports. The IP rule still holds, so such reports are attributed to the sender's own address, like any other request they send.
-- There are no migrations: any schema change resets the database and loses its data. Fine for v1; revisit before data must be kept.
+- **`/ingest/...` has no authentication.** Only the decoy app (`../decoy`) may call it, and in the deployment only it and the exhibit's server can reach the API at all: they share private container networks with it, and nothing else does. If the API were ever reachable from elsewhere, anyone reaching it could post reports. The IP rule still holds, so such reports would be attributed to the sender's own address, like any other request they send.

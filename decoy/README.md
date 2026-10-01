@@ -68,19 +68,20 @@ The same scripts and tools as `../web` (see its README): `npm run check`, `lint`
 
 ## Deployment
 
-This app is the public server; the API is not reachable from the internet.
+This app is the public server; the API is not reachable from the internet. In production it runs in a container from `Dockerfile` (`../docker-compose.yml`), listening on a unix socket that only nginx can reach; `../deploy/README.md` has the whole setup, and `../deploy/nginx/decoy-proxy.conf` the nginx side. What any deployment needs:
 
-- **nginx** proxies every public request here. It must **overwrite** `X-Forwarded-For` with the client's address, never append to it, so a visitor's own header never gets through:
+- **nginx** proxies every public request here, as the host's `default_server`, so scanners that only know the IP reach it too. It must **overwrite** `X-Forwarded-For` with the client's address, never append to it, so a visitor's own header never gets through, and pass the `Host` header as the visitor sent it (`$http_host`), which is what gets recorded:
 
   ```nginx
   location / {
-      proxy_pass http://127.0.0.1:8766;
-      proxy_set_header Host $host;
+      proxy_pass http://unix:/run/attenborough/decoy/decoy.sock;
+      proxy_set_header Host $http_host;
       proxy_set_header X-Forwarded-For $remote_addr;
       proxy_set_header X-Forwarded-Proto $scheme;
   }
   ```
 
-- **This app** runs with `ADDRESS_HEADER=x-forwarded-for` and `XFF_DEPTH=1`, so `getClientAddress()` is the address nginx set. Bind it to `127.0.0.1` or a private network (`HOST`, `PORT`): with `ADDRESS_HEADER` set, anyone who reaches it directly could choose their own address. Set `ORIGIN` to the public URL.
-- **nginx** also blocks SvelteKit's one remaining URL, which this app can't disguise: `location ~ /__route\.js$ { return 404; }`.
-- **The API** lists this app's address in `FORWARDED_ALLOW_IPS` (`127.0.0.1` on the same host, the default) and must not be proxied publicly: `/ingest/...` would let anyone report visits. Only this app and the exhibit's server (`../web`) call it.
+- **nginx** also blocks SvelteKit's one remaining URL, which this app can't disguise: `location ~ /__route\.js$ { return 404; }`, and hides its version (`server_tokens off`), as the imitated nginx 404 page does.
+- **This app** runs with `ADDRESS_HEADER=x-forwarded-for` and `XFF_DEPTH=1`, so `getClientAddress()` is the address nginx set. Only nginx may reach it: listen on a socket nginx alone can open (`SOCKET_PATH`), or bind to `127.0.0.1` or a private network (`HOST`, `PORT`). With `ADDRESS_HEADER` set, anyone who reaches it directly could choose their own address. It doesn't need `ORIGIN`: it answers every name, and nothing it records comes from `event.url`.
+- **No CDN in front of it,** ever: Cloudflare and the like block or challenge the scanners the honeypot exists to see, and replace their addresses with their own.
+- **The API** lists this app's address in `FORWARDED_ALLOW_IPS` (`127.0.0.1` on the same host, the default; the decoy container's fixed address in the containers) and must not be proxied publicly: `/ingest/...` would let anyone report visits. Only this app and the exhibit's server (`../web`) call it.

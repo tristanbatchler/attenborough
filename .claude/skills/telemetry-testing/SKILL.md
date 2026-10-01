@@ -22,7 +22,7 @@ The tool is `api/scripts/telemetry_probe.py` (typed, checked by the project's ru
 
 ## Procedure
 
-1. Run the static checks first: `mise run check` from the repo root. A server started from the Bash tool has no terminal, so if the database doesn't match `schema.sql` it refuses to start, with `refusing to start` in the log. If `schema.sql` changed, reset first: `uv run python scripts/reset_db.py --yes`. That deletes all data, which the user has approved for v1.
+1. Run the static checks first: `mise run check` from the repo root. A server started from the Bash tool has no terminal, so if the database isn't up to date with the migrations it refuses to start, with `refusing to start` and the reason in the log. Apply a new migration first (`uv run python scripts/migrate.py`), or reset the development database (`uv run python scripts/reset_db.py --yes`, which deletes all its data; approved for the development database only, never production).
 2. Start the server in the background on a dedicated port:
    ```sh
    cd api/src && exec ../.venv/bin/python -m uvicorn attenborough.main:app --host 127.0.0.1 --port 8765 > <scratchpad>/server.log 2>&1
