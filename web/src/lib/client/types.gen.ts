@@ -5,6 +5,84 @@ export type ClientOptions = {
 };
 
 /**
+ * DecoyPasswordAttemptEvent
+ */
+export type DecoyPasswordAttemptEvent = {
+    /**
+     * Kind
+     */
+    kind: 'decoy_password_attempt';
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+    /**
+     * Ip Address
+     */
+    ip_address: string;
+    /**
+     * Decoy Slug
+     */
+    decoy_slug: string;
+    /**
+     * Decoy Accepted
+     */
+    decoy_accepted: boolean;
+};
+
+/**
+ * DecoyType
+ */
+export type DecoyType = 'text' | 'binary' | 'trap';
+
+/**
+ * DecoyViewEvent
+ */
+export type DecoyViewEvent = {
+    /**
+     * Kind
+     */
+    kind: 'decoy_view';
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+    /**
+     * Ip Address
+     */
+    ip_address: string;
+    /**
+     * Decoy Slug
+     */
+    decoy_slug: string;
+    decoy_type: DecoyType;
+};
+
+/**
+ * EventPage
+ *
+ * One page of events, newest first.
+ */
+export type EventPage = {
+    /**
+     * Items
+     */
+    items: Array<HitEvent | LoginAttemptEvent | DecoyViewEvent | DecoyPasswordAttemptEvent>;
+    /**
+     * Has Next
+     */
+    has_next: boolean;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -15,87 +93,183 @@ export type HttpValidationError = {
 };
 
 /**
- * ListIpActivityRow
+ * HitDetail
  */
-export type ListIpActivityRow = {
+export type HitDetail = {
     /**
-     * Event At
+     * Kind
      */
-    event_at: string;
+    kind: 'hit';
     /**
-     * Event Type
+     * Id
      */
-    event_type: string;
+    id: number;
     /**
-     * Target Id
+     * Occurred At
      */
-    target_id: number;
-    /**
-     * Target Slug
-     */
-    target_slug: string;
-    /**
-     * Details
-     */
-    details: string;
-};
-
-/**
- * ListRecentActivityRow
- */
-export type ListRecentActivityRow = {
-    /**
-     * Event At
-     */
-    event_at: string;
-    /**
-     * Event Type
-     */
-    event_type: string;
+    occurred_at: string;
     /**
      * Ip Address
      */
     ip_address: string;
     /**
-     * Target Id
+     * Method
      */
-    target_id: number;
+    method: string;
     /**
-     * Target Slug
+     * Path
      */
-    target_slug: string;
+    path: string;
     /**
-     * Details
+     * Query
      */
-    details: string;
+    query: string | null;
+    /**
+     * Status Code
+     */
+    status_code: number;
+    /**
+     * User Agent
+     */
+    user_agent: string | null;
+    /**
+     * Body Size
+     */
+    body_size: number | null;
+    /**
+     * Headers
+     */
+    headers: {
+        [key: string]: string;
+    };
+    /**
+     * Body
+     */
+    body: string | null;
+    /**
+     * Body Truncated
+     */
+    body_truncated: boolean;
 };
 
 /**
- * Page[ListIpActivityRow]
+ * HitEvent
  */
-export type PageListIpActivityRow = {
+export type HitEvent = {
     /**
-     * Items
+     * Kind
      */
-    items: Array<ListIpActivityRow>;
+    kind: 'hit';
     /**
-     * Has Next
+     * Id
      */
-    has_next: boolean;
+    id: number;
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+    /**
+     * Ip Address
+     */
+    ip_address: string;
+    /**
+     * Method
+     */
+    method: string;
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Query
+     */
+    query: string | null;
+    /**
+     * Status Code
+     */
+    status_code: number;
+    /**
+     * User Agent
+     */
+    user_agent: string | null;
+    /**
+     * Body Size
+     */
+    body_size: number | null;
+    /**
+     * Body Preview
+     */
+    body_preview: string | null;
+    /**
+     * Body Truncated
+     */
+    body_truncated: boolean;
 };
 
 /**
- * Page[ListRecentActivityRow]
+ * IpSummary
+ *
+ * What one IP address did, in numbers. The times are null when it sent no requests.
  */
-export type PageListRecentActivityRow = {
+export type IpSummary = {
     /**
-     * Items
+     * Requests
      */
-    items: Array<ListRecentActivityRow>;
+    requests: number;
     /**
-     * Has Next
+     * Distinct Paths
      */
-    has_next: boolean;
+    distinct_paths: number;
+    /**
+     * Login Attempts
+     */
+    login_attempts: number;
+    /**
+     * First Seen At
+     */
+    first_seen_at: string | null;
+    /**
+     * Last Seen At
+     */
+    last_seen_at: string | null;
+};
+
+/**
+ * LoginAttemptEvent
+ */
+export type LoginAttemptEvent = {
+    /**
+     * Kind
+     */
+    kind: 'login_attempt';
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+    /**
+     * Ip Address
+     */
+    ip_address: string;
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Username
+     */
+    username: string;
+    /**
+     * Password
+     */
+    password: string;
+    /**
+     * Decoy Accepted
+     */
+    decoy_accepted: boolean;
 };
 
 /**
@@ -126,7 +300,7 @@ export type ValidationError = {
     };
 };
 
-export type ListRecentActivityData = {
+export type ListRecentEventsData = {
     body?: never;
     path?: never;
     query?: {
@@ -142,25 +316,25 @@ export type ListRecentActivityData = {
     url: '/exhibit/feed';
 };
 
-export type ListRecentActivityErrors = {
+export type ListRecentEventsErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type ListRecentActivityError = ListRecentActivityErrors[keyof ListRecentActivityErrors];
+export type ListRecentEventsError = ListRecentEventsErrors[keyof ListRecentEventsErrors];
 
-export type ListRecentActivityResponses = {
+export type ListRecentEventsResponses = {
     /**
      * Successful Response
      */
-    200: PageListRecentActivityRow;
+    200: EventPage;
 };
 
-export type ListRecentActivityResponse = ListRecentActivityResponses[keyof ListRecentActivityResponses];
+export type ListRecentEventsResponse = ListRecentEventsResponses[keyof ListRecentEventsResponses];
 
-export type GetIpActivityData = {
+export type GetIpEventsData = {
     body?: never;
     path: {
         /**
@@ -181,20 +355,80 @@ export type GetIpActivityData = {
     url: '/exhibit/ip/{ip_addr}/activity';
 };
 
-export type GetIpActivityErrors = {
+export type GetIpEventsErrors = {
     /**
      * Validation Error
      */
     422: HttpValidationError;
 };
 
-export type GetIpActivityError = GetIpActivityErrors[keyof GetIpActivityErrors];
+export type GetIpEventsError = GetIpEventsErrors[keyof GetIpEventsErrors];
 
-export type GetIpActivityResponses = {
+export type GetIpEventsResponses = {
     /**
      * Successful Response
      */
-    200: PageListIpActivityRow;
+    200: EventPage;
 };
 
-export type GetIpActivityResponse = GetIpActivityResponses[keyof GetIpActivityResponses];
+export type GetIpEventsResponse = GetIpEventsResponses[keyof GetIpEventsResponses];
+
+export type GetIpSummaryData = {
+    body?: never;
+    path: {
+        /**
+         * Ip Addr
+         */
+        ip_addr: string;
+    };
+    query?: never;
+    url: '/exhibit/ip/{ip_addr}/summary';
+};
+
+export type GetIpSummaryErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetIpSummaryError = GetIpSummaryErrors[keyof GetIpSummaryErrors];
+
+export type GetIpSummaryResponses = {
+    /**
+     * Successful Response
+     */
+    200: IpSummary;
+};
+
+export type GetIpSummaryResponse = GetIpSummaryResponses[keyof GetIpSummaryResponses];
+
+export type GetHitData = {
+    body?: never;
+    path: {
+        /**
+         * Hit Id
+         */
+        hit_id: number;
+    };
+    query?: never;
+    url: '/exhibit/hits/{hit_id}';
+};
+
+export type GetHitErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetHitError = GetHitErrors[keyof GetHitErrors];
+
+export type GetHitResponses = {
+    /**
+     * Successful Response
+     */
+    200: HitDetail;
+};
+
+export type GetHitResponse = GetHitResponses[keyof GetHitResponses];

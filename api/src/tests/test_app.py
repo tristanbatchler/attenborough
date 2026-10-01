@@ -7,10 +7,10 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import BaseModel
 
 from attenborough import telemetry
+from attenborough.db.enums import RouterGroup
 from attenborough.db.ops import get_db_conn
 from attenborough.exhibit import Paging
 from attenborough.main import app
-from attenborough.telemetry import RouterGroup
 
 # The parametrized arguments.
 REQUEST = "method, path, status, group"
@@ -68,6 +68,13 @@ async def recorded(
             HTTPStatus.UNPROCESSABLE_ENTITY,
             RouterGroup.EXHIBIT,
         ),
+        # Larger than a BIGINT: rejected, not passed to the database.
+        (
+            HTTPMethod.GET,
+            "/exhibit/hits/9223372036854775808",
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+            RouterGroup.EXHIBIT,
+        ),
         (
             HTTPMethod.DELETE,
             "/exhibit/feed",
@@ -98,10 +105,6 @@ async def test_every_request_is_recorded_once_by_group(
     assert recorded == expected
 
 
-class Row(BaseModel):
-    n: int
-
-
 @pytest.mark.parametrize(
     TAKE,
     [
@@ -115,6 +118,6 @@ def test_a_page_is_take_rows_and_the_extra_row_means_more(
 ):
     paging = Paging(take=take)
     assert paging.limit == take + 1
-    page = paging.page_of([Row(n=n) for n in range(fetched)])
-    assert len(page.items) == expected_items
-    assert page.has_next is expected_has_next
+    items, has_next = paging.page_of(range(fetched))
+    assert len(items) == expected_items
+    assert has_next is expected_has_next

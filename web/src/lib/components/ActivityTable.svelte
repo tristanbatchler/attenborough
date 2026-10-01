@@ -1,14 +1,11 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import type { ListIpActivityRow } from '$lib/client';
-	import { formatUtc } from '$lib/format';
+	import type { EventPage } from '$lib/client';
+	import { formatUtc, requestTarget } from '$lib/format';
 
-	// Rows from the recent-activity feed carry the visitor's address; rows for one IP don't.
-	type Row = ListIpActivityRow & { ip_address?: string };
-
-	let { rows }: { rows: Row[] } = $props();
-
-	const showAddress = $derived(rows.some((row) => row.ip_address !== undefined));
+	// The feed shows every address, so it adds an address column; an IP's own page doesn't.
+	let { events, showAddress = false }: { events: EventPage['items']; showAddress?: boolean } =
+		$props();
 </script>
 
 <figure>
@@ -20,24 +17,51 @@
 					<th scope="col">Address</th>
 				{/if}
 				<th scope="col">Event</th>
-				<th scope="col">Target</th>
 				<th scope="col">Details</th>
 			</tr>
 		</thead>
 		<tbody>
-			{#each rows as row, index (index)}
+			{#each events as event (`${event.kind}-${String(event.id)}`)}
 				<tr>
-					<td><time datetime={row.event_at}>{formatUtc(row.event_at)}</time></td>
-					{#if showAddress && row.ip_address !== undefined}
+					<td><time datetime={event.occurred_at}>{formatUtc(event.occurred_at)}</time></td>
+					{#if showAddress}
 						<td>
-							<a href={resolve('/ip/[address]', { address: row.ip_address })}>
-								<code>{row.ip_address}</code>
+							<a href={resolve('/ip/[address]', { address: event.ip_address })}>
+								<code>{event.ip_address}</code>
 							</a>
 						</td>
 					{/if}
-					<td>{row.event_type}</td>
-					<td><code>{row.target_slug}</code></td>
-					<td><code>{row.details}</code></td>
+					{#if event.kind === 'hit'}
+						<td>Request</td>
+						<td>
+							<a href={resolve('/hits/[id=id]', { id: String(event.id) })}>
+								<code>{event.method} {requestTarget(event)}</code>
+							</a>
+							→ <code>{event.status_code}</code>
+							{#if event.body_preview}
+								<samp>{event.body_preview}</samp>
+								<small
+									>{event.body_size} bytes{event.body_truncated ? ', preview cut short' : ''}</small
+								>
+							{/if}
+						</td>
+					{:else if event.kind === 'login_attempt'}
+						<td>Login attempt</td>
+						<td>
+							<code>{event.username}</code> / <code>{event.password}</code> at
+							<code>{event.path}</code>
+							{#if event.decoy_accepted}(the decoy pretended to accept it){/if}
+						</td>
+					{:else if event.kind === 'decoy_view'}
+						<td>{event.decoy_type === 'binary' ? 'Decoy download' : 'Decoy view'}</td>
+						<td><code>{event.decoy_slug}</code></td>
+					{:else}
+						<td>Decoy password</td>
+						<td>
+							<code>{event.decoy_slug}</code>
+							({event.decoy_accepted ? 'accepted by the decoy' : 'rejected by the decoy'})
+						</td>
+					{/if}
 				</tr>
 			{/each}
 		</tbody>

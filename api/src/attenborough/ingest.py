@@ -13,8 +13,9 @@ from pydantic import Base64Bytes, BaseModel, Field
 from starlette.status import HTTP_204_NO_CONTENT
 
 from attenborough.db import queries
+from attenborough.db.enums import RouterGroup
 from attenborough.dependencies import DBConn, RequestOrigin
-from attenborough.telemetry import RouterGroup, record_hit
+from attenborough.telemetry import record_hit
 
 router = APIRouter(prefix="/ingest", tags=[RouterGroup.INGEST])
 

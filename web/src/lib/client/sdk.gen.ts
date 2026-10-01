@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetIpActivityData, GetIpActivityErrors, GetIpActivityResponses, ListRecentActivityData, ListRecentActivityErrors, ListRecentActivityResponses } from './types.gen';
+import type { GetHitData, GetHitErrors, GetHitResponses, GetIpEventsData, GetIpEventsErrors, GetIpEventsResponses, GetIpSummaryData, GetIpSummaryErrors, GetIpSummaryResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -19,15 +19,30 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 };
 
 /**
- * List Recent Activity
+ * List Recent Events
  *
- * The latest visitor activity from every IP address, newest first.
+ * The latest visitor events from every IP address, newest first.
  */
-export const listRecentActivity = <ThrowOnError extends boolean = false>(options?: Options<ListRecentActivityData, ThrowOnError>): RequestResult<ListRecentActivityResponses, ListRecentActivityErrors, ThrowOnError> => (options?.client ?? client).get<ListRecentActivityResponses, ListRecentActivityErrors, ThrowOnError>({ url: '/exhibit/feed', ...options });
+export const listRecentEvents = <ThrowOnError extends boolean = false>(options?: Options<ListRecentEventsData, ThrowOnError>): RequestResult<ListRecentEventsResponses, ListRecentEventsErrors, ThrowOnError> => (options?.client ?? client).get<ListRecentEventsResponses, ListRecentEventsErrors, ThrowOnError>({ url: '/exhibit/feed', ...options });
 
 /**
- * Get Ip Activity
+ * Get Ip Events
  *
  * Everything one IP address did, newest first.
  */
-export const getIpActivity = <ThrowOnError extends boolean = false>(options: Options<GetIpActivityData, ThrowOnError>): RequestResult<GetIpActivityResponses, GetIpActivityErrors, ThrowOnError> => (options.client ?? client).get<GetIpActivityResponses, GetIpActivityErrors, ThrowOnError>({ url: '/exhibit/ip/{ip_addr}/activity', ...options });
+export const getIpEvents = <ThrowOnError extends boolean = false>(options: Options<GetIpEventsData, ThrowOnError>): RequestResult<GetIpEventsResponses, GetIpEventsErrors, ThrowOnError> => (options.client ?? client).get<GetIpEventsResponses, GetIpEventsErrors, ThrowOnError>({ url: '/exhibit/ip/{ip_addr}/activity', ...options });
+
+/**
+ * Get Ip Summary
+ *
+ * What one IP address did, in numbers.
+ */
+export const getIpSummary = <ThrowOnError extends boolean = false>(options: Options<GetIpSummaryData, ThrowOnError>): RequestResult<GetIpSummaryResponses, GetIpSummaryErrors, ThrowOnError> => (options.client ?? client).get<GetIpSummaryResponses, GetIpSummaryErrors, ThrowOnError>({ url: '/exhibit/ip/{ip_addr}/summary', ...options });
+
+/**
+ * Get Hit
+ *
+ * One request to the honeypot in full: its headers and its whole stored body. 404 for any
+ * other request, such as the exhibit's own.
+ */
+export const getHit = <ThrowOnError extends boolean = false>(options: Options<GetHitData, ThrowOnError>): RequestResult<GetHitResponses, GetHitErrors, ThrowOnError> => (options.client ?? client).get<GetHitResponses, GetHitErrors, ThrowOnError>({ url: '/exhibit/hits/{hit_id}', ...options });

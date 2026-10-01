@@ -14,6 +14,12 @@ CREATE EXTENSION IF NOT EXISTS "citext";
 -- Enum types
 CREATE TYPE decoy_type AS ENUM ('text', 'binary', 'trap');
 CREATE TYPE audit_action AS ENUM ('login', 'ban_created', 'ban_revoked', 'decoy_revoked', 'settings_changed');
+-- What a request was for, recorded with each hit; a router's tags carry its group (sqlc generates
+-- the RouterGroup enum the API uses). 'ingest' is the decoy app reporting its visitors' requests:
+-- records, not visits, so it is never stored.
+CREATE TYPE router_group AS ENUM ('exhibit', 'system', 'honeypot', 'ingest');
+-- The kinds of event in the visitor_events view.
+CREATE TYPE event_kind AS ENUM ('hit', 'login_attempt', 'decoy_view', 'decoy_password_attempt');
 
 ------------------------------------------------------------------
 -- 1. AUTHENTICATION & USERS
@@ -111,7 +117,7 @@ CREATE TABLE telemetry_hits (
     path         TEXT NOT NULL,
     -- After the `?`, as sent; NULL when the request line had no `?`.
     query        TEXT,
-    router_group TEXT NOT NULL, 
+    router_group router_group NOT NULL,
     user_agent   TEXT,
     headers      JSONB NOT NULL DEFAULT '{}'::jsonb,
     -- The body's first bytes (the decoy app keeps 64 KiB) and its full length, so a cut-off body is
@@ -144,6 +150,7 @@ CREATE TABLE credential_stuffing_attempts (
 );
 
 CREATE INDEX idx_credential_attempts_ip ON credential_stuffing_attempts (ip_address, attempted_at DESC);
+CREATE INDEX idx_credential_attempts_time ON credential_stuffing_attempts (attempted_at DESC);
 
 -- Decoy specific interaction telemetry (views, downloads)
 CREATE TABLE decoy_views (
@@ -154,6 +161,7 @@ CREATE TABLE decoy_views (
 );
 
 CREATE INDEX idx_decoy_views_ip ON decoy_views (ip_address, viewed_at DESC);
+CREATE INDEX idx_decoy_views_time ON decoy_views (viewed_at DESC);
 
 -- Decoy password attempts and lockouts
 CREATE TABLE decoy_password_attempts (
@@ -165,6 +173,7 @@ CREATE TABLE decoy_password_attempts (
 );
 
 CREATE INDEX idx_decoy_pwd_attempts_ip ON decoy_password_attempts (ip_address, attempted_at DESC);
+CREATE INDEX idx_decoy_pwd_attempts_time ON decoy_password_attempts (attempted_at DESC);
 
 CREATE TABLE decoy_lockouts (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -177,6 +186,18 @@ CREATE TABLE decoy_lockouts (
 );
 
 CREATE INDEX idx_decoy_lockouts_ip ON decoy_lockouts (ip_address, expires DESC);
+
+-- Every event a visitor caused, newest-first paging only. Details live in each event's own table.
+-- Bans are the project's own actions, not a visitor's, so they are not listed here.
+CREATE VIEW visitor_events AS
+    SELECT 'hit'::event_kind AS kind, id, ip_address, occurred_at
+    FROM telemetry_hits WHERE router_group = 'honeypot'
+    UNION ALL
+    SELECT 'login_attempt', id, ip_address, attempted_at FROM credential_stuffing_attempts
+    UNION ALL
+    SELECT 'decoy_view', id, ip_address, viewed_at FROM decoy_views
+    UNION ALL
+    SELECT 'decoy_password_attempt', id, ip_address, attempted_at FROM decoy_password_attempts;
 
 ------------------------------------------------------------------
 -- 4. SECURITY ENFORCEMENT & AUDITING

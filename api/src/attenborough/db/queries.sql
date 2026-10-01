@@ -32,176 +32,73 @@ INSERT INTO credential_stuffing_attempts (
 )
 VALUES (sqlc.arg(ip_address), sqlc.arg(endpoint_path), sqlc.arg(username), sqlc.arg(password), sqlc.arg(was_fake_success));
 
--- name: GetIpThreatSummary :one
-SELECT
-    ip_address,
-    COUNT(*)::BIGINT AS total_requests,
-    COUNT(DISTINCT path)::BIGINT AS unique_endpoints_probed,
-    MAX(occurred_at) AS last_seen_at
-FROM telemetry_hits
-WHERE ip_address = sqlc.arg(ip_address)::inet
-GROUP BY ip_address;
-
 -- name: CreateActiveIpBan :one
 INSERT INTO ip_bans (ip_address, expires, reason, added_by_user_id)
 VALUES (sqlc.arg(ip_address), sqlc.arg(expires), sqlc.arg(reason), sqlc.arg(added_by_user_id))
 RETURNING *;
 
--- name: ListIpActivity :many
-SELECT
-    event_at,
-    event_type,
-    COALESCE(target_id, 0)::BIGINT AS target_id,
-    COALESCE(target_slug, '')::TEXT AS target_slug,
-    COALESCE(details, '')::TEXT AS details
-FROM (
-    -- 1. General Telemetry Hits (Path probes across routers)
-    SELECT
-        th.occurred_at AS event_at,
-        ('hit_' || th.router_group)::TEXT AS event_type,
-        NULL::BIGINT AS target_id,
-        (th.path || COALESCE('?' || th.query, ''))::TEXT AS target_slug,
-        -- The body's first KiB (non-printable bytes as \ooo), and its full size when longer.
-        ('status=' || th.status_code::text || ' | method=' || th.method
-            || COALESCE(' | body=' || NULLIF(encode(substring(th.body FROM 1 FOR 1024), 'escape'), ''), '')
-            || CASE WHEN th.body_size > 1024 THEN ' | body_size=' || th.body_size::text ELSE '' END
-        )::TEXT AS details
-    FROM telemetry_hits th
-    WHERE th.ip_address = sqlc.arg(ip_address)::inet
-      -- Only visitor traffic (the honeypot group), not the exhibit's or system's own requests.
-      AND th.router_group = sqlc.arg(router_group)
-
-    UNION ALL
-
-    -- 2. Credential Stuffing / Login Probes
-    SELECT
-        csa.attempted_at AS event_at,
-        CASE WHEN csa.was_fake_success THEN 'credential_stuffing_fake_success' ELSE 'credential_stuffing' END::TEXT AS event_type,
-        NULL::BIGINT AS target_id,
-        csa.endpoint_path::TEXT AS target_slug,
-        ('username=' || csa.username || ' | password=' || csa.password)::TEXT AS details
-    FROM credential_stuffing_attempts csa
-    WHERE csa.ip_address = sqlc.arg(ip_address)::inet
-
-    UNION ALL
-
-    -- 3. Decoy Views / Downloads
-    SELECT
-        dv.viewed_at AS event_at,
-        CASE WHEN d.type = 'binary' THEN 'decoy_downloaded' ELSE 'decoy_viewed' END::TEXT AS event_type,
-        d.id::BIGINT AS target_id,
-        d.slug::TEXT AS target_slug,
-        NULL::TEXT AS details
-    FROM decoy_views dv
-    INNER JOIN decoys d ON d.id = dv.decoy_id
-    WHERE dv.ip_address = sqlc.arg(ip_address)::inet
-
-    UNION ALL
-
-    -- 4. Decoy Password Attempts
-    SELECT
-        dpa.attempted_at AS event_at,
-        CASE WHEN dpa.successful THEN 'decoy_password_success' ELSE 'decoy_password_failure' END::TEXT AS event_type,
-        d.id::BIGINT AS target_id,
-        d.slug::TEXT AS target_slug,
-        NULL::TEXT AS details
-    FROM decoy_password_attempts dpa
-    INNER JOIN decoys d ON d.id = dpa.decoy_id
-    WHERE dpa.ip_address = sqlc.arg(ip_address)::inet
-
-    UNION ALL
-
-    -- 5. IP Ban Actions
-    SELECT
-        b.added AS event_at,
-        'ip_banned'::TEXT AS event_type,
-        NULL::BIGINT AS target_id,
-        NULL::TEXT AS target_slug,
-        ('by_user_id=' || b.added_by_user_id::text || COALESCE(' | reason=' || NULLIF(b.reason, ''), ''))::TEXT AS details
-    FROM ip_bans b
-    WHERE b.ip_address = sqlc.arg(ip_address)::inet
-
-    UNION ALL
-
-    -- 6. IP Ban Revocations
-    SELECT
-        b.revoked_at AS event_at,
-        'ip_ban_revoked'::TEXT AS event_type,
-        NULL::BIGINT AS target_id,
-        NULL::TEXT AS target_slug,
-        ('by_user_id=' || b.revoked_by_user_id::text)::TEXT AS details
-    FROM ip_bans b
-    WHERE b.ip_address = sqlc.arg(ip_address)::inet
-) events
-WHERE event_at IS NOT NULL
-ORDER BY event_at DESC
+-- Visitor events (the `visitor_events` view), newest first. The extra `kind, id` keeps the order
+-- stable when events share a timestamp, so rows never repeat or vanish between pages.
+-- name: ListRecentEvents :many
+SELECT * FROM visitor_events
+ORDER BY occurred_at DESC, kind, id DESC
 LIMIT sqlc.arg('limit')::int
 OFFSET sqlc.arg('offset')::int;
 
--- name: ListRecentActivity :many
--- The latest visitor activity from every IP address, newest first: honeypot requests,
--- credential attempts, and decoy views and password attempts. Bans are the project's own
--- actions, not a visitor's, so they are not listed here.
-SELECT
-    event_at,
-    event_type,
-    host(ip_address)::TEXT AS ip_address,
-    COALESCE(target_id, 0)::BIGINT AS target_id,
-    COALESCE(target_slug, '')::TEXT AS target_slug,
-    COALESCE(details, '')::TEXT AS details
-FROM (
-    SELECT
-        th.occurred_at AS event_at,
-        ('hit_' || th.router_group)::TEXT AS event_type,
-        th.ip_address,
-        NULL::BIGINT AS target_id,
-        (th.path || COALESCE('?' || th.query, ''))::TEXT AS target_slug,
-        -- The body's first KiB (non-printable bytes as \ooo), and its full size when longer.
-        ('status=' || th.status_code::text || ' | method=' || th.method
-            || COALESCE(' | body=' || NULLIF(encode(substring(th.body FROM 1 FOR 1024), 'escape'), ''), '')
-            || CASE WHEN th.body_size > 1024 THEN ' | body_size=' || th.body_size::text ELSE '' END
-        )::TEXT AS details
-    FROM telemetry_hits th
-    WHERE th.router_group = sqlc.arg(router_group)
-
-    UNION ALL
-
-    SELECT
-        csa.attempted_at AS event_at,
-        CASE WHEN csa.was_fake_success THEN 'credential_stuffing_fake_success' ELSE 'credential_stuffing' END::TEXT AS event_type,
-        csa.ip_address,
-        NULL::BIGINT AS target_id,
-        csa.endpoint_path::TEXT AS target_slug,
-        ('username=' || csa.username || ' | password=' || csa.password)::TEXT AS details
-    FROM credential_stuffing_attempts csa
-
-    UNION ALL
-
-    SELECT
-        dv.viewed_at AS event_at,
-        CASE WHEN d.type = 'binary' THEN 'decoy_downloaded' ELSE 'decoy_viewed' END::TEXT AS event_type,
-        dv.ip_address,
-        d.id::BIGINT AS target_id,
-        d.slug::TEXT AS target_slug,
-        NULL::TEXT AS details
-    FROM decoy_views dv
-    INNER JOIN decoys d ON d.id = dv.decoy_id
-
-    UNION ALL
-
-    SELECT
-        dpa.attempted_at AS event_at,
-        CASE WHEN dpa.successful THEN 'decoy_password_success' ELSE 'decoy_password_failure' END::TEXT AS event_type,
-        dpa.ip_address,
-        d.id::BIGINT AS target_id,
-        d.slug::TEXT AS target_slug,
-        NULL::TEXT AS details
-    FROM decoy_password_attempts dpa
-    INNER JOIN decoys d ON d.id = dpa.decoy_id
-) events
-ORDER BY event_at DESC
+-- name: ListIpEvents :many
+SELECT * FROM visitor_events
+WHERE ip_address = sqlc.arg(ip_address)::inet
+ORDER BY occurred_at DESC, kind, id DESC
 LIMIT sqlc.arg('limit')::int
 OFFSET sqlc.arg('offset')::int;
+
+-- The details of one page's events, one query per kind. A hit's body is cut to its first KiB here,
+-- and empty when none was captured (body_size is NULL then): sqlc can't type a nullable substring.
+-- name: GetHitsByIds :many
+SELECT
+    id, ip_address, occurred_at, method, path, query, status_code, user_agent,
+    COALESCE(substring(body FROM 1 FOR 1024), ''::BYTEA)::BYTEA AS body_preview, body_size
+FROM telemetry_hits
+WHERE id = ANY(sqlc.arg(ids)::BIGINT[]);
+
+-- name: GetLoginAttemptsByIds :many
+SELECT id, ip_address, attempted_at, endpoint_path, username, password, was_fake_success
+FROM credential_stuffing_attempts
+WHERE id = ANY(sqlc.arg(ids)::BIGINT[]);
+
+-- name: GetDecoyViewsByIds :many
+SELECT dv.id, dv.ip_address, dv.viewed_at, d.slug AS decoy_slug, d.type AS decoy_type
+FROM decoy_views dv
+INNER JOIN decoys d ON d.id = dv.decoy_id
+WHERE dv.id = ANY(sqlc.arg(ids)::BIGINT[]);
+
+-- name: GetDecoyPasswordAttemptsByIds :many
+SELECT dpa.id, dpa.ip_address, dpa.attempted_at, d.slug AS decoy_slug, dpa.successful
+FROM decoy_password_attempts dpa
+INNER JOIN decoys d ON d.id = dpa.decoy_id
+WHERE dpa.id = ANY(sqlc.arg(ids)::BIGINT[]);
+
+-- One request in full, only if it is in the given router group (the exhibit shows honeypot hits).
+-- `headers` as TEXT: psycopg decodes JSONB to a dict, where the generated row expects a str.
+-- name: GetHit :one
+SELECT
+    id, ip_address, occurred_at, method, path, query, status_code, user_agent,
+    headers::TEXT AS headers, body, body_size
+FROM telemetry_hits
+WHERE id = sqlc.arg(id) AND router_group = sqlc.arg(router_group);
+
+-- What one IP address did, in numbers; no row if it sent no requests in the router group.
+-- name: GetIpSummary :one
+SELECT
+    COUNT(*)::BIGINT AS requests,
+    COUNT(DISTINCT path)::BIGINT AS distinct_paths,
+    (SELECT COUNT(*) FROM credential_stuffing_attempts csa
+     WHERE csa.ip_address = sqlc.arg(ip_address)::inet)::BIGINT AS login_attempts,
+    MIN(occurred_at)::TIMESTAMPTZ AS first_seen_at,
+    MAX(occurred_at)::TIMESTAMPTZ AS last_seen_at
+FROM telemetry_hits
+WHERE ip_address = sqlc.arg(ip_address)::inet AND router_group = sqlc.arg(router_group)
+GROUP BY ip_address;
 
 -- name: UpsertDecoy :one
 INSERT INTO decoys (type, slug, added_by_ip)

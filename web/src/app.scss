@@ -38,3 +38,20 @@ time {
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
 }
+
+// A body preview in a listing: one line, cut off with an ellipsis. The request's own page shows
+// the whole body.
+td samp {
+	display: block;
+	max-width: 48ch;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 0.875em;
+}
+
+// Captured requests and bodies wrap rather than scroll: every character as sent, line breaks kept.
+pre code {
+	white-space: pre-wrap;
+	word-break: break-all;
+}

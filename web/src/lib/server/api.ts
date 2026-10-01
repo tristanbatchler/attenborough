@@ -36,7 +36,8 @@ interface ApiResult<T> {
 /**
  * The data of a generated SDK call, or the matching error page. SDK calls never throw: an
  * unreachable API has no `response` (503), a 422 means the API rejected the request's input
- * (400, with `invalidInput` as the message), and anything else is the API's failure (502).
+ * (400, with `invalidInput` as the message), a 404 means there is no such thing (404), and
+ * anything else is the API's failure (502).
  */
 export function unwrap<T>(result: ApiResult<T>, invalidInput = 'The request was not valid.'): T {
 	if (result.data !== undefined) {
@@ -48,6 +49,9 @@ export function unwrap<T>(result: ApiResult<T>, invalidInput = 'The request was 
 	}
 	if (result.response.status === constants.HTTP_STATUS_UNPROCESSABLE_ENTITY) {
 		error(constants.HTTP_STATUS_BAD_REQUEST, invalidInput);
+	}
+	if (result.response.status === constants.HTTP_STATUS_NOT_FOUND) {
+		error(constants.HTTP_STATUS_NOT_FOUND, 'There is nothing here.');
 	}
 	console.error('Exhibit API error', result.response.status, result.error);
 	error(constants.HTTP_STATUS_BAD_GATEWAY, 'The exhibit could not load this page.');

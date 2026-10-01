@@ -38,9 +38,10 @@ import httpx
 from psycopg import AsyncConnection
 from psycopg.rows import class_row
 
+from attenborough.db.enums import RouterGroup
 from attenborough.db.ops import db_conn_pool
 from attenborough.settings import get_settings
-from attenborough.telemetry import USER_AGENT_HEADER, RouterGroup
+from attenborough.telemetry import USER_AGENT_HEADER
 
 PROBE_USER_AGENT_PREFIX = "attenborough-probe/"
 PROBE_HEADER = "x-probe"

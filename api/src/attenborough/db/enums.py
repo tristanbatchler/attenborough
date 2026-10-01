@@ -7,6 +7,8 @@ from __future__ import annotations
 __all__: collections.abc.Sequence[str] = (
     "AuditAction",
     "DecoyType",
+    "EventKind",
+    "RouterGroup",
 )
 
 import enum
@@ -28,3 +30,17 @@ class DecoyType(enum.StrEnum):
     TEXT = "text"
     BINARY = "binary"
     TRAP = "trap"
+
+
+class EventKind(enum.StrEnum):
+    HIT = "hit"
+    LOGIN_ATTEMPT = "login_attempt"
+    DECOY_VIEW = "decoy_view"
+    DECOY_PASSWORD_ATTEMPT = "decoy_password_attempt"
+
+
+class RouterGroup(enum.StrEnum):
+    EXHIBIT = "exhibit"
+    SYSTEM = "system"
+    HONEYPOT = "honeypot"
+    INGEST = "ingest"

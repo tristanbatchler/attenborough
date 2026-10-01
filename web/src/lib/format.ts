@@ -10,3 +10,8 @@ const utcTimestamp = new Intl.DateTimeFormat('en-GB', {
 export function formatUtc(iso: string): string {
 	return `${utcTimestamp.format(new Date(iso))} UTC`;
 }
+
+/** A request's target as sent: its path, and its query after a `?` when there was one. */
+export function requestTarget({ path, query }: { path: string; query: string | null }): string {
+	return query === null ? path : `${path}?${query}`;
+}

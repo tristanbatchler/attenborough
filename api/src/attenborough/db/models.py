@@ -21,6 +21,7 @@ __all__: collections.abc.Sequence[str] = (
     "Session",
     "TelemetryHit",
     "User",
+    "VisitorEvent",
 )
 
 import datetime
@@ -177,7 +178,7 @@ class TelemetryHit(pydantic.BaseModel):
     method: str
     path: str
     query: str | None
-    router_group: str
+    router_group: enums.RouterGroup
     user_agent: str | None
     headers: str
     body: memoryview | None
@@ -196,3 +197,12 @@ class User(pydantic.BaseModel):
     created: datetime.datetime
     last_login: datetime.datetime
     is_admin: bool
+
+
+class VisitorEvent(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    kind: enums.EventKind
+    id_: int
+    ip_address: str
+    occurred_at: datetime.datetime

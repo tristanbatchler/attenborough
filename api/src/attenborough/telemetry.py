@@ -17,6 +17,7 @@ from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from attenborough.db import queries
+from attenborough.db.enums import RouterGroup
 from attenborough.db.ops import db_conn_pool
 from attenborough.dependencies import get_request_origin
 
@@ -29,16 +30,6 @@ MAX_STORED_BODY_BYTES = 64 * 1024
 # How the request line's bytes become text: one character per byte, so nothing is lost or decoded.
 # Node reads a request line the same way, so the decoy app's reports match.
 _REQUEST_LINE_ENCODING = "latin-1"
-
-
-class RouterGroup(StrEnum):
-    """What a request was for, recorded with each hit. A router's tags carry its group."""
-
-    EXHIBIT = "exhibit"
-    SYSTEM = "system"
-    HONEYPOT = "honeypot"
-    # The decoy app (decoy/) reporting its visitors' requests: records, not visits.
-    INGEST = "ingest"
 
 
 async def record_hit(
@@ -64,7 +55,7 @@ async def record_hit(
                 method=method,
                 path=path,
                 query=query,
-                router_group=router_group.value,
+                router_group=router_group,
                 user_agent=headers.get(USER_AGENT_HEADER),
                 headers=json.dumps(dict(headers)),
                 body=None if body is None else memoryview(body[:MAX_STORED_BODY_BYTES]),

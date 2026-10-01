@@ -45,12 +45,12 @@
 <section>
 	<h2>Latest activity</h2>
 	<p>The most recent attempts from every address, newest first. Times are in UTC.</p>
-	{#if data.activity.items.length === 0}
+	{#if data.events.items.length === 0}
 		<p>
 			{data.page === FIRST_PAGE ? 'Nothing has been recorded yet.' : 'There is no older activity.'}
 		</p>
 	{:else}
-		<ActivityTable rows={data.activity.items} />
+		<ActivityTable events={data.events.items} showAddress />
 	{/if}
-	<Pagination page={data.page} hasNextPage={data.activity.has_next} href={pageHref} />
+	<Pagination page={data.page} hasNextPage={data.events.has_next} href={pageHref} />
 </section>

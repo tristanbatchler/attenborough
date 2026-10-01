@@ -6,9 +6,12 @@
 from __future__ import annotations
 
 __all__: collections.abc.Sequence[str] = (
-    "GetIpThreatSummaryRow",
-    "ListIpActivityRow",
-    "ListRecentActivityRow",
+    "GetDecoyPasswordAttemptsByIdsRow",
+    "GetDecoyViewsByIdsRow",
+    "GetHitRow",
+    "GetHitsByIdsRow",
+    "GetIpSummaryRow",
+    "GetLoginAttemptsByIdsRow",
     "QueryResults",
     "create_active_ip_ban",
     "create_credential_stuffing_attempt",
@@ -17,11 +20,16 @@ __all__: collections.abc.Sequence[str] = (
     "create_public_schema",
     "create_telemetry_hit",
     "drop_public_schema",
-    "get_ip_threat_summary",
+    "get_decoy_password_attempts_by_ids",
+    "get_decoy_views_by_ids",
+    "get_hit",
+    "get_hits_by_ids",
+    "get_ip_summary",
+    "get_login_attempts_by_ids",
     "get_schema_fingerprint",
     "get_user_by_session_token_hash",
-    "list_ip_activity",
-    "list_recent_activity",
+    "list_ip_events",
+    "list_recent_events",
     "set_schema_fingerprint",
     "upsert_decoy",
     "upsert_user",
@@ -44,34 +52,77 @@ from . import enums
 from . import models
 
 
-class GetIpThreatSummaryRow(pydantic.BaseModel):
+class GetHitsByIdsRow(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
 
+    id_: int
     ip_address: str
-    total_requests: int
-    unique_endpoints_probed: int
-    last_seen_at: typing.Any
+    occurred_at: datetime.datetime
+    method: str
+    path: str
+    query: str | None
+    status_code: int
+    user_agent: str | None
+    body_preview: memoryview
+    body_size: int | None
 
 
-class ListIpActivityRow(pydantic.BaseModel):
+class GetLoginAttemptsByIdsRow(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
 
-    event_at: datetime.datetime
-    event_type: str
-    target_id: int
-    target_slug: str
-    details: str
-
-
-class ListRecentActivityRow(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
-
-    event_at: datetime.datetime
-    event_type: str
+    id_: int
     ip_address: str
-    target_id: int
-    target_slug: str
-    details: str
+    attempted_at: datetime.datetime
+    endpoint_path: str
+    username: str
+    password: str
+    was_fake_success: bool
+
+
+class GetDecoyViewsByIdsRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    id_: int
+    ip_address: str
+    viewed_at: datetime.datetime
+    decoy_slug: str
+    decoy_type: enums.DecoyType
+
+
+class GetDecoyPasswordAttemptsByIdsRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    id_: int
+    ip_address: str
+    attempted_at: datetime.datetime
+    decoy_slug: str
+    successful: bool
+
+
+class GetHitRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    id_: int
+    ip_address: str
+    occurred_at: datetime.datetime
+    method: str
+    path: str
+    query: str | None
+    status_code: int
+    user_agent: str | None
+    headers: str
+    body: memoryview | None
+    body_size: int | None
+
+
+class GetIpSummaryRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    requests: int
+    distinct_paths: int
+    login_attempts: int
+    first_seen_at: datetime.datetime
+    last_seen_at: datetime.datetime
 
 
 UPSERT_USER: typing.Final[typing.LiteralString] = """-- name: UpsertUser :one
@@ -112,176 +163,74 @@ INSERT INTO credential_stuffing_attempts (
 VALUES (%(p1)s, %(p2)s, %(p3)s, %(p4)s, %(p5)s)
 """
 
-GET_IP_THREAT_SUMMARY: typing.Final[typing.LiteralString] = """-- name: GetIpThreatSummary :one
-SELECT
-    ip_address,
-    COUNT(*)::BIGINT AS total_requests,
-    COUNT(DISTINCT path)::BIGINT AS unique_endpoints_probed,
-    MAX(occurred_at) AS last_seen_at
-FROM telemetry_hits
-WHERE ip_address = %(p1)s::inet
-GROUP BY ip_address
-"""
-
 CREATE_ACTIVE_IP_BAN: typing.Final[typing.LiteralString] = """-- name: CreateActiveIpBan :one
 INSERT INTO ip_bans (ip_address, expires, reason, added_by_user_id)
 VALUES (%(p1)s, %(p2)s, %(p3)s, %(p4)s)
 RETURNING id, ip_address, added, expires, reason, added_by_user_id, revoked_at, revoked_by_user_id, revocation_reason
 """
 
-LIST_IP_ACTIVITY: typing.Final[typing.LiteralString] = r"""-- name: ListIpActivity :many
-SELECT
-    event_at,
-    event_type,
-    COALESCE(target_id, 0)::BIGINT AS target_id,
-    COALESCE(target_slug, '')::TEXT AS target_slug,
-    COALESCE(details, '')::TEXT AS details
-FROM (
-    -- 1. General Telemetry Hits (Path probes across routers)
-    SELECT
-        th.occurred_at AS event_at,
-        ('hit_' || th.router_group)::TEXT AS event_type,
-        NULL::BIGINT AS target_id,
-        (th.path || COALESCE('?' || th.query, ''))::TEXT AS target_slug,
-        -- The body's first KiB (non-printable bytes as \ooo), and its full size when longer.
-        ('status=' || th.status_code::text || ' | method=' || th.method
-            || COALESCE(' | body=' || NULLIF(encode(substring(th.body FROM 1 FOR 1024), 'escape'), ''), '')
-            || CASE WHEN th.body_size > 1024 THEN ' | body_size=' || th.body_size::text ELSE '' END
-        )::TEXT AS details
-    FROM telemetry_hits th
-    WHERE th.ip_address = %(p1)s::inet
-      -- Only visitor traffic (the honeypot group), not the exhibit's or system's own requests.
-      AND th.router_group = %(p2)s
-
-    UNION ALL
-
-    -- 2. Credential Stuffing / Login Probes
-    SELECT
-        csa.attempted_at AS event_at,
-        CASE WHEN csa.was_fake_success THEN 'credential_stuffing_fake_success' ELSE 'credential_stuffing' END::TEXT AS event_type,
-        NULL::BIGINT AS target_id,
-        csa.endpoint_path::TEXT AS target_slug,
-        ('username=' || csa.username || ' | password=' || csa.password)::TEXT AS details
-    FROM credential_stuffing_attempts csa
-    WHERE csa.ip_address = %(p1)s::inet
-
-    UNION ALL
-
-    -- 3. Decoy Views / Downloads
-    SELECT
-        dv.viewed_at AS event_at,
-        CASE WHEN d.type = 'binary' THEN 'decoy_downloaded' ELSE 'decoy_viewed' END::TEXT AS event_type,
-        d.id::BIGINT AS target_id,
-        d.slug::TEXT AS target_slug,
-        NULL::TEXT AS details
-    FROM decoy_views dv
-    INNER JOIN decoys d ON d.id = dv.decoy_id
-    WHERE dv.ip_address = %(p1)s::inet
-
-    UNION ALL
-
-    -- 4. Decoy Password Attempts
-    SELECT
-        dpa.attempted_at AS event_at,
-        CASE WHEN dpa.successful THEN 'decoy_password_success' ELSE 'decoy_password_failure' END::TEXT AS event_type,
-        d.id::BIGINT AS target_id,
-        d.slug::TEXT AS target_slug,
-        NULL::TEXT AS details
-    FROM decoy_password_attempts dpa
-    INNER JOIN decoys d ON d.id = dpa.decoy_id
-    WHERE dpa.ip_address = %(p1)s::inet
-
-    UNION ALL
-
-    -- 5. IP Ban Actions
-    SELECT
-        b.added AS event_at,
-        'ip_banned'::TEXT AS event_type,
-        NULL::BIGINT AS target_id,
-        NULL::TEXT AS target_slug,
-        ('by_user_id=' || b.added_by_user_id::text || COALESCE(' | reason=' || NULLIF(b.reason, ''), ''))::TEXT AS details
-    FROM ip_bans b
-    WHERE b.ip_address = %(p1)s::inet
-
-    UNION ALL
-
-    -- 6. IP Ban Revocations
-    SELECT
-        b.revoked_at AS event_at,
-        'ip_ban_revoked'::TEXT AS event_type,
-        NULL::BIGINT AS target_id,
-        NULL::TEXT AS target_slug,
-        ('by_user_id=' || b.revoked_by_user_id::text)::TEXT AS details
-    FROM ip_bans b
-    WHERE b.ip_address = %(p1)s::inet
-) events
-WHERE event_at IS NOT NULL
-ORDER BY event_at DESC
-LIMIT %(p4)s::int
-OFFSET %(p3)s::int
+LIST_RECENT_EVENTS: typing.Final[typing.LiteralString] = """-- name: ListRecentEvents :many
+SELECT kind, id, ip_address, occurred_at FROM visitor_events
+ORDER BY occurred_at DESC, kind, id DESC
+LIMIT %(p2)s::int
+OFFSET %(p1)s::int
 """
 
-LIST_RECENT_ACTIVITY: typing.Final[typing.LiteralString] = r"""-- name: ListRecentActivity :many
-SELECT
-    event_at,
-    event_type,
-    host(ip_address)::TEXT AS ip_address,
-    COALESCE(target_id, 0)::BIGINT AS target_id,
-    COALESCE(target_slug, '')::TEXT AS target_slug,
-    COALESCE(details, '')::TEXT AS details
-FROM (
-    SELECT
-        th.occurred_at AS event_at,
-        ('hit_' || th.router_group)::TEXT AS event_type,
-        th.ip_address,
-        NULL::BIGINT AS target_id,
-        (th.path || COALESCE('?' || th.query, ''))::TEXT AS target_slug,
-        -- The body's first KiB (non-printable bytes as \ooo), and its full size when longer.
-        ('status=' || th.status_code::text || ' | method=' || th.method
-            || COALESCE(' | body=' || NULLIF(encode(substring(th.body FROM 1 FOR 1024), 'escape'), ''), '')
-            || CASE WHEN th.body_size > 1024 THEN ' | body_size=' || th.body_size::text ELSE '' END
-        )::TEXT AS details
-    FROM telemetry_hits th
-    WHERE th.router_group = %(p1)s
-
-    UNION ALL
-
-    SELECT
-        csa.attempted_at AS event_at,
-        CASE WHEN csa.was_fake_success THEN 'credential_stuffing_fake_success' ELSE 'credential_stuffing' END::TEXT AS event_type,
-        csa.ip_address,
-        NULL::BIGINT AS target_id,
-        csa.endpoint_path::TEXT AS target_slug,
-        ('username=' || csa.username || ' | password=' || csa.password)::TEXT AS details
-    FROM credential_stuffing_attempts csa
-
-    UNION ALL
-
-    SELECT
-        dv.viewed_at AS event_at,
-        CASE WHEN d.type = 'binary' THEN 'decoy_downloaded' ELSE 'decoy_viewed' END::TEXT AS event_type,
-        dv.ip_address,
-        d.id::BIGINT AS target_id,
-        d.slug::TEXT AS target_slug,
-        NULL::TEXT AS details
-    FROM decoy_views dv
-    INNER JOIN decoys d ON d.id = dv.decoy_id
-
-    UNION ALL
-
-    SELECT
-        dpa.attempted_at AS event_at,
-        CASE WHEN dpa.successful THEN 'decoy_password_success' ELSE 'decoy_password_failure' END::TEXT AS event_type,
-        dpa.ip_address,
-        d.id::BIGINT AS target_id,
-        d.slug::TEXT AS target_slug,
-        NULL::TEXT AS details
-    FROM decoy_password_attempts dpa
-    INNER JOIN decoys d ON d.id = dpa.decoy_id
-) events
-ORDER BY event_at DESC
+LIST_IP_EVENTS: typing.Final[typing.LiteralString] = """-- name: ListIpEvents :many
+SELECT kind, id, ip_address, occurred_at FROM visitor_events
+WHERE ip_address = %(p1)s::inet
+ORDER BY occurred_at DESC, kind, id DESC
 LIMIT %(p3)s::int
 OFFSET %(p2)s::int
+"""
+
+GET_HITS_BY_IDS: typing.Final[typing.LiteralString] = """-- name: GetHitsByIds :many
+SELECT
+    id, ip_address, occurred_at, method, path, query, status_code, user_agent,
+    COALESCE(substring(body FROM 1 FOR 1024), ''::BYTEA)::BYTEA AS body_preview, body_size
+FROM telemetry_hits
+WHERE id = ANY(%(p1)s::BIGINT[])
+"""
+
+GET_LOGIN_ATTEMPTS_BY_IDS: typing.Final[typing.LiteralString] = """-- name: GetLoginAttemptsByIds :many
+SELECT id, ip_address, attempted_at, endpoint_path, username, password, was_fake_success
+FROM credential_stuffing_attempts
+WHERE id = ANY(%(p1)s::BIGINT[])
+"""
+
+GET_DECOY_VIEWS_BY_IDS: typing.Final[typing.LiteralString] = """-- name: GetDecoyViewsByIds :many
+SELECT dv.id, dv.ip_address, dv.viewed_at, d.slug AS decoy_slug, d.type AS decoy_type
+FROM decoy_views dv
+INNER JOIN decoys d ON d.id = dv.decoy_id
+WHERE dv.id = ANY(%(p1)s::BIGINT[])
+"""
+
+GET_DECOY_PASSWORD_ATTEMPTS_BY_IDS: typing.Final[typing.LiteralString] = """-- name: GetDecoyPasswordAttemptsByIds :many
+SELECT dpa.id, dpa.ip_address, dpa.attempted_at, d.slug AS decoy_slug, dpa.successful
+FROM decoy_password_attempts dpa
+INNER JOIN decoys d ON d.id = dpa.decoy_id
+WHERE dpa.id = ANY(%(p1)s::BIGINT[])
+"""
+
+GET_HIT: typing.Final[typing.LiteralString] = """-- name: GetHit :one
+SELECT
+    id, ip_address, occurred_at, method, path, query, status_code, user_agent,
+    headers::TEXT AS headers, body, body_size
+FROM telemetry_hits
+WHERE id = %(p1)s AND router_group = %(p2)s
+"""
+
+GET_IP_SUMMARY: typing.Final[typing.LiteralString] = """-- name: GetIpSummary :one
+SELECT
+    COUNT(*)::BIGINT AS requests,
+    COUNT(DISTINCT path)::BIGINT AS distinct_paths,
+    (SELECT COUNT(*) FROM credential_stuffing_attempts csa
+     WHERE csa.ip_address = %(p1)s::inet)::BIGINT AS login_attempts,
+    MIN(occurred_at)::TIMESTAMPTZ AS first_seen_at,
+    MAX(occurred_at)::TIMESTAMPTZ AS last_seen_at
+FROM telemetry_hits
+WHERE ip_address = %(p1)s::inet AND router_group = %(p2)s
+GROUP BY ip_address
 """
 
 UPSERT_DECOY: typing.Final[typing.LiteralString] = """-- name: UpsertDecoy :one
@@ -374,19 +323,12 @@ async def get_user_by_session_token_hash(conn: ConnectionLike, *, token_hash: st
     return models.User(id_=row[0], google_sub=row[1], email=row[2], name=row[3], created=row[4], last_login=row[5], is_admin=row[6])
 
 
-async def create_telemetry_hit(conn: ConnectionLike, *, ip_address: str, method: str, path: str, query: str | None, router_group: str, user_agent: str | None, headers: str, body: memoryview | None, body_size: int | None, status_code: int) -> None:
+async def create_telemetry_hit(conn: ConnectionLike, *, ip_address: str, method: str, path: str, query: str | None, router_group: enums.RouterGroup, user_agent: str | None, headers: str, body: memoryview | None, body_size: int | None, status_code: int) -> None:
     await conn.execute(CREATE_TELEMETRY_HIT, {"p1": ip_address, "p2": method, "p3": path, "p4": query, "p5": router_group, "p6": user_agent, "p7": headers, "p8": body, "p9": body_size, "p10": status_code})
 
 
 async def create_credential_stuffing_attempt(conn: ConnectionLike, *, ip_address: str, endpoint_path: str, username: str, password: str, was_fake_success: bool) -> None:
     await conn.execute(CREATE_CREDENTIAL_STUFFING_ATTEMPT, {"p1": ip_address, "p2": endpoint_path, "p3": username, "p4": password, "p5": was_fake_success})
-
-
-async def get_ip_threat_summary(conn: ConnectionLike, *, ip_address: str) -> GetIpThreatSummaryRow | None:
-    row = await (await conn.execute(GET_IP_THREAT_SUMMARY, {"p1": ip_address})).fetchone()
-    if row is None:
-        return None
-    return GetIpThreatSummaryRow(ip_address=str(row[0]), total_requests=row[1], unique_endpoints_probed=row[2], last_seen_at=row[3])
 
 
 async def create_active_ip_ban(conn: ConnectionLike, *, ip_address: str, expires: datetime.datetime | None, reason: str | None, added_by_user_id: int) -> models.IpBan | None:
@@ -396,18 +338,60 @@ async def create_active_ip_ban(conn: ConnectionLike, *, ip_address: str, expires
     return models.IpBan(id_=row[0], ip_address=str(row[1]), added=row[2], expires=row[3], reason=row[4], added_by_user_id=row[5], revoked_at=row[6], revoked_by_user_id=row[7], revocation_reason=row[8])
 
 
-def list_ip_activity(conn: ConnectionLike, *, ip_address: str, router_group: str, offset: int, limit: int) -> QueryResults[ListIpActivityRow]:
-    def _decode_hook(row: psycopg.rows.TupleRow) -> ListIpActivityRow:
-        return ListIpActivityRow(event_at=row[0], event_type=row[1], target_id=row[2], target_slug=row[3], details=row[4])
+def list_recent_events(conn: ConnectionLike, *, offset: int, limit: int) -> QueryResults[models.VisitorEvent]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> models.VisitorEvent:
+        return models.VisitorEvent(kind=enums.EventKind(row[0]), id_=row[1], ip_address=str(row[2]), occurred_at=row[3])
 
-    return QueryResults(conn, LIST_IP_ACTIVITY, _decode_hook, {"p1": ip_address, "p2": router_group, "p3": offset, "p4": limit})
+    return QueryResults(conn, LIST_RECENT_EVENTS, _decode_hook, {"p1": offset, "p2": limit})
 
 
-def list_recent_activity(conn: ConnectionLike, *, router_group: str, offset: int, limit: int) -> QueryResults[ListRecentActivityRow]:
-    def _decode_hook(row: psycopg.rows.TupleRow) -> ListRecentActivityRow:
-        return ListRecentActivityRow(event_at=row[0], event_type=row[1], ip_address=row[2], target_id=row[3], target_slug=row[4], details=row[5])
+def list_ip_events(conn: ConnectionLike, *, ip_address: str, offset: int, limit: int) -> QueryResults[models.VisitorEvent]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> models.VisitorEvent:
+        return models.VisitorEvent(kind=enums.EventKind(row[0]), id_=row[1], ip_address=str(row[2]), occurred_at=row[3])
 
-    return QueryResults(conn, LIST_RECENT_ACTIVITY, _decode_hook, {"p1": router_group, "p2": offset, "p3": limit})
+    return QueryResults(conn, LIST_IP_EVENTS, _decode_hook, {"p1": ip_address, "p2": offset, "p3": limit})
+
+
+def get_hits_by_ids(conn: ConnectionLike, *, ids: collections.abc.Sequence[int]) -> QueryResults[GetHitsByIdsRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> GetHitsByIdsRow:
+        return GetHitsByIdsRow(id_=row[0], ip_address=str(row[1]), occurred_at=row[2], method=row[3], path=row[4], query=row[5], status_code=row[6], user_agent=row[7], body_preview=memoryview(row[8]), body_size=row[9])
+
+    return QueryResults(conn, GET_HITS_BY_IDS, _decode_hook, {"p1": list(ids)})
+
+
+def get_login_attempts_by_ids(conn: ConnectionLike, *, ids: collections.abc.Sequence[int]) -> QueryResults[GetLoginAttemptsByIdsRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> GetLoginAttemptsByIdsRow:
+        return GetLoginAttemptsByIdsRow(id_=row[0], ip_address=str(row[1]), attempted_at=row[2], endpoint_path=row[3], username=row[4], password=row[5], was_fake_success=row[6])
+
+    return QueryResults(conn, GET_LOGIN_ATTEMPTS_BY_IDS, _decode_hook, {"p1": list(ids)})
+
+
+def get_decoy_views_by_ids(conn: ConnectionLike, *, ids: collections.abc.Sequence[int]) -> QueryResults[GetDecoyViewsByIdsRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> GetDecoyViewsByIdsRow:
+        return GetDecoyViewsByIdsRow(id_=row[0], ip_address=str(row[1]), viewed_at=row[2], decoy_slug=row[3], decoy_type=enums.DecoyType(row[4]))
+
+    return QueryResults(conn, GET_DECOY_VIEWS_BY_IDS, _decode_hook, {"p1": list(ids)})
+
+
+def get_decoy_password_attempts_by_ids(conn: ConnectionLike, *, ids: collections.abc.Sequence[int]) -> QueryResults[GetDecoyPasswordAttemptsByIdsRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> GetDecoyPasswordAttemptsByIdsRow:
+        return GetDecoyPasswordAttemptsByIdsRow(id_=row[0], ip_address=str(row[1]), attempted_at=row[2], decoy_slug=row[3], successful=row[4])
+
+    return QueryResults(conn, GET_DECOY_PASSWORD_ATTEMPTS_BY_IDS, _decode_hook, {"p1": list(ids)})
+
+
+async def get_hit(conn: ConnectionLike, *, id_: int, router_group: enums.RouterGroup) -> GetHitRow | None:
+    row = await (await conn.execute(GET_HIT, {"p1": id_, "p2": router_group})).fetchone()
+    if row is None:
+        return None
+    return GetHitRow(id_=row[0], ip_address=str(row[1]), occurred_at=row[2], method=row[3], path=row[4], query=row[5], status_code=row[6], user_agent=row[7], headers=row[8], body=memoryview(row[9]) if row[9] is not None else None, body_size=row[10])
+
+
+async def get_ip_summary(conn: ConnectionLike, *, ip_address: str, router_group: enums.RouterGroup) -> GetIpSummaryRow | None:
+    row = await (await conn.execute(GET_IP_SUMMARY, {"p1": ip_address, "p2": router_group})).fetchone()
+    if row is None:
+        return None
+    return GetIpSummaryRow(requests=row[0], distinct_paths=row[1], login_attempts=row[2], first_seen_at=row[3], last_seen_at=row[4])
 
 
 async def upsert_decoy(conn: ConnectionLike, *, type: enums.DecoyType, slug: str, added_by_ip: str) -> int | None:
