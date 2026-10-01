@@ -21,7 +21,7 @@ export interface Visit {
  * `req.url` instead, which Node decodes one character per byte, as the API does. `vite dev` has no
  * Node request, so there it falls back to the parsed URL.
  */
-function requestTarget(event: RequestEvent): { path: string; query: string | null } {
+export function requestTarget(event: RequestEvent): { path: string; query: string | null } {
 	const raw = event.platform?.req.url;
 	if (raw === undefined) {
 		return {

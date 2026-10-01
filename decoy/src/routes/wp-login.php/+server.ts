@@ -4,6 +4,7 @@ import { reportLogin } from '$lib/client';
 import { apiOptions } from '$lib/server/api';
 import { CONTENT_TYPE_HEADER } from '$lib/server/headers';
 import { htmlPage } from '$lib/server/html';
+import { requestTarget } from '$lib/server/visit';
 import LoginPage from '$lib/wordpress/LoginPage.svelte';
 import { ADMIN_PATH, LoginError, PASSWORD_FIELD, USERNAME_FIELD } from '$lib/wordpress/site';
 import type { RequestHandler } from './$types';
@@ -56,7 +57,7 @@ function field(form: FormData | null, name: string): string {
 async function attemptLogin(event: RequestEvent, username: string, password: string) {
 	const result = await reportLogin({
 		...apiOptions(event),
-		body: { path: event.url.pathname, username, password }
+		body: { path: requestTarget(event).path, username, password }
 	});
 	if (result.data === undefined) {
 		console.error('Failed to report a login attempt', result.error);
