@@ -1,20 +1,25 @@
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime, timedelta
 from http import HTTPMethod, HTTPStatus
 
 import pytest
 from fastapi.openapi.utils import get_openapi
 from httpx import ASGITransport, AsyncClient
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from attenborough import telemetry
-from attenborough.db.enums import RouterGroup
+from attenborough.db import queries
+from attenborough.db.enums import EventKind, RouterGroup
 from attenborough.db.ops import get_db_conn
+from attenborough.events import FIRST_PAGE, EventCursor
 from attenborough.exhibit import Paging
 from attenborough.main import app
 
 # The parametrized arguments.
 REQUEST = "method, path, status, group"
-TAKE = "take, fetched, expected_items, expected_has_next"
+TAKE = "take, fetched, expected_next"
+AT = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+IP = "203.0.113.7"
 
 
 def test_operation_ids_are_unique():
@@ -105,19 +110,47 @@ async def test_every_request_is_recorded_once_by_group(
     assert recorded == expected
 
 
+def _event(n: int) -> queries.ListRecentEventsRow:
+    return queries.ListRecentEventsRow(
+        kind=EventKind.HIT, id_=n, ip_address=IP, occurred_at=AT - timedelta(seconds=n)
+    )
+
+
 @pytest.mark.parametrize(
     TAKE,
     [
-        (2, 3, 2, True),
-        (2, 2, 2, False),
-        (2, 0, 0, False),
+        (2, 3, True),
+        (2, 2, False),
+        (2, 0, False),
     ],
 )
 def test_a_page_is_take_rows_and_the_extra_row_means_more(
-    take: int, fetched: int, expected_items: int, expected_has_next: bool
+    take: int, fetched: int, expected_next: bool
 ):
     paging = Paging(take=take)
     assert paging.limit == take + 1
-    items, has_next = paging.page_of(range(fetched))
-    assert len(items) == expected_items
-    assert has_next is expected_has_next
+    rows = [_event(n) for n in range(1, fetched + 1)]
+    token = paging.next_cursor(rows)
+    assert (token is not None) is expected_next
+    if token is not None:
+        # The next page starts after the page's last row, not after the extra one.
+        assert EventCursor.from_token(token) == EventCursor.after(rows[take - 1])
+
+
+def test_the_first_page_starts_after_every_event():
+    assert Paging().cursor == FIRST_PAGE
+    assert FIRST_PAGE.occurred_at > datetime.now(tz=UTC)
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "not base64!",
+        # Base64, but not a cursor.
+        "eyJhIjogMX0=",
+        EventCursor(occurred_at=AT, kind=EventKind.HIT, id=1).token()[:-4],
+    ],
+)
+def test_a_cursor_that_this_api_did_not_make_is_rejected(token: str):
+    with pytest.raises(ValidationError):
+        _ = Paging(before=token)

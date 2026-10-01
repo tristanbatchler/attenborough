@@ -1,13 +1,15 @@
-"""Reset the application database to `schema.sql`, deleting all of its data.
+"""Reset the development database to `schema.sql`, deleting all of its data.
 
 Run from `api/`:
 
     uv run python scripts/reset_db.py --yes
 
-This runs the same reset the server offers at startup when the database doesn't match
-`schema.sql` (see `attenborough/db/schema.py`). It replaces the `public` schema in one transaction:
-if `schema.sql` is broken, it rolls back and the database is left as it was. The database itself
-must already exist. Connects through the app's own connection pool and `Settings`.
+This runs the same reset the server offers at startup when the database has no schema, or one that
+no longer matches the migrations (see `attenborough/db/schema.py`). It replaces the `public` schema
+in one transaction and records every migration as applied: if `schema.sql` is broken, it rolls back
+and the database is left as it was. The database itself must already exist. Production databases
+are never reset, only migrated (`scripts/migrate.py`). Connects through the app's own connection
+pool and `Settings`.
 """
 
 import argparse

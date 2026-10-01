@@ -148,11 +148,11 @@ def request_matrix() -> list[Case]:
             "/exhibit/ip/not-an-ip/activity",
             RouterGroup.EXHIBIT,
         ),
-        # Past APP_MAX_PAGE: rejected (422). This page once overflowed the query's OFFSET (500).
+        # A page cursor the API didn't make: rejected (422), never passed to the database.
         Case(
-            "page-too-large",
+            "bad-cursor",
             HTTPMethod.GET,
-            "/exhibit/ip/127.0.0.1/activity?page=2147483647",
+            "/exhibit/ip/127.0.0.1/activity?before=not-a-cursor",
             RouterGroup.EXHIBIT,
         ),
     ]

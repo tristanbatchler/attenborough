@@ -12,9 +12,15 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from attenborough import exhibit, ingest, settings
 from attenborough.db.ops import db_conn_pool
-from attenborough.db.schema import SchemaStatus, reset_schema, schema_status
+from attenborough.db.schema import (
+    SchemaStatus,
+    migrate,
+    pending_migrations,
+    reset_schema,
+    schema_status,
+)
 from attenborough.dependencies import RequestOrigin
-from attenborough.settings import write_example_env
+from attenborough.settings import SOURCE_CHECKOUT, write_example_env
 from attenborough.telemetry import TelemetryMiddleware
 
 logging.basicConfig(level=logging.DEBUG if settings.DEBUG else logging.INFO)
@@ -45,19 +51,35 @@ def _confirm_on_terminal(question: str) -> bool:
 
 
 async def _ensure_current_schema() -> None:
-    """Refuse to serve from a database that doesn't match schema.sql, unless the user resets it."""
+    """Refuse to serve from a database that isn't up to date with the migrations, unless the user
+    migrates or resets it on the terminal. Without a terminal (a container), it refuses and logs why.
+    """
     async with db_conn_pool.connection() as conn:
         match await schema_status(conn):
             case SchemaStatus.CURRENT:
                 return
-            case SchemaStatus.OUTDATED:
-                problem = "schema.sql has changed since this database was built"
+            case SchemaStatus.PENDING:
+                names = ", ".join(m.file_name for m in await pending_migrations(conn))
+                question = f"\nThis database needs migrations: {names}.\nApply them now? [y/N] "
+                if not await asyncio.to_thread(_confirm_on_terminal, question):
+                    raise RuntimeError(
+                        f"the database needs migrations ({names}); refusing to start. Apply them "
+                        + "as the schema owner: `uv run python scripts/migrate.py` from api/, or "
+                        + "`docker compose run --rm migrate` in a deployment (api/README.md)."
+                    )
+                applied = await migrate(conn)
+                logger.warning("Applied %d migrations", len(applied))
+                return
+            case SchemaStatus.DIVERGED:
+                problem = "this database's applied migrations differ from migrations/"
             case SchemaStatus.MISSING:
                 problem = "this database has no Attenborough schema"
         question = f"\n{problem}.\nReset the database to schema.sql? This DELETES ALL DATA. [y/N] "
         if not await asyncio.to_thread(_confirm_on_terminal, question):
             raise RuntimeError(
-                f"{problem}; refusing to start. To reset (deleting all data), run "
+                f"{problem}; refusing to start. A new, empty database is set up with "
+                + "`scripts/migrate.py` (`docker compose run --rm migrate`). To reset a "
+                + "development database (deleting all data), run "
                 + "`uv run python scripts/reset_db.py --yes` from api/, or start the server "
                 + "from a terminal and answer the prompt."
             )
@@ -67,13 +89,15 @@ async def _ensure_current_schema() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    # The two tracked files a server start rewrites: the API spec and the settings template.
-    _ = _OPENAPI_JSON.write_text(json.dumps(app.openapi()))
-    logger.info("Wrote %s", _OPENAPI_JSON)
-    write_example_env()
+    # The two tracked files a server start rewrites in a source checkout: the API spec and the
+    # settings template. An installed package (the container image) has neither to update.
+    if SOURCE_CHECKOUT:
+        _ = _OPENAPI_JSON.write_text(json.dumps(app.openapi()))
+        logger.info("Wrote %s", _OPENAPI_JSON)
+        write_example_env()
 
     async with db_conn_pool:
-        # Before serving anything: the database must match schema.sql (api/README.md, "Database").
+        # Before serving anything: the database must be up to date (api/README.md, "Database").
         await _ensure_current_schema()
         yield
 

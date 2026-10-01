@@ -1,25 +1,73 @@
 """Visitor events as the exhibit shows them: one typed model per kind, tagged by `kind`.
 
-A page of events is fetched in two steps: the `visitor_events` view gives the page's kinds and ids
-in order, then one query per kind on the page fetches their details. The row-to-model functions
+A page of events is fetched in two steps: ListRecentEvents or ListIpEvents (queries.sql) gives the
+page's kinds and ids in order, then one query per kind on the page fetches their details. The row-to-model functions
 make no database calls.
 """
 
+import base64
+import binascii
+import re
 from collections.abc import Iterable, Sequence
-from datetime import datetime
-from typing import Annotated, Literal
+from datetime import UTC, datetime
+from typing import Annotated, Literal, Protocol, Self
 
 from psycopg import AsyncConnection
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import AwareDatetime, BaseModel, Field, TypeAdapter, ValidationError
 
-from attenborough.db import enums, models, queries
+from attenborough import settings
+from attenborough.db import enums, queries
 from attenborough.db.enums import EventKind
 
-# The field that tells the event models apart. Each model's `kind` has no default: with one, it would be optional in the OpenAPI schema, and the
-# generated TypeScript couldn't narrow the union on it.
-
-
+# The field that tells the event models apart. Each model's `kind` has no default: with one, it
+# would be optional in the OpenAPI schema, and the generated TypeScript couldn't narrow the union
+# on it.
 DISCRIMINATOR = "kind"
+
+# The largest id a BIGINT column holds.
+MAX_ID = 2**63 - 1
+
+# What the exhibit shows in place of the honeypot's own names and addresses.
+HONEYPOT_PLACEHOLDER = "[honeypot]"
+
+
+def honeypot_pattern(addresses: Iterable[str]) -> re.Pattern[str]:
+    """Any of `addresses`, ignoring case, but not as part of a longer number: 203.0.113.5 is not
+    found in 203.0.113.50 or 1203.0.113.5. Nothing else bounds a match, so a domain is found after
+    `%2F` in an encoded URL, and inside a longer name (`www.<domain>`), which hides that name too.
+    Longest first, so a name wins over a shorter one it contains."""
+    longest_first = sorted(addresses, key=len, reverse=True)
+    alternatives = "|".join(map(re.escape, longest_first))
+    return re.compile(f"(?<![0-9])(?:{alternatives})(?![0-9])", re.IGNORECASE)
+
+
+_HONEYPOT = honeypot_pattern(settings.HONEYPOT_ADDRESSES)
+
+
+def hide_honeypot(text: str) -> str:
+    """`text` with each of the honeypot's names and addresses replaced by HONEYPOT_PLACEHOLDER.
+
+    Visitors' requests name the server they reached (Host, Origin, Referer, absolute URLs, bodies
+    such as WordPress's `redirect_to`). The exhibit hides that so readers can't tell where the
+    honeypot is; the database keeps everything as sent. Best effort: a name sent in another
+    encoding (base64, `%2E` for the dots) isn't recognised.
+    """
+    return _HONEYPOT.sub(HONEYPOT_PLACEHOLDER, text)
+
+
+def _hide_optional(text: str | None) -> str | None:
+    return None if text is None else hide_honeypot(text)
+
+
+class ListedEvent(Protocol):
+    """An event's place in a listing: a row of ListRecentEvents or ListIpEvents."""
+
+    @property
+    def kind(self) -> EventKind: ...
+    @property
+    def id_(self) -> int: ...
+    @property
+    def occurred_at(self) -> datetime: ...
 
 
 class Hit(BaseModel):
@@ -90,11 +138,52 @@ Event = Annotated[
 ]
 
 
+_PAD = "="
+_BASE64_BLOCK = 4
+
+
+class EventCursor(BaseModel):
+    """Where a page of events starts: just after this event, in the listings' newest-first order
+    (occurred_at, kind, id). Sent to clients as an opaque token."""
+
+    occurred_at: AwareDatetime
+    kind: EventKind
+    id: int = Field(ge=0, le=MAX_ID)
+
+    @classmethod
+    def after(cls, event: ListedEvent) -> Self:
+        return cls(occurred_at=event.occurred_at, kind=event.kind, id=event.id_)
+
+    def token(self) -> str:
+        """URL-safe base64 without its `=` padding, which URLs would escape."""
+        return (
+            base64.urlsafe_b64encode(self.model_dump_json().encode())
+            .decode()
+            .rstrip(_PAD)
+        )
+
+    @classmethod
+    def from_token(cls, token: str) -> Self:
+        """Raises ValueError if `token` isn't one that `token()` made."""
+        try:
+            padded = token + _PAD * (-len(token) % _BASE64_BLOCK)
+            return cls.model_validate_json(base64.urlsafe_b64decode(padded))
+        except (binascii.Error, ValidationError) as exc:
+            raise ValueError("not a page cursor from this API") from exc
+
+
+# Before every event, for the first page: newer than any timestamp the database holds.
+FIRST_PAGE = EventCursor(
+    occurred_at=datetime.max.replace(tzinfo=UTC), kind=EventKind.HIT, id=0
+)
+
+
 class EventPage(BaseModel):
     """One page of events, newest first."""
 
     items: list[Event]
-    has_next: bool
+    # Pass it back as `before` for the next, older page; null on the last page.
+    next_cursor: str | None
 
 
 class IpSummary(BaseModel):
@@ -126,16 +215,16 @@ def hit_event(row: queries.GetHitsByIdsRow) -> HitEvent:
         id=row.id_,
         occurred_at=row.occurred_at,
         ip_address=row.ip_address,
-        method=row.method,
-        path=row.path,
-        query=row.query,
+        method=hide_honeypot(row.method),
+        path=hide_honeypot(row.path),
+        query=_hide_optional(row.query),
         status_code=row.status_code,
-        user_agent=row.user_agent,
+        user_agent=_hide_optional(row.user_agent),
         body_size=row.body_size,
         # The query gives an empty preview when no body was captured; body_size tells them apart.
         body_preview=None
         if row.body_size is None
-        else decode_body(bytes(row.body_preview)),
+        else hide_honeypot(decode_body(bytes(row.body_preview))),
         body_truncated=truncated(row.body_preview, row.body_size),
     )
 
@@ -146,14 +235,17 @@ def hit_detail(row: queries.GetHitRow) -> HitDetail:
         id=row.id_,
         occurred_at=row.occurred_at,
         ip_address=row.ip_address,
-        method=row.method,
-        path=row.path,
-        query=row.query,
+        method=hide_honeypot(row.method),
+        path=hide_honeypot(row.path),
+        query=_hide_optional(row.query),
         status_code=row.status_code,
-        user_agent=row.user_agent,
+        user_agent=_hide_optional(row.user_agent),
         body_size=row.body_size,
-        headers=_headers.validate_json(row.headers),
-        body=None if row.body is None else decode_body(bytes(row.body)),
+        headers={
+            hide_honeypot(name): hide_honeypot(value)
+            for name, value in _headers.validate_json(row.headers).items()
+        },
+        body=None if row.body is None else hide_honeypot(decode_body(bytes(row.body))),
         body_truncated=truncated(row.body, row.body_size),
     )
 
@@ -164,9 +256,9 @@ def login_attempt_event(row: queries.GetLoginAttemptsByIdsRow) -> LoginAttemptEv
         id=row.id_,
         occurred_at=row.attempted_at,
         ip_address=row.ip_address,
-        path=row.endpoint_path,
-        username=row.username,
-        password=row.password,
+        path=hide_honeypot(row.endpoint_path),
+        username=hide_honeypot(row.username),
+        password=hide_honeypot(row.password),
         decoy_accepted=row.was_fake_success,
     )
 
@@ -195,7 +287,8 @@ def decoy_password_attempt_event(
     )
 
 
-def ip_summary(row: queries.GetIpSummaryRow | None) -> IpSummary:
+def ip_summary(row: queries.GetIpActivityRow | None) -> IpSummary:
+    """`row` is None for an address that did nothing."""
     if row is None:
         return IpSummary(
             requests=0,
@@ -213,22 +306,20 @@ def ip_summary(row: queries.GetIpSummaryRow | None) -> IpSummary:
     )
 
 
-def ids_of(kind: EventKind, page: Sequence[models.VisitorEvent]) -> list[int]:
+def ids_of(kind: EventKind, page: Sequence[ListedEvent]) -> list[int]:
     return [row.id_ for row in page if row.kind == kind]
 
 
-def in_page_order(
-    page: Sequence[models.VisitorEvent], events: Iterable[Event]
-) -> list[Event]:
+def in_page_order(page: Sequence[ListedEvent], events: Iterable[Event]) -> list[Event]:
     """`events` in the page's order. An event deleted between the two steps is left out."""
     by_key = {(event.kind, event.id): event for event in events}
     return [by_key[key] for row in page if (key := (row.kind, row.id_)) in by_key]
 
 
 async def fetch_events(
-    conn: AsyncConnection, page: Sequence[models.VisitorEvent]
+    conn: AsyncConnection, page: Sequence[ListedEvent]
 ) -> list[Event]:
-    """The details of a page of `visitor_events` rows, in the page's order. Only the kinds on the
+    """The details of a page of listed events, in the page's order. Only the kinds on the
     page are queried."""
     events: list[Event] = []
     if ids := ids_of(EventKind.HIT, page):

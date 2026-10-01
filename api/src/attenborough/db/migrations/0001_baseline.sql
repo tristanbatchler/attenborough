@@ -1,12 +1,4 @@
--- The complete, current schema: what applying every file in migrations/ in order builds. sqlc
--- generates the query code from this file, and a development reset (db/schema.py:reset_schema)
--- applies it directly. Change it together with a new migration that makes the same change;
--- src/tests/test_migrations.py fails if the two disagree (column order included, since generated
--- rows are positional). See api/README.md, "Database".
---
--- Keep it plain DDL. No DO $$ blocks: sqlc doesn't execute them, so types created inside are
--- invisible to it and generated enums become typing.Any. IF NOT EXISTS only where a brand-new
--- schema can already have the object (extensions).
+-- The schema the honeypot went live with (2026-10). Every later change is a new migration.
 
 -- Extensions (a new database may inherit these from its template)
 CREATE EXTENSION IF NOT EXISTS "citext";

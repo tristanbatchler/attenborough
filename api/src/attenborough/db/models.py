@@ -15,18 +15,20 @@ __all__: collections.abc.Sequence[str] = (
     "DecoyRevocation",
     "DecoyTextContent",
     "DecoyView",
+    "IpActivity",
     "IpBan",
+    "IpRequestPath",
     "OauthState",
-    "SchemaFingerprint",
+    "SchemaMigration",
     "Session",
     "TelemetryHit",
     "User",
-    "VisitorEvent",
 )
 
 import datetime
 import pydantic
 import typing
+import uuid
 
 if typing.TYPE_CHECKING:
     import collections.abc
@@ -128,6 +130,17 @@ class DecoyView(pydantic.BaseModel):
     viewed_at: datetime.datetime
 
 
+class IpActivity(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    ip_address: str
+    requests: int
+    distinct_paths: int
+    login_attempts: int
+    first_seen_at: datetime.datetime | None
+    last_seen_at: datetime.datetime | None
+
+
 class IpBan(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
 
@@ -142,6 +155,13 @@ class IpBan(pydantic.BaseModel):
     revocation_reason: str | None
 
 
+class IpRequestPath(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    ip_address: str
+    path_md5: uuid.UUID
+
+
 class OauthState(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
 
@@ -152,9 +172,11 @@ class OauthState(pydantic.BaseModel):
     ip_address: str
 
 
-class SchemaFingerprint(pydantic.BaseModel):
+class SchemaMigration(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
 
+    version: int
+    name: str
     sha256: str
     applied_at: datetime.datetime
 
@@ -197,12 +219,3 @@ class User(pydantic.BaseModel):
     created: datetime.datetime
     last_login: datetime.datetime
     is_admin: bool
-
-
-class VisitorEvent(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
-
-    kind: enums.EventKind
-    id_: int
-    ip_address: str
-    occurred_at: datetime.datetime

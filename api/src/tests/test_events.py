@@ -3,10 +3,12 @@ from http import HTTPMethod
 
 import pytest
 
-from attenborough.db import enums, models, queries
+from attenborough import events
+from attenborough.db import enums, queries
 from attenborough.db.enums import EventKind
 from attenborough.events import (
     DISCRIMINATOR,
+    HONEYPOT_PLACEHOLDER,
     DecoyPasswordAttemptEvent,
     DecoyViewEvent,
     HitEvent,
@@ -16,6 +18,7 @@ from attenborough.events import (
     decoy_view_event,
     hit_detail,
     hit_event,
+    honeypot_pattern,
     in_page_order,
     ip_summary,
     login_attempt_event,
@@ -183,7 +186,7 @@ def test_events_keep_the_page_order_when_kinds_interleave():
         (EventKind.LOGIN_ATTEMPT, 2),
     ]
     page = [
-        models.VisitorEvent(kind=kind, id_=id_, ip_address=IP, occurred_at=AT)
+        queries.ListRecentEventsRow(kind=kind, id_=id_, ip_address=IP, occurred_at=AT)
         for kind, id_ in order
     ]
     hits = [hit_event(hit_row(b"", None).model_copy(update={"id_": n})) for n in (2, 1)]
@@ -207,9 +210,62 @@ def test_events_keep_the_page_order_when_kinds_interleave():
     ]
 
 
-def test_an_address_with_no_requests_has_an_empty_summary():
+def test_an_address_with_no_activity_has_an_empty_summary():
     summary = ip_summary(None)
     assert (summary.requests, summary.first_seen_at) == (0, None)
+
+
+HIDDEN_NAME = "secret.example.org"
+HIDDEN_IP = "203.0.113.5"
+HIDDEN = honeypot_pattern([HIDDEN_NAME, HIDDEN_IP])
+
+
+@pytest.mark.parametrize(
+    "text, shown",
+    [
+        (HIDDEN_NAME, HONEYPOT_PLACEHOLDER),
+        (f"{HIDDEN_NAME.upper()}:443", f"{HONEYPOT_PLACEHOLDER}:443"),
+        (f"www.{HIDDEN_NAME}", f"www.{HONEYPOT_PLACEHOLDER}"),
+        # WordPress's form posts its own URL, encoded.
+        (
+            f"redirect_to=https%3A%2F%2F{HIDDEN_NAME}%2Fwp-admin%2F",
+            f"redirect_to=https%3A%2F%2F{HONEYPOT_PLACEHOLDER}%2Fwp-admin%2F",
+        ),
+        (
+            f"GET http://{HIDDEN_IP}/ HTTP/1.1",
+            f"GET http://{HONEYPOT_PLACEHOLDER}/ HTTP/1.1",
+        ),
+    ],
+)
+def test_the_honeypots_own_names_are_hidden(text: str, shown: str):
+    assert HIDDEN.sub(HONEYPOT_PLACEHOLDER, text) == shown
+
+
+# Other addresses that merely contain them stay as sent.
+@pytest.mark.parametrize("text", [f"{HIDDEN_IP}0", f"1{HIDDEN_IP}", "example.org"])
+def test_other_names_are_shown_as_sent(text: str):
+    assert HIDDEN.sub(HONEYPOT_PLACEHOLDER, text) == text
+
+
+def test_every_text_a_visitor_sent_is_hidden_in(monkeypatch: pytest.MonkeyPatch):
+    host = "honeypot.test"
+    monkeypatch.setattr(events, "_HONEYPOT", honeypot_pattern([host]))
+    hidden = events.hit_detail(
+        queries.GetHitRow(
+            id_=1,
+            ip_address=IP,
+            occurred_at=AT,
+            method=HTTPMethod.GET,
+            path=f"/{host}",
+            query=host,
+            status_code=200,
+            user_agent=host,
+            headers=f'{{"host": "{host}", "{host}": "x"}}',
+            body=memoryview(host.encode()),
+            body_size=len(host),
+        )
+    )
+    assert host not in hidden.model_dump_json()
 
 
 def test_every_event_kind_is_required_in_the_schema():

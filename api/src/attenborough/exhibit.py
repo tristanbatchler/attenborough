@@ -6,16 +6,21 @@ from http import HTTPStatus
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query
-from pydantic import BaseModel, Field, IPvAnyAddress
+from psycopg import AsyncConnection
+from pydantic import AfterValidator, BaseModel, Field, IPvAnyAddress
 
 from attenborough import settings
 from attenborough.db import queries
 from attenborough.db.enums import RouterGroup
 from attenborough.dependencies import DBConn
 from attenborough.events import (
+    FIRST_PAGE,
+    MAX_ID,
+    EventCursor,
     EventPage,
     HitDetail,
     IpSummary,
+    ListedEvent,
     fetch_events,
     hit_detail,
     ip_summary,
@@ -23,31 +28,55 @@ from attenborough.events import (
 
 router = APIRouter(prefix="/exhibit", tags=[RouterGroup.EXHIBIT])
 
-# The largest id a BIGINT column holds; a larger one would fail in the database, not as a 404.
-_MAX_ID = 2**63 - 1
+# Longer than any token EventCursor.token() makes.
+_MAX_CURSOR_LENGTH = 256
+
+
+def _valid_cursor(token: str | None) -> str | None:
+    """Rejects (422) a `before` that isn't a cursor from this API."""
+    if token is not None:
+        _ = EventCursor.from_token(token)
+    return token
 
 
 class Paging(BaseModel):
-    """The `page` and `take` query parameters shared by the exhibit's listings."""
+    """The `before` and `take` query parameters shared by the exhibit's listings."""
 
-    page: int = Field(default=1, ge=1, le=settings.APP_MAX_PAGE)
+    # The previous page's `next_cursor`; omitted for the first, newest page.
+    before: Annotated[
+        str | None,
+        Field(max_length=_MAX_CURSOR_LENGTH),
+        AfterValidator(_valid_cursor),
+    ] = None
     take: int = Field(
         default=settings.APP_DEFAULT_PAGE_TAKE, ge=1, le=settings.APP_MAX_PAGE_TAKE
     )
 
     @property
-    def offset(self) -> int:
-        return (self.page - 1) * self.take
+    def cursor(self) -> EventCursor:
+        return (
+            FIRST_PAGE if self.before is None else EventCursor.from_token(self.before)
+        )
 
     @property
     def limit(self) -> int:
         """One row more than a page: the extra row only says whether there is a next page."""
         return self.take + 1
 
-    def page_of[Row](self, rows: Sequence[Row]) -> tuple[Sequence[Row], bool]:
-        """This page's rows, and whether there is a next page. `rows` were fetched with `offset`
-        and `limit`."""
-        return rows[: self.take], len(rows) > self.take
+    def next_cursor(self, rows: Sequence[ListedEvent]) -> str | None:
+        """Where the next page starts, or None if this is the last. `rows` were fetched with
+        `cursor` and `limit`."""
+        if len(rows) <= self.take:
+            return None
+        return EventCursor.after(rows[self.take - 1]).token()
+
+    async def page_of(
+        self, db_conn: AsyncConnection, rows: Sequence[ListedEvent]
+    ) -> EventPage:
+        return EventPage(
+            items=await fetch_events(db_conn, rows[: self.take]),
+            next_cursor=self.next_cursor(rows),
+        )
 
 
 PagingQuery = Annotated[Paging, Query()]
@@ -56,12 +85,15 @@ PagingQuery = Annotated[Paging, Query()]
 @router.get("/feed")
 async def list_recent_events(db_conn: DBConn, paging: PagingQuery) -> EventPage:
     """The latest visitor events from every IP address, newest first."""
-    rows, has_next = paging.page_of(
-        await queries.list_recent_events(
-            db_conn, offset=paging.offset, limit=paging.limit
-        )
+    cursor = paging.cursor
+    rows = await queries.list_recent_events(
+        db_conn,
+        before_at=cursor.occurred_at,
+        before_kind=cursor.kind,
+        before_id=cursor.id,
+        limit=paging.limit,
     )
-    return EventPage(items=await fetch_events(db_conn, rows), has_next=has_next)
+    return await paging.page_of(db_conn, rows)
 
 
 @router.get("/ip/{ip_addr}/activity")
@@ -69,29 +101,27 @@ async def get_ip_events(
     ip_addr: IPvAnyAddress, db_conn: DBConn, paging: PagingQuery
 ) -> EventPage:
     """Everything one IP address did, newest first."""
-    rows, has_next = paging.page_of(
-        await queries.list_ip_events(
-            db_conn,
-            ip_address=str(ip_addr),
-            offset=paging.offset,
-            limit=paging.limit,
-        )
+    cursor = paging.cursor
+    rows = await queries.list_ip_events(
+        db_conn,
+        ip_address=str(ip_addr),
+        before_at=cursor.occurred_at,
+        before_kind=cursor.kind,
+        before_id=cursor.id,
+        limit=paging.limit,
     )
-    return EventPage(items=await fetch_events(db_conn, rows), has_next=has_next)
+    return await paging.page_of(db_conn, rows)
 
 
 @router.get("/ip/{ip_addr}/summary")
 async def get_ip_summary(ip_addr: IPvAnyAddress, db_conn: DBConn) -> IpSummary:
     """What one IP address did, in numbers."""
-    row = await queries.get_ip_summary(
-        db_conn, ip_address=str(ip_addr), router_group=RouterGroup.HONEYPOT
-    )
-    return ip_summary(row)
+    return ip_summary(await queries.get_ip_activity(db_conn, ip_address=str(ip_addr)))
 
 
 @router.get("/hits/{hit_id}")
 async def get_hit(
-    hit_id: Annotated[int, Path(ge=1, le=_MAX_ID)], db_conn: DBConn
+    hit_id: Annotated[int, Path(ge=1, le=MAX_ID)], db_conn: DBConn
 ) -> HitDetail:
     """One request to the honeypot in full: its headers and its whole stored body. 404 for any
     other request, such as the exhibit's own."""

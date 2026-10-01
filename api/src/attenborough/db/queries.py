@@ -10,8 +10,11 @@ __all__: collections.abc.Sequence[str] = (
     "GetDecoyViewsByIdsRow",
     "GetHitRow",
     "GetHitsByIdsRow",
-    "GetIpSummaryRow",
+    "GetIpActivityRow",
     "GetLoginAttemptsByIdsRow",
+    "ListAppliedMigrationsRow",
+    "ListIpEventsRow",
+    "ListRecentEventsRow",
     "QueryResults",
     "create_active_ip_ban",
     "create_credential_stuffing_attempt",
@@ -24,13 +27,15 @@ __all__: collections.abc.Sequence[str] = (
     "get_decoy_views_by_ids",
     "get_hit",
     "get_hits_by_ids",
-    "get_ip_summary",
+    "get_ip_activity",
     "get_login_attempts_by_ids",
-    "get_schema_fingerprint",
     "get_user_by_session_token_hash",
+    "list_applied_migrations",
     "list_ip_events",
     "list_recent_events",
-    "set_schema_fingerprint",
+    "record_migration",
+    "seed_hits",
+    "seed_login_attempts",
     "upsert_decoy",
     "upsert_user",
 )
@@ -50,6 +55,24 @@ if typing.TYPE_CHECKING:
 
 from . import enums
 from . import models
+
+
+class ListRecentEventsRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    kind: enums.EventKind
+    id_: int
+    ip_address: str
+    occurred_at: datetime.datetime
+
+
+class ListIpEventsRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    kind: enums.EventKind
+    id_: int
+    ip_address: str
+    occurred_at: datetime.datetime
 
 
 class GetHitsByIdsRow(pydantic.BaseModel):
@@ -115,14 +138,21 @@ class GetHitRow(pydantic.BaseModel):
     body_size: int | None
 
 
-class GetIpSummaryRow(pydantic.BaseModel):
+class GetIpActivityRow(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
 
     requests: int
     distinct_paths: int
     login_attempts: int
-    first_seen_at: datetime.datetime
-    last_seen_at: datetime.datetime
+    first_seen_at: datetime.datetime | None
+    last_seen_at: datetime.datetime | None
+
+
+class ListAppliedMigrationsRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    version: int
+    sha256: str
 
 
 UPSERT_USER: typing.Final[typing.LiteralString] = """-- name: UpsertUser :one
@@ -170,18 +200,71 @@ RETURNING id, ip_address, added, expires, reason, added_by_user_id, revoked_at, 
 """
 
 LIST_RECENT_EVENTS: typing.Final[typing.LiteralString] = """-- name: ListRecentEvents :many
-SELECT kind, id, ip_address, occurred_at FROM visitor_events
-ORDER BY occurred_at DESC, kind, id DESC
-LIMIT %(p2)s::int
-OFFSET %(p1)s::int
+SELECT kind, id, ip_address, occurred_at FROM (
+    (SELECT 'hit'::event_kind AS kind, id, ip_address, occurred_at
+     FROM telemetry_hits
+     WHERE router_group = 'honeypot' AND occurred_at <= %(p1)s::timestamptz
+       AND (occurred_at, 'hit'::event_kind, id) < (%(p1)s::timestamptz, %(p2)s::event_kind, %(p3)s::bigint)
+     ORDER BY occurred_at DESC, id DESC
+     LIMIT %(p4)s::int)
+    UNION ALL
+    (SELECT 'login_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
+     FROM credential_stuffing_attempts
+     WHERE attempted_at <= %(p1)s::timestamptz
+       AND (attempted_at, 'login_attempt'::event_kind, id) < (%(p1)s::timestamptz, %(p2)s::event_kind, %(p3)s::bigint)
+     ORDER BY attempted_at DESC, id DESC
+     LIMIT %(p4)s::int)
+    UNION ALL
+    (SELECT 'decoy_view'::event_kind AS kind, id, ip_address, viewed_at AS occurred_at
+     FROM decoy_views
+     WHERE viewed_at <= %(p1)s::timestamptz
+       AND (viewed_at, 'decoy_view'::event_kind, id) < (%(p1)s::timestamptz, %(p2)s::event_kind, %(p3)s::bigint)
+     ORDER BY viewed_at DESC, id DESC
+     LIMIT %(p4)s::int)
+    UNION ALL
+    (SELECT 'decoy_password_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
+     FROM decoy_password_attempts
+     WHERE attempted_at <= %(p1)s::timestamptz
+       AND (attempted_at, 'decoy_password_attempt'::event_kind, id) < (%(p1)s::timestamptz, %(p2)s::event_kind, %(p3)s::bigint)
+     ORDER BY attempted_at DESC, id DESC
+     LIMIT %(p4)s::int)
+) AS page
+ORDER BY occurred_at DESC, kind DESC, id DESC
+LIMIT %(p4)s::int
 """
 
 LIST_IP_EVENTS: typing.Final[typing.LiteralString] = """-- name: ListIpEvents :many
-SELECT kind, id, ip_address, occurred_at FROM visitor_events
-WHERE ip_address = %(p1)s::inet
-ORDER BY occurred_at DESC, kind, id DESC
-LIMIT %(p3)s::int
-OFFSET %(p2)s::int
+SELECT kind, id, ip_address, occurred_at FROM (
+    (SELECT 'hit'::event_kind AS kind, id, ip_address, occurred_at
+     FROM telemetry_hits
+     WHERE router_group = 'honeypot' AND ip_address = %(p1)s::inet AND occurred_at <= %(p2)s::timestamptz
+       AND (occurred_at, 'hit'::event_kind, id) < (%(p2)s::timestamptz, %(p3)s::event_kind, %(p4)s::bigint)
+     ORDER BY occurred_at DESC, id DESC
+     LIMIT %(p5)s::int)
+    UNION ALL
+    (SELECT 'login_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
+     FROM credential_stuffing_attempts
+     WHERE ip_address = %(p1)s::inet AND attempted_at <= %(p2)s::timestamptz
+       AND (attempted_at, 'login_attempt'::event_kind, id) < (%(p2)s::timestamptz, %(p3)s::event_kind, %(p4)s::bigint)
+     ORDER BY attempted_at DESC, id DESC
+     LIMIT %(p5)s::int)
+    UNION ALL
+    (SELECT 'decoy_view'::event_kind AS kind, id, ip_address, viewed_at AS occurred_at
+     FROM decoy_views
+     WHERE ip_address = %(p1)s::inet AND viewed_at <= %(p2)s::timestamptz
+       AND (viewed_at, 'decoy_view'::event_kind, id) < (%(p2)s::timestamptz, %(p3)s::event_kind, %(p4)s::bigint)
+     ORDER BY viewed_at DESC, id DESC
+     LIMIT %(p5)s::int)
+    UNION ALL
+    (SELECT 'decoy_password_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
+     FROM decoy_password_attempts
+     WHERE ip_address = %(p1)s::inet AND attempted_at <= %(p2)s::timestamptz
+       AND (attempted_at, 'decoy_password_attempt'::event_kind, id) < (%(p2)s::timestamptz, %(p3)s::event_kind, %(p4)s::bigint)
+     ORDER BY attempted_at DESC, id DESC
+     LIMIT %(p5)s::int)
+) AS page
+ORDER BY occurred_at DESC, kind DESC, id DESC
+LIMIT %(p5)s::int
 """
 
 GET_HITS_BY_IDS: typing.Final[typing.LiteralString] = """-- name: GetHitsByIds :many
@@ -220,17 +303,10 @@ FROM telemetry_hits
 WHERE id = %(p1)s AND router_group = %(p2)s
 """
 
-GET_IP_SUMMARY: typing.Final[typing.LiteralString] = """-- name: GetIpSummary :one
-SELECT
-    COUNT(*)::BIGINT AS requests,
-    COUNT(DISTINCT path)::BIGINT AS distinct_paths,
-    (SELECT COUNT(*) FROM credential_stuffing_attempts csa
-     WHERE csa.ip_address = %(p1)s::inet)::BIGINT AS login_attempts,
-    MIN(occurred_at)::TIMESTAMPTZ AS first_seen_at,
-    MAX(occurred_at)::TIMESTAMPTZ AS last_seen_at
-FROM telemetry_hits
-WHERE ip_address = %(p1)s::inet AND router_group = %(p2)s
-GROUP BY ip_address
+GET_IP_ACTIVITY: typing.Final[typing.LiteralString] = """-- name: GetIpActivity :one
+SELECT requests, distinct_paths, login_attempts, first_seen_at, last_seen_at
+FROM ip_activity
+WHERE ip_address = %(p1)s::inet
 """
 
 UPSERT_DECOY: typing.Final[typing.LiteralString] = """-- name: UpsertDecoy :one
@@ -258,12 +334,66 @@ CREATE_PUBLIC_SCHEMA: typing.Final[typing.LiteralString] = """-- name: CreatePub
 CREATE SCHEMA public
 """
 
-GET_SCHEMA_FINGERPRINT: typing.Final[typing.LiteralString] = """-- name: GetSchemaFingerprint :one
-SELECT sha256 FROM schema_fingerprint
+LIST_APPLIED_MIGRATIONS: typing.Final[typing.LiteralString] = """-- name: ListAppliedMigrations :many
+SELECT version, sha256 FROM schema_migrations ORDER BY version
 """
 
-SET_SCHEMA_FINGERPRINT: typing.Final[typing.LiteralString] = """-- name: SetSchemaFingerprint :exec
-INSERT INTO schema_fingerprint (sha256) VALUES (%(p1)s)
+RECORD_MIGRATION: typing.Final[typing.LiteralString] = """-- name: RecordMigration :exec
+INSERT INTO schema_migrations (version, name, sha256)
+VALUES (%(p1)s, %(p2)s, %(p3)s)
+"""
+
+SEED_HITS: typing.Final[typing.LiteralString] = """-- name: SeedHits :exec
+INSERT INTO telemetry_hits (
+    ip_address, method, path, query, router_group, user_agent, headers, body, body_size,
+    status_code, occurred_at
+)
+SELECT
+    %(p1)s::inet + CASE
+        WHEN random() < %(p2)s::float8 THEN 0
+        ELSE floor(%(p3)s::int * power(random(), 3))::int
+    END,
+    hit.method, hit.path, NULLIF(hit.query, ''), 'honeypot', hit.user_agent,
+    jsonb_build_object('host', 'seed.invalid', 'user-agent', hit.user_agent),
+    hit.body, octet_length(hit.body), hit.status_code,
+    now() - make_interval(days => %(p4)s::int)
+        + (n::float8 / %(p5)s::int) * make_interval(days => %(p4)s::int)
+FROM generate_series(%(p6)s::int + 1, %(p6)s::int + %(p7)s::int) n
+CROSS JOIN LATERAL (
+    SELECT
+        CASE WHEN r < 0.2 THEN 'POST' ELSE 'GET' END AS method,
+        (ARRAY['/wp-login.php', '/.env', '/xmlrpc.php', '/phpmyadmin/', '/', '/admin',
+               '/.git/config', '/cgi-bin/luci', '/boaform/admin/formLogin',
+               '/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php'])[1 + floor(random() * 10)::int]
+            AS path,
+        CASE WHEN random() < 0.1 THEN 'id=' || n ELSE '' END AS query,
+        (ARRAY['Mozilla/5.0 zgrab/0.x', 'curl/8.5.0', 'python-requests/2.32',
+               'Go-http-client/1.1'])[1 + floor(random() * 4)::int] AS user_agent,
+        CASE
+            WHEN r >= 0.2 THEN ''::BYTEA
+            WHEN random() < 0.01 THEN convert_to(repeat(md5(random()::text), 2048), 'UTF8')
+            ELSE convert_to(repeat(md5(random()::text), 1 + floor(random() * 16)::int), 'UTF8')
+        END AS body,
+        CASE WHEN random() < 0.05 THEN 200 ELSE 404 END AS status_code
+    FROM (SELECT random() AS r, n) draw
+) hit
+ORDER BY n
+"""
+
+SEED_LOGIN_ATTEMPTS: typing.Final[typing.LiteralString] = """-- name: SeedLoginAttempts :exec
+INSERT INTO credential_stuffing_attempts (ip_address, endpoint_path, username, password, attempted_at)
+SELECT
+    %(p1)s::inet + CASE
+        WHEN random() < %(p2)s::float8 THEN 0
+        ELSE floor(%(p3)s::int * power(random(), 3))::int
+    END,
+    '/wp-login.php',
+    (ARRAY['admin', 'root', 'administrator', 'test', 'user'])[1 + floor(random() * 5)::int],
+    (ARRAY['admin', '123456', 'password', 'admin123', 'qwerty'])[1 + floor(random() * 5)::int],
+    now() - make_interval(days => %(p4)s::int)
+        + (n::float8 / %(p5)s::int) * make_interval(days => %(p4)s::int)
+FROM generate_series(%(p6)s::int + 1, %(p6)s::int + %(p7)s::int) n
+ORDER BY n
 """
 
 
@@ -338,18 +468,18 @@ async def create_active_ip_ban(conn: ConnectionLike, *, ip_address: str, expires
     return models.IpBan(id_=row[0], ip_address=str(row[1]), added=row[2], expires=row[3], reason=row[4], added_by_user_id=row[5], revoked_at=row[6], revoked_by_user_id=row[7], revocation_reason=row[8])
 
 
-def list_recent_events(conn: ConnectionLike, *, offset: int, limit: int) -> QueryResults[models.VisitorEvent]:
-    def _decode_hook(row: psycopg.rows.TupleRow) -> models.VisitorEvent:
-        return models.VisitorEvent(kind=enums.EventKind(row[0]), id_=row[1], ip_address=str(row[2]), occurred_at=row[3])
+def list_recent_events(conn: ConnectionLike, *, before_at: datetime.datetime, before_kind: enums.EventKind, before_id: int, limit: int) -> QueryResults[ListRecentEventsRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> ListRecentEventsRow:
+        return ListRecentEventsRow(kind=enums.EventKind(row[0]), id_=row[1], ip_address=str(row[2]), occurred_at=row[3])
 
-    return QueryResults(conn, LIST_RECENT_EVENTS, _decode_hook, {"p1": offset, "p2": limit})
+    return QueryResults(conn, LIST_RECENT_EVENTS, _decode_hook, {"p1": before_at, "p2": before_kind, "p3": before_id, "p4": limit})
 
 
-def list_ip_events(conn: ConnectionLike, *, ip_address: str, offset: int, limit: int) -> QueryResults[models.VisitorEvent]:
-    def _decode_hook(row: psycopg.rows.TupleRow) -> models.VisitorEvent:
-        return models.VisitorEvent(kind=enums.EventKind(row[0]), id_=row[1], ip_address=str(row[2]), occurred_at=row[3])
+def list_ip_events(conn: ConnectionLike, *, ip_address: str, before_at: datetime.datetime, before_kind: enums.EventKind, before_id: int, limit: int) -> QueryResults[ListIpEventsRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> ListIpEventsRow:
+        return ListIpEventsRow(kind=enums.EventKind(row[0]), id_=row[1], ip_address=str(row[2]), occurred_at=row[3])
 
-    return QueryResults(conn, LIST_IP_EVENTS, _decode_hook, {"p1": ip_address, "p2": offset, "p3": limit})
+    return QueryResults(conn, LIST_IP_EVENTS, _decode_hook, {"p1": ip_address, "p2": before_at, "p3": before_kind, "p4": before_id, "p5": limit})
 
 
 def get_hits_by_ids(conn: ConnectionLike, *, ids: collections.abc.Sequence[int]) -> QueryResults[GetHitsByIdsRow]:
@@ -387,11 +517,11 @@ async def get_hit(conn: ConnectionLike, *, id_: int, router_group: enums.RouterG
     return GetHitRow(id_=row[0], ip_address=str(row[1]), occurred_at=row[2], method=row[3], path=row[4], query=row[5], status_code=row[6], user_agent=row[7], headers=row[8], body=memoryview(row[9]) if row[9] is not None else None, body_size=row[10])
 
 
-async def get_ip_summary(conn: ConnectionLike, *, ip_address: str, router_group: enums.RouterGroup) -> GetIpSummaryRow | None:
-    row = await (await conn.execute(GET_IP_SUMMARY, {"p1": ip_address, "p2": router_group})).fetchone()
+async def get_ip_activity(conn: ConnectionLike, *, ip_address: str) -> GetIpActivityRow | None:
+    row = await (await conn.execute(GET_IP_ACTIVITY, {"p1": ip_address})).fetchone()
     if row is None:
         return None
-    return GetIpSummaryRow(requests=row[0], distinct_paths=row[1], login_attempts=row[2], first_seen_at=row[3], last_seen_at=row[4])
+    return GetIpActivityRow(requests=row[0], distinct_paths=row[1], login_attempts=row[2], first_seen_at=row[3], last_seen_at=row[4])
 
 
 async def upsert_decoy(conn: ConnectionLike, *, type: enums.DecoyType, slug: str, added_by_ip: str) -> int | None:
@@ -417,12 +547,20 @@ async def create_public_schema(conn: ConnectionLike) -> None:
     await conn.execute(CREATE_PUBLIC_SCHEMA)
 
 
-async def get_schema_fingerprint(conn: ConnectionLike) -> str | None:
-    row = await (await conn.execute(GET_SCHEMA_FINGERPRINT)).fetchone()
-    if row is None:
-        return None
-    return row[0]
+def list_applied_migrations(conn: ConnectionLike) -> QueryResults[ListAppliedMigrationsRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> ListAppliedMigrationsRow:
+        return ListAppliedMigrationsRow(version=row[0], sha256=row[1])
+
+    return QueryResults(conn, LIST_APPLIED_MIGRATIONS, _decode_hook)
 
 
-async def set_schema_fingerprint(conn: ConnectionLike, *, sha256: str) -> None:
-    await conn.execute(SET_SCHEMA_FINGERPRINT, {"p1": sha256})
+async def record_migration(conn: ConnectionLike, *, version: int, name: str, sha256: str) -> None:
+    await conn.execute(RECORD_MIGRATION, {"p1": version, "p2": name, "p3": sha256})
+
+
+async def seed_hits(conn: ConnectionLike, *, first_address: str, busy_share: float, addresses: int, days: int, total: int, start: int, count: int) -> None:
+    await conn.execute(SEED_HITS, {"p1": first_address, "p2": busy_share, "p3": addresses, "p4": days, "p5": total, "p6": start, "p7": count})
+
+
+async def seed_login_attempts(conn: ConnectionLike, *, first_address: str, busy_share: float, addresses: int, days: int, total: int, start: int, count: int) -> None:
+    await conn.execute(SEED_LOGIN_ATTEMPTS, {"p1": first_address, "p2": busy_share, "p3": addresses, "p4": days, "p5": total, "p6": start, "p7": count})

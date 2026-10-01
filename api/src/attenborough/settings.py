@@ -2,40 +2,36 @@ from __future__ import annotations
 
 import logging
 import sys
-from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
-from typing import ClassVar, Self, cast
+from typing import Annotated, ClassVar, Self, cast
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_core import PydanticUndefined
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+# api/ in a source checkout. Only a checkout has pyproject.toml beside the package: the container
+# image installs the package into its virtual environment, where app_directory is somewhere else.
 app_directory = Path(__file__).parent.parent.parent
 settings_path = app_directory / ".env"
 example_settings_path = app_directory / ".example.env"
+# A source checkout reads api/.env (creating it from the template if missing) and, at server start,
+# rewrites the tracked openapi.json and .example.env. An installed package (the container image)
+# reads its settings from the environment only and writes nothing.
+SOURCE_CHECKOUT = (app_directory / "pyproject.toml").is_file()
 
-_ADMIN_EMAILS_VALIDATION_ALIAS = "ADMIN_EMAILS"
-# PostgreSQL `int` (int4): queries.sql casts LIMIT and OFFSET with `::int`.
-_POSTGRES_INT_MAX = 2**31 - 1
+_HONEYPOT_ADDRESSES = "HONEYPOT_ADDRESSES"
+_LIST_SEPARATOR = ","
 
 
 class _Settings(BaseSettings):
-    @field_validator(_ADMIN_EMAILS_VALIDATION_ALIAS, mode="before")
+    @field_validator(_HONEYPOT_ADDRESSES, mode="before")
     @classmethod
-    def normalize_admin_emails(cls, v: object) -> set[str]:
-        emails: list[str] = []
+    def split_honeypot_addresses(cls, v: object) -> object:
+        """A comma-separated string from the environment; the names are matched ignoring case."""
         if isinstance(v, str):
-            emails = v.split(",")
-        elif isinstance(v, Sequence) and v and isinstance(v[0], str):
-            v = cast(Sequence[str], v)
-            emails = list(v)
-        else:
-            raise ValueError(
-                f"{_ADMIN_EMAILS_VALIDATION_ALIAS} must be a string or comma-separated list of strings"
-            )
-
-        return {e.strip().lower() for e in emails}
+            return [name.strip() for name in v.split(_LIST_SEPARATOR) if name.strip()]
+        return v
 
     @model_validator(mode="after")
     def validate_page_takes(self) -> Self:
@@ -43,35 +39,28 @@ class _Settings(BaseSettings):
             raise ValueError("APP_DEFAULT_PAGE_TAKE cannot exceed APP_MAX_PAGE_TAKE")
         return self
 
-    @property
-    def APP_MAX_PAGE(self) -> int:
-        """The last page whose OFFSET still fits a PostgreSQL int at the largest allowed take."""
-        return _POSTGRES_INT_MAX // self.APP_MAX_PAGE_TAKE + 1
-
     # Development only: DEBUG-level logging (INFO otherwise) and every router's /test debug route.
     # Keep it off in production: /test reveals the server's view of the request.
     DEBUG: bool = Field(default=False)
     DB_DATABASE: str = Field(default=...)
     DB_USERNAME: str = Field(default=...)
     DB_PASSWORD: str = Field(default=...)
+    # A host name or IP, or the directory holding PostgreSQL's unix socket (e.g. /var/run/postgresql,
+    # as in the container deployment).
     DB_HOST: str = Field(default=...)
     DB_PORT: int = Field(default=5432, ge=0, le=0xFFFF)
     DB_MIN_POOL_SIZE: int = Field(default=5, ge=1)
     DB_MAX_POOL_SIZE: int = Field(default=20, ge=1)
     DB_POOL_TIMEOUT_SECONDS: int = Field(default=30, gt=0)
-    WEB_BASE_URL: str = Field(default=...)
-    API_BASE_URL: str = Field(default=...)
     APP_MAX_PAGE_TAKE: int = Field(default=200, ge=1)
     APP_DEFAULT_PAGE_TAKE: int = Field(default=20, ge=1)
-    GOOGLE_CLIENT_ID: str = Field(default=...)
-    GOOGLE_CLIENT_SECRET: str = Field(default=...)
-    APP_SESSION_DURATION_DAYS: int = Field(default=30, gt=0)
-    APP_SESSION_COOKIE_SECURE: bool = Field(default=True)
-    ADMIN_EMAILS: set[str] = Field(
-        default_factory=set, validation_alias=_ADMIN_EMAILS_VALIDATION_ALIAS
+    # Every name and address the honeypot answers on (its domains and public IPs, past ones too),
+    # comma-separated. The exhibit shows each as HONEYPOT_PLACEHOLDER wherever a visitor's request
+    # contains it (events.py), so readers can't tell where the honeypot is. Required: forgetting it
+    # would publish the honeypot's address. See api/README.md, "Hiding where the honeypot is".
+    HONEYPOT_ADDRESSES: Annotated[list[str], NoDecode] = Field(
+        default=..., min_length=1
     )
-    PASSWORD_LOCKOUT_EXPIRY_MINUTES: int = Field(default=15)
-    PASSWORD_LOCKOUT_ATTEMPTS_THRESHOLD: int = Field(default=5)
     # Proxies allowed to report the client address via X-Forwarded-For: comma-separated IPs, CIDRs
     # or literals, as uvicorn's --forwarded-allow-ips (same name as its env var). Any other peer is
     # attributed to its own address. "*" trusts every peer, so it is only safe if the app can never
@@ -111,10 +100,10 @@ def write_example_env() -> None:
 def get_settings() -> _Settings:
     """The settings, loaded and validated once.
 
-    Without a .env, first creates one from the template and exits, so the user gets a file to fill
-    in rather than a validation error for every required field.
+    In a source checkout without a .env, first creates one from the template and exits, so the
+    user gets a file to fill in rather than a validation error for every required field.
     """
-    if not settings_path.is_file():
+    if SOURCE_CHECKOUT and not settings_path.is_file():
         _ = settings_path.write_text(_example_env())
         logging.fatal(
             f"Settings file {settings_path} not present so I have created it for you - please fill out the required fields"
