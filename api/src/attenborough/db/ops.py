@@ -16,6 +16,8 @@ db_conn_pool = AsyncConnectionPool(
         user=settings.DB_USERNAME,
         password=settings.DB_PASSWORD,
         dbname=settings.DB_DATABASE,
+        # Timestamps come back in UTC, whatever the server's or role's default time zone.
+        options="-c TimeZone=UTC",
     ),
     kwargs={"autocommit": True},
     open=False,
