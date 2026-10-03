@@ -22,8 +22,10 @@ from attenborough.events import (
     HitDetail,
     IpSummary,
     ListedEvent,
+    Takeover,
     fetch_events,
     fetch_locations,
+    fetch_takeover,
     hit_detail,
     ip_summary,
 )
@@ -141,6 +143,18 @@ async def get_hit(
     if row is None:
         raise HTTPException(HTTPStatus.NOT_FOUND, "No such request.")
     return hit_detail(row)
+
+
+@router.get("/installs/{install_id}")
+async def get_takeover(
+    install_id: Annotated[int, Path(ge=1, le=MAX_ID)], db_conn: DBConn
+) -> Takeover:
+    """One install through the decoy's installer, and every login into the account it created,
+    from whichever addresses, oldest first."""
+    takeover = await fetch_takeover(db_conn, install_id)
+    if takeover is None:
+        raise HTTPException(HTTPStatus.NOT_FOUND, "No such install.")
+    return takeover
 
 
 @router.get("/patterns")

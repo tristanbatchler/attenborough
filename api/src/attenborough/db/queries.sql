@@ -54,14 +54,15 @@ RETURNING
         WHERE username = sqlc.arg(username) OR email = sqlc.arg(username)
     ) AS known_account;
 
--- name: CreateInstallAttempt :exec
+-- name: CreateInstallAttempt :one
 INSERT INTO install_attempts (
     ip_address, path, site_title, username, email, password, password_generated
 )
 VALUES (
     sqlc.arg(ip_address), sqlc.arg(path), sqlc.arg(site_title), sqlc.arg(username),
     sqlc.arg(email), sqlc.arg(password), sqlc.arg(password_generated)
-);
+)
+RETURNING id;
 
 -- name: CreateCanaryToken :exec
 INSERT INTO canary_tokens (token, path, ip_address)
@@ -198,6 +199,17 @@ SELECT
     id, ip_address, attempted_at, path, site_title, username, email, password, password_generated
 FROM install_attempts
 WHERE id = ANY(sqlc.arg(ids)::BIGINT[]);
+
+-- The logins into one install's account, from any address, oldest first: what came of a takeover.
+-- name: ListInstallLoginIds :many
+SELECT id
+FROM credential_stuffing_attempts
+WHERE install_id = sqlc.arg(install_id)
+ORDER BY attempted_at, id
+LIMIT sqlc.arg(max_rows);
+
+-- name: CountInstallLogins :one
+SELECT count(*) FROM credential_stuffing_attempts WHERE install_id = sqlc.arg(install_id);
 
 -- name: GetDecoyViewsByIds :many
 SELECT dv.id, dv.ip_address, dv.viewed_at, d.slug AS decoy_slug, d.type AS decoy_type

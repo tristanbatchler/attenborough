@@ -232,6 +232,9 @@ CREATE TABLE credential_stuffing_attempts (
 
 CREATE INDEX idx_credential_attempts_ip ON credential_stuffing_attempts (ip_address, attempted_at DESC, id DESC);
 CREATE INDEX idx_credential_attempts_time ON credential_stuffing_attempts (attempted_at DESC, id DESC);
+-- The logins into each install's account, in order (ListInstallLoginIds): a takeover's story.
+CREATE INDEX idx_credential_attempts_install ON credential_stuffing_attempts (install_id, attempted_at, id)
+    WHERE install_id IS NOT NULL;
 
 -- Decoy specific interaction telemetry (views, downloads)
 CREATE TABLE decoy_views (

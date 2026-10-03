@@ -152,7 +152,7 @@ async def test_only_an_installed_account_with_its_own_password_opens(
 
     async with db_conn.transaction(force_rollback=True):
         assert await outcome(username, password) == (False, False)
-        await queries.create_install_attempt(
+        _ = await queries.create_install_attempt(
             db_conn,
             ip_address=TEST_IP,
             path=INSTALL_PATH,

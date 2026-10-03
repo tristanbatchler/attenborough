@@ -53,3 +53,22 @@ export function formatSpan(from: string, to: string): string {
 	}
 	return `${String(Math.round(hours / HOURS_PER_DAY))} days`;
 }
+
+const MS_PER_SECOND = 1000;
+const SECONDS_PER_MINUTE = 60;
+// Up to two minutes, a gap reads better in seconds; up to two hours, in minutes.
+const MAX_SECONDS_SHOWN = 120;
+const MAX_MINUTES_SHOWN = 120;
+
+/** How long from `from` to `to`, for steps close together: "4 s", "12 min", then formatSpan's. */
+export function formatGap(from: string, to: string): string {
+	const seconds = Math.round((Date.parse(to) - Date.parse(from)) / MS_PER_SECOND);
+	if (seconds < MAX_SECONDS_SHOWN) {
+		return `${String(seconds)} s`;
+	}
+	const minutes = Math.round(seconds / SECONDS_PER_MINUTE);
+	if (minutes < MAX_MINUTES_SHOWN) {
+		return `${String(minutes)} min`;
+	}
+	return formatSpan(from, to);
+}

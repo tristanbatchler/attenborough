@@ -662,6 +662,30 @@ export type Patterns = {
 };
 
 /**
+ * Takeover
+ *
+ * An install through the decoy's installer and every login into the account it created, from
+ * whichever addresses: one takeover attempt, start to finish.
+ */
+export type Takeover = {
+    install: InstallAttemptEvent;
+    /**
+     * Logins
+     */
+    logins: Array<LoginAttemptEvent>;
+    /**
+     * Login Count
+     */
+    login_count: number;
+    /**
+     * Locations
+     */
+    locations: {
+        [key: string]: IpLocation;
+    };
+};
+
+/**
  * Toolkit
  *
  * Addresses that each requested exactly the same set of paths: one tool, several machines.
@@ -903,6 +927,36 @@ export type GetHitResponses = {
 };
 
 export type GetHitResponse = GetHitResponses[keyof GetHitResponses];
+
+export type GetTakeoverData = {
+    body?: never;
+    path: {
+        /**
+         * Install Id
+         */
+        install_id: number;
+    };
+    query?: never;
+    url: '/exhibit/installs/{install_id}';
+};
+
+export type GetTakeoverErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetTakeoverError = GetTakeoverErrors[keyof GetTakeoverErrors];
+
+export type GetTakeoverResponses = {
+    /**
+     * Successful Response
+     */
+    200: Takeover;
+};
+
+export type GetTakeoverResponse = GetTakeoverResponses[keyof GetTakeoverResponses];
 
 export type GetPatternsData = {
     body?: never;

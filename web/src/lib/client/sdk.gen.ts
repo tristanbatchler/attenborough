@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetHitData, GetHitErrors, GetHitResponses, GetIpEventsData, GetIpEventsErrors, GetIpEventsResponses, GetIpSummaryData, GetIpSummaryErrors, GetIpSummaryResponses, GetPatternsData, GetPatternsResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses } from './types.gen';
+import type { GetHitData, GetHitErrors, GetHitResponses, GetIpEventsData, GetIpEventsErrors, GetIpEventsResponses, GetIpSummaryData, GetIpSummaryErrors, GetIpSummaryResponses, GetPatternsData, GetPatternsResponses, GetTakeoverData, GetTakeoverErrors, GetTakeoverResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -46,6 +46,14 @@ export const getIpSummary = <ThrowOnError extends boolean = false>(options: Opti
  * other request, such as the exhibit's own.
  */
 export const getHit = <ThrowOnError extends boolean = false>(options: Options<GetHitData, ThrowOnError>): RequestResult<GetHitResponses, GetHitErrors, ThrowOnError> => (options.client ?? client).get<GetHitResponses, GetHitErrors, ThrowOnError>({ url: '/exhibit/hits/{hit_id}', ...options });
+
+/**
+ * Get Takeover
+ *
+ * One install through the decoy's installer, and every login into the account it created,
+ * from whichever addresses, oldest first.
+ */
+export const getTakeover = <ThrowOnError extends boolean = false>(options: Options<GetTakeoverData, ThrowOnError>): RequestResult<GetTakeoverResponses, GetTakeoverErrors, ThrowOnError> => (options.client ?? client).get<GetTakeoverResponses, GetTakeoverErrors, ThrowOnError>({ url: '/exhibit/installs/{install_id}', ...options });
 
 /**
  * Get Patterns

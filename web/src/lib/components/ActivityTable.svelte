@@ -75,6 +75,9 @@
 									>,
 									<time datetime={event.install.attempted_at}
 										>{formatUtc(event.install.attempted_at)}</time
+									>:
+									<a href={resolve('/installs/[id=id]', { id: String(event.install.id) })}
+										>the whole takeover</a
 									>.
 								</small>
 							{/if}
@@ -85,7 +88,9 @@
 							<code>{event.username}</code> / <code>{event.password}</code>, email
 							<code>{event.email}</code>, site title <code>{event.site_title}</code>, at
 							<code>{event.path}</code>
-							(the decoy pretended to install it)
+							(the decoy pretended to install it):
+							<a href={resolve('/installs/[id=id]', { id: String(event.id) })}>the whole takeover</a
+							>
 							{#if event.password_generated}
 								<small>No password was chosen: the decoy's installer made this one up.</small>
 							{/if}

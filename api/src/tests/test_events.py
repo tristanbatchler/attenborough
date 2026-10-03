@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from http import HTTPMethod
 
 import pytest
+from psycopg import AsyncConnection
 
 from attenborough import events
 from attenborough.db import enums, queries
@@ -375,3 +376,46 @@ def test_every_event_kind_is_required_in_the_schema():
         assert (
             DISCRIMINATOR in model.model_json_schema(mode="serialization")["required"]
         )
+
+
+@pytest.mark.anyio
+async def test_a_takeover_is_its_install_and_the_logins_into_its_account_in_order(
+    db_conn: AsyncConnection,
+):
+    username = "test-takeover-admin"
+    other_ip = "203.0.113.8"
+
+    async def log_in(ip: str, password: str) -> None:
+        _ = await queries.create_credential_stuffing_attempt(
+            db_conn,
+            ip_address=ip,
+            endpoint_path=PATH,
+            username=username,
+            password=password,
+        )
+
+    async with db_conn.transaction(force_rollback=True):
+        install_id = await queries.create_install_attempt(
+            db_conn,
+            ip_address=IP,
+            path="/wp-admin/install.php",
+            site_title="",
+            username=username,
+            email="takeover@example.net",
+            password=PASSWORD,
+            password_generated=False,
+        )
+        assert install_id is not None
+        for ip in (IP, other_ip, other_ip):
+            await log_in(ip, PASSWORD)
+        # Any other password opens nothing, so it isn't part of the takeover.
+        await log_in(IP, "wrong")
+        takeover = await events.fetch_takeover(db_conn, install_id)
+        missing = await events.fetch_takeover(db_conn, install_id + 1)
+
+    assert takeover is not None
+    assert takeover.install.id == install_id
+    assert takeover.login_count == 3
+    assert [login.ip_address for login in takeover.logins] == [IP, other_ip, other_ip]
+    assert all(login.decoy_accepted for login in takeover.logins)
+    assert missing is None

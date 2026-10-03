@@ -248,6 +248,19 @@ class EventPage(BaseModel):
     locations: dict[str, IpLocation]
 
 
+class Takeover(BaseModel):
+    """An install through the decoy's installer and every login into the account it created, from
+    whichever addresses: one takeover attempt, start to finish."""
+
+    install: InstallAttemptEvent
+    # Oldest first; only the first TAKEOVER_MAX_LOGINS of them.
+    logins: list[LoginAttemptEvent]
+    # How many logins there were in all.
+    login_count: int
+    # Where the addresses involved are, by address. An address that was never located is missing.
+    locations: dict[str, IpLocation]
+
+
 class IpSummary(BaseModel):
     """What one IP address did, in numbers. The times are null when it sent no requests."""
 
@@ -473,3 +486,34 @@ async def fetch_events(
             await queries.get_decoy_password_attempts_by_ids(conn, ids=ids),
         )
     return in_page_order(page, events)
+
+
+# The most logins one takeover lists; the rest are counted.
+TAKEOVER_MAX_LOGINS = 200
+
+
+async def fetch_takeover(conn: AsyncConnection, install_id: int) -> Takeover | None:
+    """The install `install_id` and the logins into its account; None if there is no such
+    install."""
+    installs = await queries.get_install_attempts_by_ids(conn, ids=[install_id])
+    if not installs:
+        return None
+    install = install_attempt_event(installs[0])
+    ids = await queries.list_install_login_ids(
+        conn, install_id=install_id, max_rows=TAKEOVER_MAX_LOGINS
+    )
+    logins = sorted(
+        map(
+            login_attempt_event, await queries.get_login_attempts_by_ids(conn, ids=ids)
+        ),
+        key=lambda login: (login.occurred_at, login.id),
+    )
+    return Takeover(
+        install=install,
+        logins=logins,
+        login_count=await queries.count_install_logins(conn, install_id=install_id)
+        or 0,
+        locations=await fetch_locations(
+            conn, {install.ip_address, *(login.ip_address for login in logins)}
+        ),
+    )

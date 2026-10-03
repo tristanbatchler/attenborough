@@ -35,6 +35,7 @@ __all__: collections.abc.Sequence[str] = (
     "busiest_addresses",
     "categorise_path",
     "count_categories_since",
+    "count_install_logins",
     "count_login_attempts_since",
     "count_requests_per_hour_since",
     "count_requests_since",
@@ -60,6 +61,7 @@ __all__: collections.abc.Sequence[str] = (
     "get_pattern_totals",
     "get_user_by_session_token_hash",
     "list_applied_migrations",
+    "list_install_login_ids",
     "list_ip_events",
     "list_map_places",
     "list_paths_of",
@@ -408,7 +410,7 @@ RETURNING
     ) AS known_account
 """
 
-CREATE_INSTALL_ATTEMPT: typing.Final[typing.LiteralString] = """-- name: CreateInstallAttempt :exec
+CREATE_INSTALL_ATTEMPT: typing.Final[typing.LiteralString] = """-- name: CreateInstallAttempt :one
 INSERT INTO install_attempts (
     ip_address, path, site_title, username, email, password, password_generated
 )
@@ -416,6 +418,7 @@ VALUES (
     %(p1)s, %(p2)s, %(p3)s, %(p4)s,
     %(p5)s, %(p6)s, %(p7)s
 )
+RETURNING id
 """
 
 CREATE_CANARY_TOKEN: typing.Final[typing.LiteralString] = """-- name: CreateCanaryToken :exec
@@ -543,6 +546,18 @@ SELECT
     id, ip_address, attempted_at, path, site_title, username, email, password, password_generated
 FROM install_attempts
 WHERE id = ANY(%(p1)s::BIGINT[])
+"""
+
+LIST_INSTALL_LOGIN_IDS: typing.Final[typing.LiteralString] = """-- name: ListInstallLoginIds :many
+SELECT id
+FROM credential_stuffing_attempts
+WHERE install_id = %(p1)s
+ORDER BY attempted_at, id
+LIMIT %(p2)s
+"""
+
+COUNT_INSTALL_LOGINS: typing.Final[typing.LiteralString] = """-- name: CountInstallLogins :one
+SELECT count(*) FROM credential_stuffing_attempts WHERE install_id = %(p1)s
 """
 
 GET_DECOY_VIEWS_BY_IDS: typing.Final[typing.LiteralString] = """-- name: GetDecoyViewsByIds :many
@@ -924,8 +939,11 @@ async def create_credential_stuffing_attempt(conn: ConnectionLike, *, ip_address
     return CreateCredentialStuffingAttemptRow(was_fake_success=row[0], known_account=row[1])
 
 
-async def create_install_attempt(conn: ConnectionLike, *, ip_address: str, path: str, site_title: str, username: str, email: str, password: str, password_generated: bool) -> None:
-    await conn.execute(CREATE_INSTALL_ATTEMPT, {"p1": ip_address, "p2": path, "p3": site_title, "p4": username, "p5": email, "p6": password, "p7": password_generated})
+async def create_install_attempt(conn: ConnectionLike, *, ip_address: str, path: str, site_title: str, username: str, email: str, password: str, password_generated: bool) -> int | None:
+    row = await (await conn.execute(CREATE_INSTALL_ATTEMPT, {"p1": ip_address, "p2": path, "p3": site_title, "p4": username, "p5": email, "p6": password, "p7": password_generated})).fetchone()
+    if row is None:
+        return None
+    return row[0]
 
 
 async def create_canary_token(conn: ConnectionLike, *, token: str, path: str, ip_address: str) -> None:
@@ -993,6 +1011,17 @@ def get_install_attempts_by_ids(conn: ConnectionLike, *, ids: collections.abc.Se
         return GetInstallAttemptsByIdsRow(id_=row[0], ip_address=str(row[1]), attempted_at=row[2], path=row[3], site_title=row[4], username=row[5], email=row[6], password=row[7], password_generated=row[8])
 
     return QueryResults(conn, GET_INSTALL_ATTEMPTS_BY_IDS, _decode_hook, {"p1": list(ids)})
+
+
+def list_install_login_ids(conn: ConnectionLike, *, install_id: int | None, max_rows: int) -> QueryResults[int]:
+    return QueryResults(conn, LIST_INSTALL_LOGIN_IDS, operator.itemgetter(0), {"p1": install_id, "p2": max_rows})
+
+
+async def count_install_logins(conn: ConnectionLike, *, install_id: int | None) -> int | None:
+    row = await (await conn.execute(COUNT_INSTALL_LOGINS, {"p1": install_id})).fetchone()
+    if row is None:
+        return None
+    return row[0]
 
 
 def get_decoy_views_by_ids(conn: ConnectionLike, *, ids: collections.abc.Sequence[int]) -> QueryResults[GetDecoyViewsByIdsRow]:

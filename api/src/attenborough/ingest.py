@@ -200,7 +200,7 @@ async def report_install(
     """Record a WordPress install and decide its account's password (account_password).
     Nothing is installed; a later login with the account is linked to this install."""
     password, generated = account_password(install.password)
-    await queries.create_install_attempt(
+    _ = await queries.create_install_attempt(
         db_conn,
         ip_address=str(origin),
         path=install.path,
