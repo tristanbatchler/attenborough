@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { ADMIN_PATH, LoginError, PASSWORD_FIELD, SITE_NAME, USERNAME_FIELD } from './site';
+	import { SITE_NAME } from '$lib/site/blog';
+	import { ADMIN_PATH, LoginError, PASSWORD_FIELD, USERNAME_FIELD } from './site';
 
 	// `error` is why the last attempt failed; null on a fresh page.
 	let { username, error }: { username: string; error: LoginError | null } = $props();

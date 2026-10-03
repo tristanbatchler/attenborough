@@ -1,6 +1,6 @@
 # Attenborough decoy
 
-The fake sites that visitors see: a SvelteKit app, separate from the exhibit (`../web`), that imitates the software scanners look for (so far, a WordPress login page). It presents pages and nothing else. For every request it serves, it reports the visit to the API, and for every login it asks the API what to do, so the API stays the only thing that decides outcomes and writes to the database.
+The fake sites that visitors see: a SvelteKit app, separate from the exhibit (`../web`), that imitates the software scanners look for: a small WordPress site, an unofficial fan blog, with its front page, posts, author archives, feed, REST API (`/wp-json/`, also as `?rest_route=`), `xmlrpc.php`, `readme.html`, `robots.txt`, the admin area's redirect to the login, and the login page itself. It presents pages and nothing else. For every request it serves, it reports the visit to the API, and for every login it asks the API what to do, so the API stays the only thing that decides outcomes and writes to the database.
 
 ```
 visitor → nginx → decoy (this app) → API /ingest/... → PostgreSQL
@@ -54,7 +54,7 @@ Check a response with `curl -s <url> | grep -E '<script|_app|svelte|<!--'`: it s
 
 ## Adding a decoy
 
-1. A `+server.ts` endpoint that imitates the real software's status codes, headers and cookies, rendering its markup with `htmlPage` from a component in `$lib/<software>/` (see `src/routes/wp-login.php/` and `$lib/wordpress/`). Names the component and its endpoint share go in a module beside them (`$lib/wordpress/site.ts`). Set `trailingSlash = 'ignore'`.
+1. A `+server.ts` endpoint that imitates the real software's status codes, headers and cookies, rendering its markup with `htmlPage` from a component in `$lib/<software>/` (see `src/routes/wp-login.php/` and `$lib/wordpress/`). The blog's content (its name, authors, posts, WordPress version) lives in one place, `$lib/site/blog.ts`, and its responses in `$lib/server/blog.ts` and `$lib/server/wordpress.ts`; read names from there so the site stays consistent. The theme is in the content only: never write the honeypot's domain in this public repository. Names the component and its endpoint share go in a module beside them (`$lib/wordpress/site.ts`). Set `trailingSlash = 'ignore'`.
 2. Anything the visitor submits goes to an `/ingest/...` endpoint, which records it and decides the outcome. If there's no endpoint for it, add one in the API (`api/src/attenborough/ingest/`), then regenerate the client.
 3. Check it with curl as above, and with `telemetry_probe.py verify --target decoy` (add cases for the new route).
 

@@ -1,6 +1,6 @@
 import type { Component } from 'svelte';
 import { render } from 'svelte/server';
-import { CONTENT_TYPE_HEADER } from '$lib/server/headers';
+import { CONTENT_TYPE_HEADER, HTML_CONTENT_TYPE } from '$lib/server/headers';
 
 // Svelte's hydration markers: blocks (`<!--[-->`, `<!--]-->`, `<!--[-1-->`), empty anchors
 // (`<!---->`) and <svelte:head> hashes (`<!--19tzqmq-->`). They exist only for client-side
@@ -35,6 +35,6 @@ export function htmlPage<Props extends Record<string, unknown>>(
 		'\n</body>\n</html>\n';
 	return new Response(html.replace(HYDRATION_MARKERS, ''), {
 		status,
-		headers: { [CONTENT_TYPE_HEADER]: 'text/html; charset=UTF-8', ...headers }
+		headers: { [CONTENT_TYPE_HEADER]: HTML_CONTENT_TYPE, ...headers }
 	});
 }

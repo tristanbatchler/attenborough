@@ -1,11 +1,12 @@
-// The WordPress install the decoy imitates: names shared by its pages and their server code.
-
-/** The site's name, as WordPress shows it in titles and links. */
-export const SITE_NAME = 'Harlow & Finch';
+// The WordPress install the decoy imitates: names shared by its pages and their server code. The
+// blog it hosts (name, posts, authors) is $lib/site/blog.
 
 /** WordPress's login form fields. */
 export const USERNAME_FIELD = 'log';
 export const PASSWORD_FIELD = 'pwd';
+
+/** The login page. */
+export const LOGIN_PATH = '/wp-login.php';
 
 /** Where WordPress sends a successful login. */
 export const ADMIN_PATH = '/wp-admin/';
