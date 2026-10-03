@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { constants } from 'node:http2';
 import { banIp, listIpBans, revokeBan } from '$lib/client';
-import { BAN_DURATIONS, BAN_ID_FIELD, banExpiry, DURATION_FIELD, REASON_FIELD } from '$lib/bans';
+import { DURATIONS, BAN_ID_FIELD, expiryAfter, DURATION_FIELD, REASON_FIELD } from '$lib/admin';
 import { adminOptions, textField, unwrapAdmin } from '$lib/server/admin';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -18,14 +18,14 @@ export const load: PageServerLoad = async ({ params, fetch, cookies }) => ({
 export const actions = {
 	ban: async ({ params, request, fetch, cookies }) => {
 		const form = await request.formData();
-		const duration = BAN_DURATIONS.find(({ value }) => value === form.get(DURATION_FIELD));
+		const duration = DURATIONS.find(({ value }) => value === form.get(DURATION_FIELD));
 		if (duration === undefined) {
 			return fail(constants.HTTP_STATUS_BAD_REQUEST, { message: 'Choose how long the ban lasts.' });
 		}
 		const result = await banIp({
 			...adminOptions(fetch, cookies),
 			path: { ip_addr: params.address },
-			body: { reason: textField(form, REASON_FIELD), expires: banExpiry(duration) }
+			body: { reason: textField(form, REASON_FIELD), expires: expiryAfter(duration) }
 		});
 		if (result.response?.status === constants.HTTP_STATUS_CONFLICT) {
 			return fail(constants.HTTP_STATUS_CONFLICT, { message: 'This address is already banned.' });

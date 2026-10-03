@@ -9,6 +9,7 @@
 	<ul>
 		<li><strong>Admin</strong></li>
 		<li><a href={resolve('/admin')}>Bans</a></li>
+		<li><a href={resolve('/admin/rules')}>Rules</a></li>
 		<li><a href={resolve('/admin/audit')}>Audit log</a></li>
 	</ul>
 	<ul>

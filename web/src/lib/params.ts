@@ -11,3 +11,6 @@ export const ADDRESS_PARAM = 'address';
 export function beforeSearch(before: string): string {
 	return new URLSearchParams({ [BEFORE_PARAM]: before }).toString();
 }
+
+/** `?example=`: the rule example (`RULE_EXAMPLES`) a new response rule starts from. */
+export const EXAMPLE_PARAM = 'example';

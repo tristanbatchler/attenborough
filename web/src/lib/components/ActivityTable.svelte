@@ -44,6 +44,7 @@
 							</a>
 							→ <code>{event.status_code}</code>
 							{#if event.banned}<small>refused: banned</small>{/if}
+							{#if event.custom_response}<small>custom response</small>{/if}
 							{#if event.body_preview}
 								<samp>{event.body_preview}</samp>
 								<small
@@ -95,15 +96,6 @@
 							{#if event.password_generated}
 								<small>No password was chosen: the decoy's installer made this one up.</small>
 							{/if}
-						</td>
-					{:else if event.kind === 'decoy_view'}
-						<td>{event.decoy_type === 'binary' ? 'Decoy download' : 'Decoy view'}</td>
-						<td><code>{event.decoy_slug}</code></td>
-					{:else if event.kind === 'decoy_password_attempt'}
-						<td>Decoy password</td>
-						<td>
-							<code>{event.decoy_slug}</code>
-							({event.decoy_accepted ? 'accepted by the decoy' : 'rejected by the decoy'})
 						</td>
 					{/if}
 				</tr>

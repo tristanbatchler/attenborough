@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { BAN_DURATIONS, BAN_ID_FIELD, DURATION_FIELD, REASON_FIELD } from '$lib/bans';
+	import { DURATIONS, BAN_ID_FIELD, DURATION_FIELD, REASON_FIELD } from '$lib/admin';
 	import BanTable from '$lib/components/BanTable.svelte';
+	import { ADDRESS_PARAM } from '$lib/params';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -16,8 +17,11 @@
 <hgroup>
 	<h1>Bans of <code>{data.address}</code></h1>
 	<p>
-		<a href={resolve('/ip/[address]', { address: data.address })}>Its activity on the exhibit</a>.
-		Times are in UTC.
+		<a href={resolve('/ip/[address]', { address: data.address })}>Its activity on the exhibit</a>,
+		or
+		<a href={resolve(`/admin/rules/new?${ADDRESS_PARAM}=${encodeURIComponent(data.address)}`)}
+			>a response rule for it</a
+		>. Times are in UTC.
 	</p>
 </hgroup>
 
@@ -44,7 +48,7 @@
 			<label>
 				For
 				<select name={DURATION_FIELD} required>
-					{#each BAN_DURATIONS as duration (duration.value)}
+					{#each DURATIONS as duration (duration.value)}
 						<option value={duration.value}>{duration.label}</option>
 					{/each}
 				</select>

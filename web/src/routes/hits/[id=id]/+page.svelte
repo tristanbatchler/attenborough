@@ -39,6 +39,9 @@
 				<td>
 					<code>{hit.status_code}</code>
 					{#if hit.banned}<small>Refused: the address was banned.</small>{/if}
+					{#if hit.custom_response}<small>
+							The honeypot answered with a custom response, written by its keeper.
+						</small>{/if}
 				</td>
 			</tr>
 			<tr>
