@@ -7,6 +7,7 @@ from pydantic import BaseModel, ValidationError
 
 from attenborough.db import queries
 from attenborough.ingest import (
+    AUTHORS,
     TARPIT_FREE_ATTEMPTS,
     TARPIT_MAX_DELAY_MS,
     TARPIT_STEP_MS,
@@ -14,6 +15,7 @@ from attenborough.ingest import (
     InstallAttempt,
     LoginAttempt,
     account_password,
+    author_password,
     tarpit_delay_ms,
 )
 
@@ -32,6 +34,7 @@ TOO_BIG_BODY = base64.b64encode(bytes(1024 * 1024 + 1)).decode()
 TOO_LONG_CREDENTIAL = FILLER * (1024 * 1024 + 1)
 # An address from TEST-NET-1 (RFC 5737), never a real visitor.
 TEST_IP = "192.0.2.1"
+AUTHOR = "axespinner"
 
 
 def hit(
@@ -148,6 +151,7 @@ async def test_only_an_installed_account_with_its_own_password_opens(
             endpoint_path=LOGIN_PATH,
             username=login,
             password=tried,
+            author_password=author_password(login) == tried,
         )
         assert recorded is not None
         return recorded.was_fake_success, recorded.known_account
@@ -168,3 +172,35 @@ async def test_only_an_installed_account_with_its_own_password_opens(
         assert await outcome(email, password) == (True, True)
         assert await outcome(username, "wrong") == (False, True)
         assert await outcome("test-someone-else", password) == (False, False)
+
+
+def test_each_author_always_has_the_same_weak_password_and_nobody_else_has_one():
+    passwords = {author: author_password(author) for author in AUTHORS}
+    assert None not in passwords.values()
+    assert passwords == {author: author_password(author) for author in AUTHORS}
+    assert author_password(AUTHOR.upper()) == passwords[AUTHOR]
+    assert author_password("admin") is None
+
+
+@pytest.mark.anyio
+async def test_an_author_opens_with_their_weak_password(db_conn: AsyncConnection):
+    password = author_password(AUTHOR)
+    assert password is not None
+
+    async def opens(username: str, tried: str) -> bool:
+        recorded = await queries.create_credential_stuffing_attempt(
+            db_conn,
+            ip_address=TEST_IP,
+            endpoint_path=LOGIN_PATH,
+            username=username,
+            password=tried,
+            author_password=author_password(username) == tried,
+        )
+        assert recorded is not None
+        return recorded.was_fake_success
+
+    async with db_conn.transaction(force_rollback=True):
+        assert await opens(AUTHOR, password)
+        assert await opens(AUTHOR.upper(), password)
+        assert not await opens(AUTHOR, password + FILLER)
+        assert not await opens("admin", password)

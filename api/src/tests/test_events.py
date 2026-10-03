@@ -363,6 +363,7 @@ async def test_a_takeover_is_its_install_and_the_logins_into_its_account_in_orde
             endpoint_path=PATH,
             username=username,
             password=password,
+            author_password=False,
         )
 
     async with db_conn.transaction(force_rollback=True):

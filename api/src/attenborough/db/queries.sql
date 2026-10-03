@@ -10,9 +10,10 @@ VALUES (
 );
 
 -- A login attempt, linked to the canary its password was, if it was one, and to the latest install
--- whose account it opened (by username or email, as WordPress's login takes either), if any. Opening
--- an installed account is the one login the decoy pretends to accept (was_fake_success). Returns
--- that, and whether the login named an installed account at all, whatever the password.
+-- whose account it opened (by username or email, as WordPress's login takes either), if any. The
+-- decoy pretends to accept (was_fake_success) a login into an installed account, or into an author's
+-- with their weak password (`author_password`, ingest.py). Returns that, and whether the login
+-- named an installed account at all, whatever the password.
 -- name: CreateCredentialStuffingAttempt :one
 WITH opened AS (
     SELECT id FROM install_attempts
@@ -26,7 +27,7 @@ INSERT INTO credential_stuffing_attempts (
 )
 VALUES (
     sqlc.arg(ip_address), sqlc.arg(endpoint_path), sqlc.arg(username), sqlc.arg(password),
-    EXISTS (SELECT 1 FROM opened),
+    sqlc.arg(author_password)::BOOLEAN OR EXISTS (SELECT 1 FROM opened),
     (SELECT id FROM canary_tokens WHERE token = sqlc.arg(password)),
     (SELECT id FROM opened)
 )

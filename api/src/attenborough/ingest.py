@@ -7,9 +7,12 @@ A report names its visitor in X-Forwarded-For, which only counts because the dec
 in FORWARDED_ALLOW_IPS; the visitor is the `RequestOrigin`.
 """
 
+import hashlib
 import secrets
 import string
 from datetime import UTC, datetime, timedelta
+from functools import cache
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks
@@ -53,6 +56,12 @@ _GENERATED_PASSWORD_LENGTH = 12
 _GENERATED_PASSWORD_ALPHABET = string.ascii_letters + string.digits
 # What PHP's trim() strips, which is what WordPress stores of a chosen password.
 _PHP_WHITESPACE = " \t\n\r\0\x0b"
+# The blog's authors (decoy/src/lib/site/blog.ts, AUTHORS): the site's own accounts, each with a
+# weak password (author_password). WordPress matches usernames ignoring case.
+AUTHORS = frozenset({"axespinner", "second-axe"})
+# The 1000 most common passwords, from SecLists (MIT): Passwords/Common-Credentials/
+# 10k-most-common.txt, one per line. Attackers' generic wordlists start with the same ones.
+_WEAK_PASSWORDS_FILE = Path(__file__).with_name("weak_passwords.txt")
 
 
 def tarpit_delay_ms(previous_attempts: int) -> int:
@@ -108,8 +117,9 @@ class LoginAttempt(BaseModel):
 class LoginOutcome(BaseModel):
     """How the decoy should answer a login: decided here, not in the decoy app."""
 
-    # The decoy pretends to accept a login only into an account an install created, with its
-    # password: nothing is ever really logged in.
+    # The decoy pretends to accept a login only into an author's account with their weak password
+    # (author_password), or into an account an install created, with its password: nothing is ever
+    # really logged in.
     success: bool
     # Whether the login named an account an install created, whatever the password: WordPress says
     # such an account's password was wrong, rather than that it isn't registered.
@@ -191,15 +201,31 @@ async def report_hit(
     )
 
 
+@cache
+def _weak_passwords() -> list[str]:
+    return _WEAK_PASSWORDS_FILE.read_text().splitlines()
+
+
+def author_password(username: str) -> str | None:
+    """An author's password: one of the most common, always the same one for the same author,
+    picked by the SHA-256 of their username. None for anyone else."""
+    login = username.lower()
+    if login not in AUTHORS:
+        return None
+    passwords = _weak_passwords()
+    digest = hashlib.sha256(login.encode()).digest()
+    return passwords[int.from_bytes(digest) % len(passwords)]
+
+
 @router.post("/logins")
 async def report_login(
     attempt: LoginAttempt, db_conn: DBConn, origin: RequestOrigin
 ) -> LoginOutcome:
     """Record submitted credentials and decide the outcome the decoy app shows.
 
-    The only accounts are the ones installs created (report_install), so only those open, with
-    their own password. Every other login fails, as a real site does for guessed credentials,
-    canaries included: they were never anyone's password. The attempt is linked to the canary or
+    The only accounts are the authors' (author_password) and the ones installs created
+    (report_install), so only those open, with their own password. Every other login fails, as a
+    real site does for guessed credentials, canaries included: they were never anyone's password. The attempt is linked to the canary or
     install it used (CreateCredentialStuffingAttempt).
     """
     previous = await queries.count_login_attempts_since(
@@ -211,6 +237,7 @@ async def report_login(
         ip_address=str(origin),
         username=attempt.username,
         password=attempt.password,
+        author_password=author_password(attempt.username) == attempt.password,
     )
     if recorded is None:
         # Unreachable: INSERT ... RETURNING returns the row it inserted.
