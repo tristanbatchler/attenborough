@@ -6,20 +6,40 @@
 from __future__ import annotations
 
 __all__: collections.abc.Sequence[str] = (
+    "BusiestAddressesRow",
+    "CountCategoriesSinceRow",
+    "CountRequestsPerHourSinceRow",
     "GetDecoyPasswordAttemptsByIdsRow",
     "GetDecoyViewsByIdsRow",
     "GetHitRow",
     "GetHitsByIdsRow",
     "GetIpActivityRow",
     "GetLoginAttemptsByIdsRow",
+    "GetObservationSpanRow",
+    "GetPatternTotalsRow",
     "ListAppliedMigrationsRow",
     "ListIpEventsRow",
+    "ListMapPlacesRow",
     "ListRecentEventsRow",
+    "ListToolkitsRow",
+    "LongestSeenAddressesRow",
     "QueryResults",
+    "TopCountriesRow",
+    "TopNetworksRow",
+    "TopPasswordsSinceRow",
+    "TopPathsSinceRow",
+    "TopUserAgentsSinceRow",
+    "TopUsernamesSinceRow",
+    "busiest_addresses",
+    "categorise_path",
+    "count_categories_since",
+    "count_requests_per_hour_since",
+    "count_requests_since",
     "create_active_ip_ban",
     "create_credential_stuffing_attempt",
     "create_decoy_password_attempt",
     "create_decoy_view",
+    "create_ip_location",
     "create_public_schema",
     "create_telemetry_hit",
     "drop_public_schema",
@@ -28,24 +48,39 @@ __all__: collections.abc.Sequence[str] = (
     "get_hit",
     "get_hits_by_ids",
     "get_ip_activity",
+    "get_ip_locations",
     "get_login_attempts_by_ids",
+    "get_observation_span",
+    "get_pattern_totals",
     "get_user_by_session_token_hash",
     "list_applied_migrations",
     "list_ip_events",
+    "list_map_places",
+    "list_paths_of",
     "list_recent_events",
+    "list_toolkits",
+    "list_unlocated_addresses",
+    "longest_seen_addresses",
     "record_migration",
     "seed_hits",
     "seed_login_attempts",
+    "top_countries",
+    "top_networks",
+    "top_passwords_since",
+    "top_paths_since",
+    "top_user_agents_since",
+    "top_usernames_since",
     "upsert_decoy",
     "upsert_user",
 )
 
+import collections.abc
 import datetime
+import operator
 import pydantic
 import typing
 
 if typing.TYPE_CHECKING:
-    import collections.abc
     import psycopg
     import psycopg.rows
 
@@ -88,6 +123,7 @@ class GetHitsByIdsRow(pydantic.BaseModel):
     user_agent: str | None
     body_preview: memoryview
     body_size: int | None
+    category: enums.PathCategory
 
 
 class GetLoginAttemptsByIdsRow(pydantic.BaseModel):
@@ -136,6 +172,7 @@ class GetHitRow(pydantic.BaseModel):
     headers: str
     body: memoryview | None
     body_size: int | None
+    category: enums.PathCategory
 
 
 class GetIpActivityRow(pydantic.BaseModel):
@@ -146,6 +183,131 @@ class GetIpActivityRow(pydantic.BaseModel):
     login_attempts: int
     first_seen_at: datetime.datetime | None
     last_seen_at: datetime.datetime | None
+
+
+class GetPatternTotalsRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    requests: int
+    login_attempts: int
+    addresses: int
+    countries: int
+
+
+class GetObservationSpanRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    first_seen_at: datetime.datetime
+    last_seen_at: datetime.datetime
+
+
+class CountCategoriesSinceRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    category: enums.PathCategory
+    requests: int
+    addresses: int
+
+
+class TopPathsSinceRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    path: str
+    category: enums.PathCategory
+    requests: int
+    addresses: int
+
+
+class TopUserAgentsSinceRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    user_agent: str | None
+    requests: int
+    addresses: int
+
+
+class CountRequestsPerHourSinceRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    hour: datetime.datetime
+    requests: int
+
+
+class TopUsernamesSinceRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    value: str
+    attempts: int
+    addresses: int
+
+
+class TopPasswordsSinceRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    value: str
+    attempts: int
+    addresses: int
+
+
+class TopCountriesRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    country_code: str | None
+    requests: int
+    addresses: int
+
+
+class TopNetworksRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    asn: int | None
+    as_organisation: str | None
+    requests: int
+    addresses: int
+
+
+class BusiestAddressesRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    ip_address: str
+    requests: int
+    distinct_paths: int
+    login_attempts: int
+    first_seen_at: datetime.datetime | None
+    last_seen_at: datetime.datetime | None
+    country_code: str | None
+
+
+class LongestSeenAddressesRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    ip_address: str
+    requests: int
+    distinct_paths: int
+    login_attempts: int
+    first_seen_at: datetime.datetime | None
+    last_seen_at: datetime.datetime | None
+    country_code: str | None
+
+
+class ListToolkitsRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    paths: int
+    address_count: int
+    addresses: collections.abc.Sequence[str]
+    example_address: str
+
+
+class ListMapPlacesRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    latitude: float
+    longitude: float
+    city: str | None
+    country_code: str | None
+    requests: int
+    addresses: int
 
 
 class ListAppliedMigrationsRow(pydantic.BaseModel):
@@ -270,7 +432,8 @@ LIMIT %(p5)s::int
 GET_HITS_BY_IDS: typing.Final[typing.LiteralString] = """-- name: GetHitsByIds :many
 SELECT
     id, ip_address, occurred_at, method, path, query, status_code, user_agent,
-    COALESCE(substring(body FROM 1 FOR 1024), ''::BYTEA)::BYTEA AS body_preview, body_size
+    COALESCE(substring(body FROM 1 FOR 1024), ''::BYTEA)::BYTEA AS body_preview, body_size,
+    path_category(path) AS category
 FROM telemetry_hits
 WHERE id = ANY(%(p1)s::BIGINT[])
 """
@@ -298,15 +461,210 @@ WHERE dpa.id = ANY(%(p1)s::BIGINT[])
 GET_HIT: typing.Final[typing.LiteralString] = """-- name: GetHit :one
 SELECT
     id, ip_address, occurred_at, method, path, query, status_code, user_agent,
-    headers::TEXT AS headers, body, body_size
+    headers::TEXT AS headers, body, body_size, path_category(path) AS category
 FROM telemetry_hits
 WHERE id = %(p1)s AND router_group = %(p2)s
+"""
+
+CATEGORISE_PATH: typing.Final[typing.LiteralString] = """-- name: CategorisePath :one
+SELECT path_category(%(p1)s::TEXT) AS category
 """
 
 GET_IP_ACTIVITY: typing.Final[typing.LiteralString] = """-- name: GetIpActivity :one
 SELECT requests, distinct_paths, login_attempts, first_seen_at, last_seen_at
 FROM ip_activity
 WHERE ip_address = %(p1)s::inet
+"""
+
+CREATE_IP_LOCATION: typing.Final[typing.LiteralString] = """-- name: CreateIpLocation :exec
+INSERT INTO ip_locations (
+    ip_address, country_code, city, latitude, longitude, asn, as_organisation, source
+)
+VALUES (
+    %(p1)s, %(p2)s, %(p3)s, %(p4)s,
+    %(p5)s, %(p6)s, %(p7)s, %(p8)s
+)
+ON CONFLICT (ip_address) DO NOTHING
+"""
+
+GET_IP_LOCATIONS: typing.Final[typing.LiteralString] = """-- name: GetIpLocations :many
+SELECT
+    ip_address, country_code, city, latitude, longitude, asn, as_organisation, source, located_at
+FROM ip_locations
+WHERE ip_address = ANY(%(p1)s::INET[])
+"""
+
+LIST_UNLOCATED_ADDRESSES: typing.Final[typing.LiteralString] = """-- name: ListUnlocatedAddresses :many
+SELECT a.ip_address
+FROM ip_activity a
+WHERE NOT EXISTS (SELECT FROM ip_locations l WHERE l.ip_address = a.ip_address)
+ORDER BY a.ip_address
+"""
+
+GET_PATTERN_TOTALS: typing.Final[typing.LiteralString] = """-- name: GetPatternTotals :one
+
+SELECT
+    COALESCE(sum(a.requests), 0)::BIGINT AS requests,
+    COALESCE(sum(a.login_attempts), 0)::BIGINT AS login_attempts,
+    count(*) AS addresses,
+    count(DISTINCT l.country_code) AS countries
+FROM ip_activity a
+LEFT JOIN ip_locations l USING (ip_address)
+"""
+
+GET_OBSERVATION_SPAN: typing.Final[typing.LiteralString] = """-- name: GetObservationSpan :one
+SELECT min(first_seen_at)::TIMESTAMPTZ AS first_seen_at, max(last_seen_at)::TIMESTAMPTZ AS last_seen_at
+FROM ip_activity
+HAVING count(first_seen_at) > 0
+"""
+
+COUNT_REQUESTS_SINCE: typing.Final[typing.LiteralString] = """-- name: CountRequestsSince :one
+SELECT count(*) AS requests
+FROM telemetry_hits
+WHERE router_group = 'honeypot' AND occurred_at >= %(p1)s::TIMESTAMPTZ
+"""
+
+COUNT_CATEGORIES_SINCE: typing.Final[typing.LiteralString] = """-- name: CountCategoriesSince :many
+WITH visits AS MATERIALIZED (
+    SELECT path, ip_address, count(*) AS requests
+    FROM telemetry_hits
+    WHERE router_group = 'honeypot' AND occurred_at >= %(p1)s::TIMESTAMPTZ
+    GROUP BY path, ip_address
+), categories AS MATERIALIZED (
+    SELECT path, path_category(path) AS category FROM (SELECT DISTINCT path FROM visits) p
+)
+SELECT c.category, sum(v.requests)::BIGINT AS requests, count(DISTINCT v.ip_address) AS addresses
+FROM visits v
+JOIN categories c USING (path)
+GROUP BY c.category
+ORDER BY requests DESC, c.category
+"""
+
+TOP_PATHS_SINCE: typing.Final[typing.LiteralString] = """-- name: TopPathsSince :many
+SELECT path, path_category(path) AS category, requests, addresses FROM (
+    SELECT path, count(*) AS requests, count(DISTINCT ip_address) AS addresses
+    FROM telemetry_hits
+    WHERE router_group = 'honeypot' AND occurred_at >= %(p1)s::TIMESTAMPTZ
+    GROUP BY path
+    ORDER BY requests DESC, path
+    LIMIT %(p2)s::INT
+) top
+"""
+
+TOP_USER_AGENTS_SINCE: typing.Final[typing.LiteralString] = """-- name: TopUserAgentsSince :many
+SELECT user_agent, count(*) AS requests, count(DISTINCT ip_address) AS addresses
+FROM telemetry_hits
+WHERE router_group = 'honeypot' AND occurred_at >= %(p1)s::TIMESTAMPTZ
+GROUP BY user_agent
+ORDER BY requests DESC, user_agent
+LIMIT %(p2)s::INT
+"""
+
+COUNT_REQUESTS_PER_HOUR_SINCE: typing.Final[typing.LiteralString] = """-- name: CountRequestsPerHourSince :many
+SELECT date_trunc('hour', occurred_at)::TIMESTAMPTZ AS hour, count(*) AS requests
+FROM telemetry_hits
+WHERE router_group = 'honeypot' AND occurred_at >= %(p1)s::TIMESTAMPTZ
+GROUP BY hour
+ORDER BY hour
+"""
+
+TOP_USERNAMES_SINCE: typing.Final[typing.LiteralString] = """-- name: TopUsernamesSince :many
+SELECT username AS value, count(*) AS attempts, count(DISTINCT ip_address) AS addresses
+FROM credential_stuffing_attempts
+WHERE attempted_at >= %(p1)s::TIMESTAMPTZ
+GROUP BY username
+ORDER BY attempts DESC, username
+LIMIT %(p2)s::INT
+"""
+
+TOP_PASSWORDS_SINCE: typing.Final[typing.LiteralString] = """-- name: TopPasswordsSince :many
+SELECT password AS value, count(*) AS attempts, count(DISTINCT ip_address) AS addresses
+FROM credential_stuffing_attempts
+WHERE attempted_at >= %(p1)s::TIMESTAMPTZ
+GROUP BY password
+ORDER BY attempts DESC, password
+LIMIT %(p2)s::INT
+"""
+
+TOP_COUNTRIES: typing.Final[typing.LiteralString] = """-- name: TopCountries :many
+SELECT l.country_code, sum(a.requests)::BIGINT AS requests, count(*) AS addresses
+FROM ip_activity a
+LEFT JOIN ip_locations l USING (ip_address)
+GROUP BY l.country_code
+ORDER BY requests DESC, l.country_code
+LIMIT %(p1)s::INT
+"""
+
+TOP_NETWORKS: typing.Final[typing.LiteralString] = """-- name: TopNetworks :many
+SELECT l.asn, l.as_organisation, sum(a.requests)::BIGINT AS requests, count(*) AS addresses
+FROM ip_activity a
+LEFT JOIN ip_locations l USING (ip_address)
+GROUP BY l.asn, l.as_organisation
+ORDER BY requests DESC, l.asn
+LIMIT %(p1)s::INT
+"""
+
+BUSIEST_ADDRESSES: typing.Final[typing.LiteralString] = """-- name: BusiestAddresses :many
+SELECT
+    a.ip_address, a.requests, a.distinct_paths, a.login_attempts, a.first_seen_at,
+    a.last_seen_at, l.country_code
+FROM ip_activity a
+LEFT JOIN ip_locations l USING (ip_address)
+ORDER BY a.requests DESC, a.ip_address
+LIMIT %(p1)s::INT
+"""
+
+LONGEST_SEEN_ADDRESSES: typing.Final[typing.LiteralString] = """-- name: LongestSeenAddresses :many
+SELECT
+    a.ip_address, a.requests, a.distinct_paths, a.login_attempts, a.first_seen_at,
+    a.last_seen_at, l.country_code
+FROM ip_activity a
+LEFT JOIN ip_locations l USING (ip_address)
+WHERE a.first_seen_at IS NOT NULL
+ORDER BY a.last_seen_at - a.first_seen_at DESC, a.ip_address
+LIMIT %(p1)s::INT
+"""
+
+LIST_TOOLKITS: typing.Final[typing.LiteralString] = """-- name: ListToolkits :many
+WITH path_sets AS (
+    SELECT ip_address, md5(string_agg(path_md5::TEXT, ',' ORDER BY path_md5)) AS path_set,
+           count(*) AS paths
+    FROM ip_request_paths
+    GROUP BY ip_address
+    HAVING count(*) >= %(p3)s::INT
+)
+SELECT
+    max(s.paths)::BIGINT AS paths,
+    count(*) AS address_count,
+    (array_agg(s.ip_address ORDER BY a.requests DESC, s.ip_address))[1:%(p1)s::INT]::INET[]
+        AS addresses,
+    (array_agg(s.ip_address ORDER BY a.requests, s.ip_address))[1]::INET AS example_address
+FROM path_sets s
+JOIN ip_activity a USING (ip_address)
+GROUP BY s.path_set
+HAVING count(*) >= 2
+ORDER BY address_count DESC, paths DESC
+LIMIT %(p2)s::INT
+"""
+
+LIST_PATHS_OF: typing.Final[typing.LiteralString] = """-- name: ListPathsOf :many
+SELECT DISTINCT path
+FROM telemetry_hits
+WHERE ip_address = %(p1)s::INET AND router_group = 'honeypot'
+ORDER BY path
+LIMIT %(p2)s::INT
+"""
+
+LIST_MAP_PLACES: typing.Final[typing.LiteralString] = """-- name: ListMapPlaces :many
+SELECT
+    l.latitude::FLOAT8 AS latitude, l.longitude::FLOAT8 AS longitude, l.city, l.country_code,
+    sum(a.requests)::BIGINT AS requests, count(*) AS addresses
+FROM ip_activity a
+JOIN ip_locations l USING (ip_address)
+WHERE l.latitude IS NOT NULL
+GROUP BY l.latitude, l.longitude, l.city, l.country_code
+ORDER BY requests DESC
+LIMIT %(p1)s::INT
 """
 
 UPSERT_DECOY: typing.Final[typing.LiteralString] = """-- name: UpsertDecoy :one
@@ -484,7 +842,7 @@ def list_ip_events(conn: ConnectionLike, *, ip_address: str, before_at: datetime
 
 def get_hits_by_ids(conn: ConnectionLike, *, ids: collections.abc.Sequence[int]) -> QueryResults[GetHitsByIdsRow]:
     def _decode_hook(row: psycopg.rows.TupleRow) -> GetHitsByIdsRow:
-        return GetHitsByIdsRow(id_=row[0], ip_address=str(row[1]), occurred_at=row[2], method=row[3], path=row[4], query=row[5], status_code=row[6], user_agent=row[7], body_preview=memoryview(row[8]), body_size=row[9])
+        return GetHitsByIdsRow(id_=row[0], ip_address=str(row[1]), occurred_at=row[2], method=row[3], path=row[4], query=row[5], status_code=row[6], user_agent=row[7], body_preview=memoryview(row[8]), body_size=row[9], category=enums.PathCategory(row[10]))
 
     return QueryResults(conn, GET_HITS_BY_IDS, _decode_hook, {"p1": list(ids)})
 
@@ -514,7 +872,14 @@ async def get_hit(conn: ConnectionLike, *, id_: int, router_group: enums.RouterG
     row = await (await conn.execute(GET_HIT, {"p1": id_, "p2": router_group})).fetchone()
     if row is None:
         return None
-    return GetHitRow(id_=row[0], ip_address=str(row[1]), occurred_at=row[2], method=row[3], path=row[4], query=row[5], status_code=row[6], user_agent=row[7], headers=row[8], body=memoryview(row[9]) if row[9] is not None else None, body_size=row[10])
+    return GetHitRow(id_=row[0], ip_address=str(row[1]), occurred_at=row[2], method=row[3], path=row[4], query=row[5], status_code=row[6], user_agent=row[7], headers=row[8], body=memoryview(row[9]) if row[9] is not None else None, body_size=row[10], category=enums.PathCategory(row[11]))
+
+
+async def categorise_path(conn: ConnectionLike, *, path: str) -> enums.PathCategory | None:
+    row = await (await conn.execute(CATEGORISE_PATH, {"p1": path})).fetchone()
+    if row is None:
+        return None
+    return enums.PathCategory(row[0])
 
 
 async def get_ip_activity(conn: ConnectionLike, *, ip_address: str) -> GetIpActivityRow | None:
@@ -522,6 +887,133 @@ async def get_ip_activity(conn: ConnectionLike, *, ip_address: str) -> GetIpActi
     if row is None:
         return None
     return GetIpActivityRow(requests=row[0], distinct_paths=row[1], login_attempts=row[2], first_seen_at=row[3], last_seen_at=row[4])
+
+
+async def create_ip_location(conn: ConnectionLike, *, ip_address: str, country_code: str | None, city: str | None, latitude: float | None, longitude: float | None, asn: int | None, as_organisation: str | None, source: str) -> None:
+    await conn.execute(CREATE_IP_LOCATION, {"p1": ip_address, "p2": country_code, "p3": city, "p4": latitude, "p5": longitude, "p6": asn, "p7": as_organisation, "p8": source})
+
+
+def get_ip_locations(conn: ConnectionLike, *, ip_addresses: collections.abc.Sequence[str]) -> QueryResults[models.IpLocation]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> models.IpLocation:
+        return models.IpLocation(ip_address=str(row[0]), country_code=row[1], city=row[2], latitude=row[3], longitude=row[4], asn=row[5], as_organisation=row[6], source=row[7], located_at=row[8])
+
+    return QueryResults(conn, GET_IP_LOCATIONS, _decode_hook, {"p1": list(ip_addresses)})
+
+
+def list_unlocated_addresses(conn: ConnectionLike) -> QueryResults[str]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> str:
+        return str(row[0])
+
+    return QueryResults(conn, LIST_UNLOCATED_ADDRESSES, _decode_hook)
+
+
+async def get_pattern_totals(conn: ConnectionLike) -> GetPatternTotalsRow | None:
+    row = await (await conn.execute(GET_PATTERN_TOTALS)).fetchone()
+    if row is None:
+        return None
+    return GetPatternTotalsRow(requests=row[0], login_attempts=row[1], addresses=row[2], countries=row[3])
+
+
+async def get_observation_span(conn: ConnectionLike) -> GetObservationSpanRow | None:
+    row = await (await conn.execute(GET_OBSERVATION_SPAN)).fetchone()
+    if row is None:
+        return None
+    return GetObservationSpanRow(first_seen_at=row[0], last_seen_at=row[1])
+
+
+async def count_requests_since(conn: ConnectionLike, *, since: datetime.datetime) -> int | None:
+    row = await (await conn.execute(COUNT_REQUESTS_SINCE, {"p1": since})).fetchone()
+    if row is None:
+        return None
+    return row[0]
+
+
+def count_categories_since(conn: ConnectionLike, *, since: datetime.datetime) -> QueryResults[CountCategoriesSinceRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> CountCategoriesSinceRow:
+        return CountCategoriesSinceRow(category=enums.PathCategory(row[0]), requests=row[1], addresses=row[2])
+
+    return QueryResults(conn, COUNT_CATEGORIES_SINCE, _decode_hook, {"p1": since})
+
+
+def top_paths_since(conn: ConnectionLike, *, since: datetime.datetime, limit: int) -> QueryResults[TopPathsSinceRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> TopPathsSinceRow:
+        return TopPathsSinceRow(path=row[0], category=enums.PathCategory(row[1]), requests=row[2], addresses=row[3])
+
+    return QueryResults(conn, TOP_PATHS_SINCE, _decode_hook, {"p1": since, "p2": limit})
+
+
+def top_user_agents_since(conn: ConnectionLike, *, since: datetime.datetime, limit: int) -> QueryResults[TopUserAgentsSinceRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> TopUserAgentsSinceRow:
+        return TopUserAgentsSinceRow(user_agent=row[0], requests=row[1], addresses=row[2])
+
+    return QueryResults(conn, TOP_USER_AGENTS_SINCE, _decode_hook, {"p1": since, "p2": limit})
+
+
+def count_requests_per_hour_since(conn: ConnectionLike, *, since: datetime.datetime) -> QueryResults[CountRequestsPerHourSinceRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> CountRequestsPerHourSinceRow:
+        return CountRequestsPerHourSinceRow(hour=row[0], requests=row[1])
+
+    return QueryResults(conn, COUNT_REQUESTS_PER_HOUR_SINCE, _decode_hook, {"p1": since})
+
+
+def top_usernames_since(conn: ConnectionLike, *, since: datetime.datetime, limit: int) -> QueryResults[TopUsernamesSinceRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> TopUsernamesSinceRow:
+        return TopUsernamesSinceRow(value=row[0], attempts=row[1], addresses=row[2])
+
+    return QueryResults(conn, TOP_USERNAMES_SINCE, _decode_hook, {"p1": since, "p2": limit})
+
+
+def top_passwords_since(conn: ConnectionLike, *, since: datetime.datetime, limit: int) -> QueryResults[TopPasswordsSinceRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> TopPasswordsSinceRow:
+        return TopPasswordsSinceRow(value=row[0], attempts=row[1], addresses=row[2])
+
+    return QueryResults(conn, TOP_PASSWORDS_SINCE, _decode_hook, {"p1": since, "p2": limit})
+
+
+def top_countries(conn: ConnectionLike, *, limit: int) -> QueryResults[TopCountriesRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> TopCountriesRow:
+        return TopCountriesRow(country_code=row[0], requests=row[1], addresses=row[2])
+
+    return QueryResults(conn, TOP_COUNTRIES, _decode_hook, {"p1": limit})
+
+
+def top_networks(conn: ConnectionLike, *, limit: int) -> QueryResults[TopNetworksRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> TopNetworksRow:
+        return TopNetworksRow(asn=row[0], as_organisation=row[1], requests=row[2], addresses=row[3])
+
+    return QueryResults(conn, TOP_NETWORKS, _decode_hook, {"p1": limit})
+
+
+def busiest_addresses(conn: ConnectionLike, *, limit: int) -> QueryResults[BusiestAddressesRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> BusiestAddressesRow:
+        return BusiestAddressesRow(ip_address=str(row[0]), requests=row[1], distinct_paths=row[2], login_attempts=row[3], first_seen_at=row[4], last_seen_at=row[5], country_code=row[6])
+
+    return QueryResults(conn, BUSIEST_ADDRESSES, _decode_hook, {"p1": limit})
+
+
+def longest_seen_addresses(conn: ConnectionLike, *, limit: int) -> QueryResults[LongestSeenAddressesRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> LongestSeenAddressesRow:
+        return LongestSeenAddressesRow(ip_address=str(row[0]), requests=row[1], distinct_paths=row[2], login_attempts=row[3], first_seen_at=row[4], last_seen_at=row[5], country_code=row[6])
+
+    return QueryResults(conn, LONGEST_SEEN_ADDRESSES, _decode_hook, {"p1": limit})
+
+
+def list_toolkits(conn: ConnectionLike, *, max_addresses: int, limit: int, min_paths: int) -> QueryResults[ListToolkitsRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> ListToolkitsRow:
+        return ListToolkitsRow(paths=row[0], address_count=row[1], addresses=[str(v) for v in row[2]], example_address=str(row[3]))
+
+    return QueryResults(conn, LIST_TOOLKITS, _decode_hook, {"p1": max_addresses, "p2": limit, "p3": min_paths})
+
+
+def list_paths_of(conn: ConnectionLike, *, ip_address: str, limit: int) -> QueryResults[str]:
+    return QueryResults(conn, LIST_PATHS_OF, operator.itemgetter(0), {"p1": ip_address, "p2": limit})
+
+
+def list_map_places(conn: ConnectionLike, *, limit: int) -> QueryResults[ListMapPlacesRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> ListMapPlacesRow:
+        return ListMapPlacesRow(latitude=row[0], longitude=row[1], city=row[2], country_code=row[3], requests=row[4], addresses=row[5])
+
+    return QueryResults(conn, LIST_MAP_PLACES, _decode_hook, {"p1": limit})
 
 
 async def upsert_decoy(conn: ConnectionLike, *, type: enums.DecoyType, slug: str, added_by_ip: str) -> int | None:

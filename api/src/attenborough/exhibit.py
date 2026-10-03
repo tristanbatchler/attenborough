@@ -2,6 +2,7 @@
 exhibit's or the system's own requests."""
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import Annotated
 
@@ -22,9 +23,11 @@ from attenborough.events import (
     IpSummary,
     ListedEvent,
     fetch_events,
+    fetch_locations,
     hit_detail,
     ip_summary,
 )
+from attenborough.patterns import Patterns, latest_patterns
 
 router = APIRouter(prefix="/exhibit", tags=[RouterGroup.EXHIBIT])
 
@@ -73,9 +76,13 @@ class Paging(BaseModel):
     async def page_of(
         self, db_conn: AsyncConnection, rows: Sequence[ListedEvent]
     ) -> EventPage:
+        items = await fetch_events(db_conn, rows[: self.take])
         return EventPage(
-            items=await fetch_events(db_conn, rows[: self.take]),
+            items=items,
             next_cursor=self.next_cursor(rows),
+            locations=await fetch_locations(
+                db_conn, (event.ip_address for event in items)
+            ),
         )
 
 
@@ -115,8 +122,13 @@ async def get_ip_events(
 
 @router.get("/ip/{ip_addr}/summary")
 async def get_ip_summary(ip_addr: IPvAnyAddress, db_conn: DBConn) -> IpSummary:
-    """What one IP address did, in numbers."""
-    return ip_summary(await queries.get_ip_activity(db_conn, ip_address=str(ip_addr)))
+    """What one IP address did, in numbers, and where it is."""
+    address = str(ip_addr)
+    locations = await fetch_locations(db_conn, [address])
+    return ip_summary(
+        await queries.get_ip_activity(db_conn, ip_address=address),
+        locations.get(address),
+    )
 
 
 @router.get("/hits/{hit_id}")
@@ -129,3 +141,10 @@ async def get_hit(
     if row is None:
         raise HTTPException(HTTPStatus.NOT_FOUND, "No such request.")
     return hit_detail(row)
+
+
+@router.get("/patterns")
+async def get_patterns(db_conn: DBConn) -> Patterns:
+    """What visitors are after, who they are, when they come, and their tools and wordlists, in
+    aggregate. Recomputed at most every few minutes (patterns.py)."""
+    return await latest_patterns.get(db_conn, datetime.now(UTC))

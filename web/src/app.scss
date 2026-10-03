@@ -58,6 +58,17 @@ td samp {
 	font-size: 0.875em;
 }
 
+// A count's bar, under the number: relative to the largest in its table.
+td meter {
+	display: block;
+	width: 100%;
+}
+
+// A note on a cell's value (a request's category, a body's size) goes on a line of its own.
+td small {
+	display: block;
+}
+
 // Captured requests and bodies wrap rather than scroll: every character as sent, line breaks kept.
 pre code {
 	white-space: pre-wrap;

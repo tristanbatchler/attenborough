@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { CATEGORIES } from '$lib/categories';
 	import { formatUtc, requestTarget } from '$lib/format';
 	import type { PageProps } from './$types';
 
@@ -36,6 +37,13 @@
 			<tr>
 				<th scope="row">Status</th>
 				<td><code>{hit.status_code}</code></td>
+			</tr>
+			<tr>
+				<th scope="row">Looking for</th>
+				<td>
+					{CATEGORIES[hit.category].label}
+					<small>{CATEGORIES[hit.category].description} A guess from the path alone.</small>
+				</td>
 			</tr>
 		</tbody>
 	</table>

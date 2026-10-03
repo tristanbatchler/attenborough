@@ -20,6 +20,11 @@ CREATE TYPE audit_action AS ENUM ('login', 'ban_created', 'ban_revoked', 'decoy_
 CREATE TYPE router_group AS ENUM ('exhibit', 'system', 'honeypot', 'ingest');
 -- The kinds of event the exhibit lists (queries.sql, ListRecentEvents).
 CREATE TYPE event_kind AS ENUM ('hit', 'login_attempt', 'decoy_view', 'decoy_password_attempt');
+-- What a request's path was after, as path_category() (below) guesses it.
+CREATE TYPE path_category AS ENUM (
+    'homepage', 'crawlers', 'secrets', 'backups', 'debug', 'exploits', 'wordpress', 'webshells',
+    'logins', 'apis', 'other'
+);
 
 ------------------------------------------------------------------
 -- 1. AUTHENTICATION & USERS
@@ -139,6 +144,36 @@ CREATE INDEX idx_telemetry_hits_brin ON telemetry_hits USING brin (occurred_at);
 CREATE INDEX idx_telemetry_hits_ip ON telemetry_hits (ip_address, occurred_at DESC, id DESC);
 CREATE INDEX idx_telemetry_hits_router ON telemetry_hits (router_group, occurred_at DESC, id DESC);
 
+-- What a request's path was after: an inference from the path alone, as sent (a percent-encoded
+-- probe such as /%2eenv is 'other'). The first rule that matches wins. Never stored, so changing a
+-- rule (CREATE OR REPLACE in a new migration) recategorises every past request too.
+CREATE FUNCTION path_category(path TEXT) RETURNS path_category
+LANGUAGE sql IMMUTABLE PARALLEL SAFE
+RETURN (CASE
+    WHEN path = '/' THEN 'homepage'
+    WHEN path ~* '^/(\.well-known/)?(robots\.txt|sitemap[^/]*\.xml|favicon[^/]*|apple-touch-icon[^/]*|(app-)?ads\.txt|sellers\.json|llms\.txt|humans\.txt|security\.txt)$'
+        THEN 'crawlers'
+    -- Credentials and configuration: dotfiles, environment files, deployment and app config.
+    WHEN path ~* '(^|/)\.(env|git|svn|hg|aws|ssh|docker|npmrc|bash_history|bashrc|ftpconfig|remote-sync\.json|vscode|idea|ds_store)|\.env$|^/env(\.|$)|/@vite/env|(^|/)(wp-config\.php|config\.(json|js|ini|xml|env|ya?ml|php|inc\.php)|appsettings[^/]*\.json|secrets?\.(json|ya?ml)|user_secrets\.yml|credentials|database\.php|app\.php|aws\.(json|ya?ml)|docker-compose[^/]*\.ya?ml|dockerfile|\.gitlab-ci\.yml|package\.json|deploy\.sh|web\.xml|server\.key|id_(rsa|ed25519)|sftp(-config)?\.json|ftp-sync\.json|service\.pwd|env\.js|deployment-config\.json)'
+        THEN 'secrets'
+    WHEN path ~* '\.(sql|zip|tar|gz|tgz|rar|7z|bak|old|backup|save|swp|log)$' THEN 'backups'
+    -- Debugging and diagnostics pages that leak a server's internals.
+    WHEN path ~* 'php[-_]?info|(^|/)(info|i|pi)\.php|actuator|_profiler|telescope|trace\.axd|server-status|_ignition|rails/info|debug|heapdump|configprops|/manage(ment)?/env|^/(health|status|version|metrics)$'
+        THEN 'debug'
+    -- Probes for specific, known vulnerabilities: a curated list, from what the honeypot has seen.
+    WHEN path ~* 'eval-stdin\.php|gponform|boaform|cgi-bin/luci|sdk/weblanguage|metadatauploader|/ecp/|meta-inf/|containers/json|hnap1|onvif|^/wsman|hello\.world|test\.hello|gravitysmtp|ztp_gate|cmdb/system|fgt_lang|nc_gina_ver|rdx_en\.json|druid/|geoserver|^/hudson|autodiscover|_layouts/|owa/auth/x\.js'
+        THEN 'exploits'
+    WHEN path ~* '(^|/)(wp-[^/]*|xmlrpc\.php)' THEN 'wordpress'
+    -- Any other PHP file: most are guesses at a web shell someone else left behind.
+    WHEN path ~* '\.php[0-9]?$' THEN 'webshells'
+    -- Sign-in pages of VPNs, appliances and admin consoles.
+    WHEN path ~* 'log[io]n|sign[-_]?in|auth|admin|console|portal|vpn|\+csco[et]\+|global-protect|dana-na|^/remote|sonic|logonpoint|/owa/|rdweb|rashtml5|cpanel|whm|phpmyadmin|webui|webclient|dashboard\.jspa|^/iam/'
+        THEN 'logins'
+    WHEN path ~* '(^|/)(api|graphql|gql|v[0-9]+|mcp|sse|ws|rest)(/|$)|\.well-known/(mcp|agents?(-card)?\.json)|_catalog'
+        THEN 'apis'
+    ELSE 'other'
+END)::path_category;
+
 -- Specialized logging for credential stuffing & brute force attempts on /honeypot/admin/login or /auth
 CREATE TABLE credential_stuffing_attempts (
     id BIGSERIAL PRIMARY KEY,
@@ -249,6 +284,27 @@ CREATE TRIGGER trg_credential_attempts_count_ip
     AFTER INSERT ON credential_stuffing_attempts
     FOR EACH ROW
     EXECUTE FUNCTION count_ip_login_attempt();
+
+-- Where each address that sent the honeypot a request is, and whose network it is in: derived from
+-- a geolocation database (geolocation.py), never proof of where the sender is. Located once, when
+-- its first request is recorded, and kept with the database it came from. No row: not located
+-- (geolocation was off). A row of NULLs: the database had nothing for it.
+CREATE TABLE ip_locations (
+    ip_address      INET PRIMARY KEY,
+    -- ISO 3166-1 alpha-2.
+    country_code    TEXT,
+    city            TEXT,
+    latitude        DOUBLE PRECISION,
+    longitude       DOUBLE PRECISION,
+    -- The autonomous system (network) announcing the address, and who runs it.
+    asn             BIGINT,
+    as_organisation TEXT,
+    -- Which databases said so, with the dates they were built.
+    source          TEXT NOT NULL,
+    located_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_ip_locations_coordinates CHECK ((latitude IS NULL) = (longitude IS NULL))
+);
 
 ------------------------------------------------------------------
 -- 4. SECURITY ENFORCEMENT & AUDITING

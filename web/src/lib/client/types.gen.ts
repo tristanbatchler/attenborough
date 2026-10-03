@@ -5,6 +5,109 @@ export type ClientOptions = {
 };
 
 /**
+ * AddressActivity
+ */
+export type AddressActivity = {
+    /**
+     * Ip Address
+     */
+    ip_address: string;
+    /**
+     * Country Code
+     */
+    country_code: string | null;
+    /**
+     * Requests
+     */
+    requests: number;
+    /**
+     * Distinct Paths
+     */
+    distinct_paths: number;
+    /**
+     * Login Attempts
+     */
+    login_attempts: number;
+    /**
+     * First Seen At
+     */
+    first_seen_at: string | null;
+    /**
+     * Last Seen At
+     */
+    last_seen_at: string | null;
+};
+
+/**
+ * CategoryCount
+ */
+export type CategoryCount = {
+    category: PathCategory;
+    /**
+     * Requests
+     */
+    requests: number;
+    /**
+     * Addresses
+     */
+    addresses: number;
+};
+
+/**
+ * CountryCount
+ */
+export type CountryCount = {
+    /**
+     * Country Code
+     */
+    country_code: string | null;
+    /**
+     * Requests
+     */
+    requests: number;
+    /**
+     * Addresses
+     */
+    addresses: number;
+};
+
+/**
+ * CredentialCount
+ *
+ * A username or password, and how often it was tried.
+ */
+export type CredentialCount = {
+    /**
+     * Value
+     */
+    value: string;
+    /**
+     * Attempts
+     */
+    attempts: number;
+    /**
+     * Addresses
+     */
+    addresses: number;
+};
+
+/**
+ * DayActivity
+ *
+ * One UTC day's requests, hour by hour (24 numbers, from 00:00).
+ */
+export type DayActivity = {
+    /**
+     * Day
+     */
+    day: string;
+    /**
+     * Requests By Hour
+     */
+    requests_by_hour: Array<number>;
+};
+
+/**
  * DecoyPasswordAttemptEvent
  */
 export type DecoyPasswordAttemptEvent = {
@@ -80,6 +183,12 @@ export type EventPage = {
      * Next Cursor
      */
     next_cursor: string | null;
+    /**
+     * Locations
+     */
+    locations: {
+        [key: string]: IpLocation;
+    };
 };
 
 /**
@@ -136,6 +245,7 @@ export type HitDetail = {
      * Body Size
      */
     body_size: number | null;
+    category: PathCategory;
     /**
      * Headers
      */
@@ -196,6 +306,7 @@ export type HitEvent = {
      * Body Size
      */
     body_size: number | null;
+    category: PathCategory;
     /**
      * Body Preview
      */
@@ -204,6 +315,47 @@ export type HitEvent = {
      * Body Truncated
      */
     body_truncated: boolean;
+};
+
+/**
+ * IpLocation
+ *
+ * Where an address is, as a geolocation database estimated it when the address was first
+ * seen: never proof of where a sender is. A field is null when the database didn't know it.
+ */
+export type IpLocation = {
+    /**
+     * Country Code
+     */
+    country_code: string | null;
+    /**
+     * City
+     */
+    city: string | null;
+    /**
+     * Latitude
+     */
+    latitude: number | null;
+    /**
+     * Longitude
+     */
+    longitude: number | null;
+    /**
+     * Asn
+     */
+    asn: number | null;
+    /**
+     * As Organisation
+     */
+    as_organisation: string | null;
+    /**
+     * Source
+     */
+    source: string;
+    /**
+     * Located At
+     */
+    located_at: string;
 };
 
 /**
@@ -232,6 +384,7 @@ export type IpSummary = {
      * Last Seen At
      */
     last_seen_at: string | null;
+    location: IpLocation | null;
 };
 
 /**
@@ -270,6 +423,225 @@ export type LoginAttemptEvent = {
      * Decoy Accepted
      */
     decoy_accepted: boolean;
+};
+
+/**
+ * MapPlace
+ *
+ * A place located addresses are in (DB-IP gives a city's coordinates).
+ */
+export type MapPlace = {
+    /**
+     * Latitude
+     */
+    latitude: number;
+    /**
+     * Longitude
+     */
+    longitude: number;
+    /**
+     * City
+     */
+    city: string | null;
+    /**
+     * Country Code
+     */
+    country_code: string | null;
+    /**
+     * Requests
+     */
+    requests: number;
+    /**
+     * Addresses
+     */
+    addresses: number;
+};
+
+/**
+ * NetworkCount
+ */
+export type NetworkCount = {
+    /**
+     * Asn
+     */
+    asn: number | null;
+    /**
+     * As Organisation
+     */
+    as_organisation: string | null;
+    /**
+     * Requests
+     */
+    requests: number;
+    /**
+     * Addresses
+     */
+    addresses: number;
+};
+
+/**
+ * PathCategory
+ */
+export type PathCategory = 'homepage' | 'crawlers' | 'secrets' | 'backups' | 'debug' | 'exploits' | 'wordpress' | 'webshells' | 'logins' | 'apis' | 'other';
+
+/**
+ * PathCount
+ */
+export type PathCount = {
+    /**
+     * Path
+     */
+    path: string;
+    category: PathCategory;
+    /**
+     * Requests
+     */
+    requests: number;
+    /**
+     * Addresses
+     */
+    addresses: number;
+};
+
+/**
+ * Patterns
+ */
+export type Patterns = {
+    /**
+     * Computed At
+     */
+    computed_at: string;
+    /**
+     * Window Start
+     */
+    window_start: string;
+    totals: Totals;
+    /**
+     * Categories
+     */
+    categories: Array<CategoryCount>;
+    /**
+     * Paths
+     */
+    paths: Array<PathCount>;
+    /**
+     * User Agents
+     */
+    user_agents: Array<UserAgentCount>;
+    /**
+     * Days
+     */
+    days: Array<DayActivity>;
+    /**
+     * Usernames
+     */
+    usernames: Array<CredentialCount>;
+    /**
+     * Passwords
+     */
+    passwords: Array<CredentialCount>;
+    /**
+     * Countries
+     */
+    countries: Array<CountryCount>;
+    /**
+     * Networks
+     */
+    networks: Array<NetworkCount>;
+    /**
+     * Busiest
+     */
+    busiest: Array<AddressActivity>;
+    /**
+     * Longest Seen
+     */
+    longest_seen: Array<AddressActivity>;
+    /**
+     * Toolkits
+     */
+    toolkits: Array<Toolkit>;
+    /**
+     * Places
+     */
+    places: Array<MapPlace>;
+};
+
+/**
+ * Toolkit
+ *
+ * Addresses that each requested exactly the same set of paths: one tool, several machines.
+ */
+export type Toolkit = {
+    /**
+     * Paths
+     */
+    paths: number;
+    /**
+     * Address Count
+     */
+    address_count: number;
+    /**
+     * Addresses
+     */
+    addresses: Array<string>;
+    /**
+     * Example Paths
+     */
+    example_paths: Array<string>;
+};
+
+/**
+ * Totals
+ *
+ * All time.
+ */
+export type Totals = {
+    /**
+     * Requests
+     */
+    requests: number;
+    /**
+     * Login Attempts
+     */
+    login_attempts: number;
+    /**
+     * Addresses
+     */
+    addresses: number;
+    /**
+     * Countries
+     */
+    countries: number;
+    /**
+     * Requests Last Day
+     */
+    requests_last_day: number;
+    /**
+     * First Seen At
+     */
+    first_seen_at: string | null;
+    /**
+     * Last Seen At
+     */
+    last_seen_at: string | null;
+};
+
+/**
+ * UserAgentCount
+ */
+export type UserAgentCount = {
+    /**
+     * User Agent
+     */
+    user_agent: string | null;
+    /**
+     * Requests
+     */
+    requests: number;
+    /**
+     * Addresses
+     */
+    addresses: number;
 };
 
 /**
@@ -432,3 +804,19 @@ export type GetHitResponses = {
 };
 
 export type GetHitResponse = GetHitResponses[keyof GetHitResponses];
+
+export type GetPatternsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/exhibit/patterns';
+};
+
+export type GetPatternsResponses = {
+    /**
+     * Successful Response
+     */
+    200: Patterns;
+};
+
+export type GetPatternsResponse = GetPatternsResponses[keyof GetPatternsResponses];

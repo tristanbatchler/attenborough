@@ -20,6 +20,7 @@ from attenborough.db import queries
 from attenborough.db.enums import RouterGroup
 from attenborough.db.ops import db_conn_pool
 from attenborough.dependencies import get_request_origin
+from attenborough.geolocation import record_location
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +45,9 @@ async def record_hit(
     status_code: int,
 ) -> None:
     """Record one request, with `path` and `query` exactly as sent and the whole `body` (None if it
-    wasn't captured); only its first MAX_STORED_BODY_BYTES are stored. A database failure is logged,
-    never raised: the visitor's response has already been decided, and recording must not change it.
+    wasn't captured); only its first MAX_STORED_BODY_BYTES are stored. A visitor's address is
+    located the first time it is seen (geolocation.py). A database failure is logged, never
+    raised: the visitor's response has already been decided, and recording must not change it.
     """
     try:
         async with db_conn_pool.connection() as db_conn:
@@ -62,6 +64,9 @@ async def record_hit(
                 body_size=None if body is None else len(body),
                 status_code=status_code,
             )
+            # Only visitors are located: the exhibit's own requests come from its web server.
+            if router_group is RouterGroup.HONEYPOT:
+                await record_location(db_conn, ip_address)
     except PsycopgError:
         logger.exception("Failed to record telemetry for %r %r", method, path)
 

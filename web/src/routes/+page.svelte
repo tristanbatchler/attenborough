@@ -51,7 +51,7 @@
 			{data.isFirstPage ? 'Nothing has been recorded yet.' : 'There is no older activity.'}
 		</p>
 	{:else}
-		<ActivityTable events={data.events.items} showAddress />
+		<ActivityTable page={data.events} showAddress />
 	{/if}
 	<Pagination isFirstPage={data.isFirstPage} nextCursor={data.events.next_cursor} href={pageHref} />
 </section>

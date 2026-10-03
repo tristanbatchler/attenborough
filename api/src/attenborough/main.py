@@ -20,6 +20,7 @@ from attenborough.db.schema import (
     schema_status,
 )
 from attenborough.dependencies import RequestOrigin
+from attenborough.geolocation import geolocator
 from attenborough.settings import SOURCE_CHECKOUT, write_example_env
 from attenborough.telemetry import TelemetryMiddleware
 
@@ -99,7 +100,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     async with db_conn_pool:
         # Before serving anything: the database must be up to date (api/README.md, "Database").
         await _ensure_current_schema()
-        yield
+        with geolocator:
+            yield
 
 
 def _operation_id(route: APIRoute) -> str:

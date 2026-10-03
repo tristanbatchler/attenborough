@@ -14,7 +14,6 @@ from psycopg import AsyncConnection, sql
 from psycopg.rows import class_row
 
 from attenborough.db import schema
-from attenborough.db.ops import db_conn_pool
 
 _BUILT_BY_MIGRATIONS = "check_migrations"
 _BUILT_BY_SCHEMA_SQL = "check_schema_sql"
@@ -84,19 +83,15 @@ async def _build(conn: AsyncConnection, name: str, ddl: Iterable[str]) -> list[s
 
 
 @pytest.mark.anyio
-async def test_the_migrations_build_schema_sql():
-    async with (
-        db_conn_pool,
-        db_conn_pool.connection() as conn,
-        conn.transaction(force_rollback=True),
-    ):
+async def test_the_migrations_build_schema_sql(db_conn: AsyncConnection):
+    async with db_conn.transaction(force_rollback=True):
         by_migrations = await _build(
-            conn,
+            db_conn,
             _BUILT_BY_MIGRATIONS,
             (migration.sql for migration in schema.migrations()),
         )
         by_schema_sql = await _build(
-            conn, _BUILT_BY_SCHEMA_SQL, [schema.SCHEMA_SQL.read_text()]
+            db_conn, _BUILT_BY_SCHEMA_SQL, [schema.SCHEMA_SQL.read_text()]
         )
     assert by_migrations == by_schema_sql
     # A broken catalog query would compare two empty lists.

@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { CATEGORIES } from '$lib/categories';
 	import type { EventPage } from '$lib/client';
+	import CountryFlag from '$lib/components/CountryFlag.svelte';
 	import { formatUtc, requestTarget } from '$lib/format';
 
-	// The feed shows every address, so it adds an address column; an IP's own page doesn't.
-	let { events, showAddress = false }: { events: EventPage['items']; showAddress?: boolean } =
-		$props();
+	// The feed shows every address, with its country's flag; an IP's own page doesn't.
+	let { page, showAddress = false }: { page: EventPage; showAddress?: boolean } = $props();
 </script>
 
 <figure>
@@ -21,18 +22,22 @@
 			</tr>
 		</thead>
 		<tbody>
-			{#each events as event (`${event.kind}-${String(event.id)}`)}
+			{#each page.items as event (`${event.kind}-${String(event.id)}`)}
 				<tr>
 					<td><time datetime={event.occurred_at}>{formatUtc(event.occurred_at)}</time></td>
 					{#if showAddress}
 						<td>
+							<CountryFlag code={page.locations[event.ip_address]?.country_code} />
 							<a href={resolve('/ip/[address]', { address: event.ip_address })}>
 								<code>{event.ip_address}</code>
 							</a>
 						</td>
 					{/if}
 					{#if event.kind === 'hit'}
-						<td>Request</td>
+						<td>
+							Request
+							<small>{CATEGORIES[event.category].label}</small>
+						</td>
 						<td>
 							<a href={resolve('/hits/[id=id]', { id: String(event.id) })}>
 								<code>{event.method} {requestTarget(event)}</code>

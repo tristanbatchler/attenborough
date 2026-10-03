@@ -5,7 +5,7 @@ import pytest
 
 from attenborough import events
 from attenborough.db import enums, queries
-from attenborough.db.enums import EventKind
+from attenborough.db.enums import EventKind, PathCategory
 from attenborough.events import (
     DISCRIMINATOR,
     HONEYPOT_PLACEHOLDER,
@@ -48,6 +48,7 @@ def hit_row(body_preview: bytes, body_size: int | None) -> queries.GetHitsByIdsR
         user_agent=USER_AGENT,
         body_preview=memoryview(body_preview),
         body_size=body_size,
+        category=PathCategory.WORDPRESS,
     )
 
 
@@ -91,6 +92,7 @@ def test_a_hit_maps_every_field():
         user_agent=USER_AGENT,
         body_preview="x",
         body_size=1,
+        category=PathCategory.WORDPRESS,
         body_truncated=False,
     )
 
@@ -109,6 +111,7 @@ def test_a_hit_detail_has_its_headers_and_whole_body():
             headers='{"host": "example.com", "x-evil": "<script>"}',
             body=memoryview(b"\xff" * 2000),
             body_size=2000,
+            category=PathCategory.WORDPRESS,
         )
     )
     assert detail.headers == {"host": "example.com", "x-evil": "<script>"}
@@ -211,7 +214,7 @@ def test_events_keep_the_page_order_when_kinds_interleave():
 
 
 def test_an_address_with_no_activity_has_an_empty_summary():
-    summary = ip_summary(None)
+    summary = ip_summary(None, None)
     assert (summary.requests, summary.first_seen_at) == (0, None)
 
 
@@ -263,6 +266,7 @@ def test_every_text_a_visitor_sent_is_hidden_in(monkeypatch: pytest.MonkeyPatch)
             headers=f'{{"host": "{host}", "{host}": "x"}}',
             body=memoryview(host.encode()),
             body_size=len(host),
+            category=PathCategory.OTHER,
         )
     )
     assert host not in hidden.model_dump_json()

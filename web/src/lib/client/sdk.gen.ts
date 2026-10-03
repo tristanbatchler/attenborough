@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetHitData, GetHitErrors, GetHitResponses, GetIpEventsData, GetIpEventsErrors, GetIpEventsResponses, GetIpSummaryData, GetIpSummaryErrors, GetIpSummaryResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses } from './types.gen';
+import type { GetHitData, GetHitErrors, GetHitResponses, GetIpEventsData, GetIpEventsErrors, GetIpEventsResponses, GetIpSummaryData, GetIpSummaryErrors, GetIpSummaryResponses, GetPatternsData, GetPatternsResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -35,7 +35,7 @@ export const getIpEvents = <ThrowOnError extends boolean = false>(options: Optio
 /**
  * Get Ip Summary
  *
- * What one IP address did, in numbers.
+ * What one IP address did, in numbers, and where it is.
  */
 export const getIpSummary = <ThrowOnError extends boolean = false>(options: Options<GetIpSummaryData, ThrowOnError>): RequestResult<GetIpSummaryResponses, GetIpSummaryErrors, ThrowOnError> => (options.client ?? client).get<GetIpSummaryResponses, GetIpSummaryErrors, ThrowOnError>({ url: '/exhibit/ip/{ip_addr}/summary', ...options });
 
@@ -46,3 +46,11 @@ export const getIpSummary = <ThrowOnError extends boolean = false>(options: Opti
  * other request, such as the exhibit's own.
  */
 export const getHit = <ThrowOnError extends boolean = false>(options: Options<GetHitData, ThrowOnError>): RequestResult<GetHitResponses, GetHitErrors, ThrowOnError> => (options.client ?? client).get<GetHitResponses, GetHitErrors, ThrowOnError>({ url: '/exhibit/hits/{hit_id}', ...options });
+
+/**
+ * Get Patterns
+ *
+ * What visitors are after, who they are, when they come, and their tools and wordlists, in
+ * aggregate. Recomputed at most every few minutes (patterns.py).
+ */
+export const getPatterns = <ThrowOnError extends boolean = false>(options?: Options<GetPatternsData, ThrowOnError>): RequestResult<GetPatternsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetPatternsResponses, unknown, ThrowOnError>({ url: '/exhibit/patterns', ...options });

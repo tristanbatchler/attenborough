@@ -16,8 +16,8 @@ from psycopg import AsyncConnection
 from pydantic import AwareDatetime, BaseModel, Field, TypeAdapter, ValidationError
 
 from attenborough import settings
-from attenborough.db import enums, queries
-from attenborough.db.enums import EventKind
+from attenborough.db import enums, models, queries
+from attenborough.db.enums import EventKind, PathCategory
 
 # The field that tells the event models apart. Each model's `kind` has no default: with one, it
 # would be optional in the OpenAPI schema, and the generated TypeScript couldn't narrow the union
@@ -84,6 +84,8 @@ class Hit(BaseModel):
     user_agent: str | None
     # The body's full length; null when no body was captured.
     body_size: int | None
+    # What the path was after: a guess from the path alone (schema.sql, path_category).
+    category: PathCategory
 
 
 class HitEvent(Hit):
@@ -178,12 +180,31 @@ FIRST_PAGE = EventCursor(
 )
 
 
+class IpLocation(BaseModel):
+    """Where an address is, as a geolocation database estimated it when the address was first
+    seen: never proof of where a sender is. A field is null when the database didn't know it."""
+
+    # ISO 3166-1 alpha-2.
+    country_code: str | None
+    city: str | None
+    latitude: float | None
+    longitude: float | None
+    # The autonomous system (network) announcing the address, and who runs it.
+    asn: int | None
+    as_organisation: str | None
+    # The databases it came from, with the dates they were built.
+    source: str
+    located_at: datetime
+
+
 class EventPage(BaseModel):
     """One page of events, newest first."""
 
     items: list[Event]
     # Pass it back as `before` for the next, older page; null on the last page.
     next_cursor: str | None
+    # Where the page's addresses are, by address. An address that was never located is missing.
+    locations: dict[str, IpLocation]
 
 
 class IpSummary(BaseModel):
@@ -194,6 +215,8 @@ class IpSummary(BaseModel):
     login_attempts: int
     first_seen_at: datetime | None
     last_seen_at: datetime | None
+    # Null when the address was never located.
+    location: IpLocation | None
 
 
 _headers = TypeAdapter(dict[str, str])
@@ -221,6 +244,7 @@ def hit_event(row: queries.GetHitsByIdsRow) -> HitEvent:
         status_code=row.status_code,
         user_agent=_hide_optional(row.user_agent),
         body_size=row.body_size,
+        category=row.category,
         # The query gives an empty preview when no body was captured; body_size tells them apart.
         body_preview=None
         if row.body_size is None
@@ -241,6 +265,7 @@ def hit_detail(row: queries.GetHitRow) -> HitDetail:
         status_code=row.status_code,
         user_agent=_hide_optional(row.user_agent),
         body_size=row.body_size,
+        category=row.category,
         headers={
             hide_honeypot(name): hide_honeypot(value)
             for name, value in _headers.validate_json(row.headers).items()
@@ -287,7 +312,30 @@ def decoy_password_attempt_event(
     )
 
 
-def ip_summary(row: queries.GetIpActivityRow | None) -> IpSummary:
+def ip_location(row: models.IpLocation) -> IpLocation:
+    return IpLocation(
+        country_code=row.country_code,
+        city=row.city,
+        latitude=row.latitude,
+        longitude=row.longitude,
+        asn=row.asn,
+        as_organisation=row.as_organisation,
+        source=row.source,
+        located_at=row.located_at,
+    )
+
+
+async def fetch_locations(
+    conn: AsyncConnection, addresses: Iterable[str]
+) -> dict[str, IpLocation]:
+    """The locations of those `addresses` that were located, by address."""
+    rows = await queries.get_ip_locations(conn, ip_addresses=sorted(set(addresses)))
+    return {row.ip_address: ip_location(row) for row in rows}
+
+
+def ip_summary(
+    row: queries.GetIpActivityRow | None, location: IpLocation | None
+) -> IpSummary:
     """`row` is None for an address that did nothing."""
     if row is None:
         return IpSummary(
@@ -296,6 +344,7 @@ def ip_summary(row: queries.GetIpActivityRow | None) -> IpSummary:
             login_attempts=0,
             first_seen_at=None,
             last_seen_at=None,
+            location=location,
         )
     return IpSummary(
         requests=row.requests,
@@ -303,6 +352,7 @@ def ip_summary(row: queries.GetIpActivityRow | None) -> IpSummary:
         login_attempts=row.login_attempts,
         first_seen_at=row.first_seen_at,
         last_seen_at=row.last_seen_at,
+        location=location,
     )
 
 

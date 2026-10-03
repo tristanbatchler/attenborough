@@ -17,6 +17,7 @@ __all__: collections.abc.Sequence[str] = (
     "DecoyView",
     "IpActivity",
     "IpBan",
+    "IpLocation",
     "IpRequestPath",
     "OauthState",
     "SchemaMigration",
@@ -153,6 +154,20 @@ class IpBan(pydantic.BaseModel):
     revoked_at: datetime.datetime | None
     revoked_by_user_id: int | None
     revocation_reason: str | None
+
+
+class IpLocation(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    ip_address: str
+    country_code: str | None
+    city: str | None
+    latitude: float | None
+    longitude: float | None
+    asn: int | None
+    as_organisation: str | None
+    source: str
+    located_at: datetime.datetime
 
 
 class IpRequestPath(pydantic.BaseModel):

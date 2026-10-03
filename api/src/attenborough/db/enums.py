@@ -8,6 +8,7 @@ __all__: collections.abc.Sequence[str] = (
     "AuditAction",
     "DecoyType",
     "EventKind",
+    "PathCategory",
     "RouterGroup",
 )
 
@@ -37,6 +38,20 @@ class EventKind(enum.StrEnum):
     LOGIN_ATTEMPT = "login_attempt"
     DECOY_VIEW = "decoy_view"
     DECOY_PASSWORD_ATTEMPT = "decoy_password_attempt"
+
+
+class PathCategory(enum.StrEnum):
+    HOMEPAGE = "homepage"
+    CRAWLERS = "crawlers"
+    SECRETS = "secrets"
+    BACKUPS = "backups"
+    DEBUG = "debug"
+    EXPLOITS = "exploits"
+    WORDPRESS = "wordpress"
+    WEBSHELLS = "webshells"
+    LOGINS = "logins"
+    APIS = "apis"
+    OTHER = "other"
 
 
 class RouterGroup(enum.StrEnum):

@@ -119,7 +119,8 @@ LIMIT sqlc.arg('limit')::int;
 -- name: GetHitsByIds :many
 SELECT
     id, ip_address, occurred_at, method, path, query, status_code, user_agent,
-    COALESCE(substring(body FROM 1 FOR 1024), ''::BYTEA)::BYTEA AS body_preview, body_size
+    COALESCE(substring(body FROM 1 FOR 1024), ''::BYTEA)::BYTEA AS body_preview, body_size,
+    path_category(path) AS category
 FROM telemetry_hits
 WHERE id = ANY(sqlc.arg(ids)::BIGINT[]);
 
@@ -145,15 +146,209 @@ WHERE dpa.id = ANY(sqlc.arg(ids)::BIGINT[]);
 -- name: GetHit :one
 SELECT
     id, ip_address, occurred_at, method, path, query, status_code, user_agent,
-    headers::TEXT AS headers, body, body_size
+    headers::TEXT AS headers, body, body_size, path_category(path) AS category
 FROM telemetry_hits
 WHERE id = sqlc.arg(id) AND router_group = sqlc.arg(router_group);
+
+-- The category path_category() gives a path (src/tests/test_path_categories.py).
+-- name: CategorisePath :one
+SELECT path_category(sqlc.arg(path)::TEXT) AS category;
 
 -- What one IP address did, in numbers (running totals, see schema.sql); no row if it did nothing.
 -- name: GetIpActivity :one
 SELECT requests, distinct_paths, login_attempts, first_seen_at, last_seen_at
 FROM ip_activity
 WHERE ip_address = sqlc.arg(ip_address)::inet;
+
+-- An address's location (schema.sql, ip_locations), kept from the first time it was located.
+-- name: CreateIpLocation :exec
+INSERT INTO ip_locations (
+    ip_address, country_code, city, latitude, longitude, asn, as_organisation, source
+)
+VALUES (
+    sqlc.arg(ip_address), sqlc.narg(country_code), sqlc.narg(city), sqlc.narg(latitude),
+    sqlc.narg(longitude), sqlc.narg(asn), sqlc.narg(as_organisation), sqlc.arg(source)
+)
+ON CONFLICT (ip_address) DO NOTHING;
+
+-- The locations of the given addresses that have one.
+-- name: GetIpLocations :many
+SELECT
+    ip_address, country_code, city, latitude, longitude, asn, as_organisation, source, located_at
+FROM ip_locations
+WHERE ip_address = ANY(sqlc.arg(ip_addresses)::INET[]);
+
+-- Addresses that visited the honeypot but were never located (scripts/locate_ips.py).
+-- name: ListUnlocatedAddresses :many
+SELECT a.ip_address
+FROM ip_activity a
+WHERE NOT EXISTS (SELECT FROM ip_locations l WHERE l.ip_address = a.ip_address)
+ORDER BY a.ip_address;
+
+-- The Patterns page (patterns.py). All-time figures come from the running totals (ip_activity,
+-- ip_request_paths, ip_locations), whose size grows with the number of addresses, not requests.
+-- Figures over requests and login attempts read only those `since` a time, through the time
+-- indexes, so their cost is bounded by how busy that window was, however long the history.
+
+-- name: GetPatternTotals :one
+SELECT
+    COALESCE(sum(a.requests), 0)::BIGINT AS requests,
+    COALESCE(sum(a.login_attempts), 0)::BIGINT AS login_attempts,
+    count(*) AS addresses,
+    count(DISTINCT l.country_code) AS countries
+FROM ip_activity a
+LEFT JOIN ip_locations l USING (ip_address);
+
+-- The first and last request to the honeypot; no row before the first.
+-- name: GetObservationSpan :one
+SELECT min(first_seen_at)::TIMESTAMPTZ AS first_seen_at, max(last_seen_at)::TIMESTAMPTZ AS last_seen_at
+FROM ip_activity
+HAVING count(first_seen_at) > 0;
+
+-- name: CountRequestsSince :one
+SELECT count(*) AS requests
+FROM telemetry_hits
+WHERE router_group = 'honeypot' AND occurred_at >= sqlc.arg(since)::TIMESTAMPTZ;
+
+-- Each distinct path is categorised once (MATERIALIZED): left to itself, the planner runs
+-- path_category() on every joined row, which on a busy week took seconds.
+-- name: CountCategoriesSince :many
+WITH visits AS MATERIALIZED (
+    SELECT path, ip_address, count(*) AS requests
+    FROM telemetry_hits
+    WHERE router_group = 'honeypot' AND occurred_at >= sqlc.arg(since)::TIMESTAMPTZ
+    GROUP BY path, ip_address
+), categories AS MATERIALIZED (
+    SELECT path, path_category(path) AS category FROM (SELECT DISTINCT path FROM visits) p
+)
+SELECT c.category, sum(v.requests)::BIGINT AS requests, count(DISTINCT v.ip_address) AS addresses
+FROM visits v
+JOIN categories c USING (path)
+GROUP BY c.category
+ORDER BY requests DESC, c.category;
+
+-- name: TopPathsSince :many
+SELECT path, path_category(path) AS category, requests, addresses FROM (
+    SELECT path, count(*) AS requests, count(DISTINCT ip_address) AS addresses
+    FROM telemetry_hits
+    WHERE router_group = 'honeypot' AND occurred_at >= sqlc.arg(since)::TIMESTAMPTZ
+    GROUP BY path
+    ORDER BY requests DESC, path
+    LIMIT sqlc.arg('limit')::INT
+) top;
+
+-- name: TopUserAgentsSince :many
+SELECT user_agent, count(*) AS requests, count(DISTINCT ip_address) AS addresses
+FROM telemetry_hits
+WHERE router_group = 'honeypot' AND occurred_at >= sqlc.arg(since)::TIMESTAMPTZ
+GROUP BY user_agent
+ORDER BY requests DESC, user_agent
+LIMIT sqlc.arg('limit')::INT;
+
+-- Hours with no requests have no row.
+-- name: CountRequestsPerHourSince :many
+SELECT date_trunc('hour', occurred_at)::TIMESTAMPTZ AS hour, count(*) AS requests
+FROM telemetry_hits
+WHERE router_group = 'honeypot' AND occurred_at >= sqlc.arg(since)::TIMESTAMPTZ
+GROUP BY hour
+ORDER BY hour;
+
+-- name: TopUsernamesSince :many
+SELECT username AS value, count(*) AS attempts, count(DISTINCT ip_address) AS addresses
+FROM credential_stuffing_attempts
+WHERE attempted_at >= sqlc.arg(since)::TIMESTAMPTZ
+GROUP BY username
+ORDER BY attempts DESC, username
+LIMIT sqlc.arg('limit')::INT;
+
+-- name: TopPasswordsSince :many
+SELECT password AS value, count(*) AS attempts, count(DISTINCT ip_address) AS addresses
+FROM credential_stuffing_attempts
+WHERE attempted_at >= sqlc.arg(since)::TIMESTAMPTZ
+GROUP BY password
+ORDER BY attempts DESC, password
+LIMIT sqlc.arg('limit')::INT;
+
+-- Addresses never located, or whose country isn't known, count under a NULL country.
+-- name: TopCountries :many
+SELECT l.country_code, sum(a.requests)::BIGINT AS requests, count(*) AS addresses
+FROM ip_activity a
+LEFT JOIN ip_locations l USING (ip_address)
+GROUP BY l.country_code
+ORDER BY requests DESC, l.country_code
+LIMIT sqlc.arg('limit')::INT;
+
+-- name: TopNetworks :many
+SELECT l.asn, l.as_organisation, sum(a.requests)::BIGINT AS requests, count(*) AS addresses
+FROM ip_activity a
+LEFT JOIN ip_locations l USING (ip_address)
+GROUP BY l.asn, l.as_organisation
+ORDER BY requests DESC, l.asn
+LIMIT sqlc.arg('limit')::INT;
+
+-- name: BusiestAddresses :many
+SELECT
+    a.ip_address, a.requests, a.distinct_paths, a.login_attempts, a.first_seen_at,
+    a.last_seen_at, l.country_code
+FROM ip_activity a
+LEFT JOIN ip_locations l USING (ip_address)
+ORDER BY a.requests DESC, a.ip_address
+LIMIT sqlc.arg('limit')::INT;
+
+-- The addresses seen over the longest time, first request to last.
+-- name: LongestSeenAddresses :many
+SELECT
+    a.ip_address, a.requests, a.distinct_paths, a.login_attempts, a.first_seen_at,
+    a.last_seen_at, l.country_code
+FROM ip_activity a
+LEFT JOIN ip_locations l USING (ip_address)
+WHERE a.first_seen_at IS NOT NULL
+ORDER BY a.last_seen_at - a.first_seen_at DESC, a.ip_address
+LIMIT sqlc.arg('limit')::INT;
+
+-- Groups of addresses that each requested exactly the same set of paths, at least `min_paths` of
+-- them: one tool, run from several machines. A path set is identified by the MD5s of its paths
+-- (ip_request_paths), sorted. `example_address` is the group's quietest address, whose paths are
+-- the cheapest to list (ListPathsOf).
+-- name: ListToolkits :many
+WITH path_sets AS (
+    SELECT ip_address, md5(string_agg(path_md5::TEXT, ',' ORDER BY path_md5)) AS path_set,
+           count(*) AS paths
+    FROM ip_request_paths
+    GROUP BY ip_address
+    HAVING count(*) >= sqlc.arg(min_paths)::INT
+)
+SELECT
+    max(s.paths)::BIGINT AS paths,
+    count(*) AS address_count,
+    (array_agg(s.ip_address ORDER BY a.requests DESC, s.ip_address))[1:sqlc.arg(max_addresses)::INT]::INET[]
+        AS addresses,
+    (array_agg(s.ip_address ORDER BY a.requests, s.ip_address))[1]::INET AS example_address
+FROM path_sets s
+JOIN ip_activity a USING (ip_address)
+GROUP BY s.path_set
+HAVING count(*) >= 2
+ORDER BY address_count DESC, paths DESC
+LIMIT sqlc.arg('limit')::INT;
+
+-- name: ListPathsOf :many
+SELECT DISTINCT path
+FROM telemetry_hits
+WHERE ip_address = sqlc.arg(ip_address)::INET AND router_group = 'honeypot'
+ORDER BY path
+LIMIT sqlc.arg('limit')::INT;
+
+-- Where the located addresses are, one point per place (DB-IP gives a city's coordinates).
+-- name: ListMapPlaces :many
+SELECT
+    l.latitude::FLOAT8 AS latitude, l.longitude::FLOAT8 AS longitude, l.city, l.country_code,
+    sum(a.requests)::BIGINT AS requests, count(*) AS addresses
+FROM ip_activity a
+JOIN ip_locations l USING (ip_address)
+WHERE l.latitude IS NOT NULL
+GROUP BY l.latitude, l.longitude, l.city, l.country_code
+ORDER BY requests DESC
+LIMIT sqlc.arg('limit')::INT;
 
 -- name: UpsertDecoy :one
 INSERT INTO decoys (type, slug, added_by_ip)

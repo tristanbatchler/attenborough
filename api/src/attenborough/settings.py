@@ -66,6 +66,9 @@ class _Settings(BaseSettings):
     # attributed to its own address. "*" trusts every peer, so it is only safe if the app can never
     # be reached except through the proxy. See api/README.md.
     FORWARDED_ALLOW_IPS: str = Field(default="127.0.0.1")
+    # The directory holding DB-IP's free Lite databases, dbip-city-lite.mmdb and dbip-asn-lite.mmdb
+    # (geolocation.py; deploy/update-geoip.sh downloads them). Unset, no address is located.
+    GEOIP_DIRECTORY: Path | None = Field(default=None)
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=settings_path,
