@@ -5,21 +5,17 @@ import pytest
 from psycopg import AsyncConnection
 
 from attenborough import events
-from attenborough.db import enums, queries
+from attenborough.db import queries
 from attenborough.db.enums import EventKind, PathCategory
 from attenborough.events import (
     DISCRIMINATOR,
     HONEYPOT_PLACEHOLDER,
     CanaryOrigin,
-    DecoyPasswordAttemptEvent,
-    DecoyViewEvent,
     HitEvent,
     InstallAttemptEvent,
     InstallOrigin,
     LoginAttemptEvent,
     decode_body,
-    decoy_password_attempt_event,
-    decoy_view_event,
     hit_detail,
     hit_event,
     honeypot_pattern,
@@ -37,8 +33,6 @@ QUERY = "a=1"
 USER_AGENT = "curl/8"
 USERNAME = "admin"
 PASSWORD = "hunter2"
-DOWNLOAD = "backup.zip"
-NOTE = "notes"
 CANARY_PATH = "/.env"
 CANARY_IP = "198.51.100.4"
 INSTALL_PATH = "/wp-admin/install.php"
@@ -60,6 +54,7 @@ def hit_row(body_preview: bytes, body_size: int | None) -> queries.GetHitsByIdsR
         body_size=body_size,
         category=PathCategory.WORDPRESS,
         banned=False,
+        custom_response=False,
     )
 
 
@@ -105,6 +100,7 @@ def test_a_hit_maps_every_field():
         body_size=1,
         category=PathCategory.WORDPRESS,
         banned=False,
+        custom_response=False,
         body_truncated=False,
     )
 
@@ -125,6 +121,7 @@ def test_a_hit_detail_has_its_headers_and_whole_body():
             body_size=2000,
             category=PathCategory.WORDPRESS,
             banned=False,
+            custom_response=False,
         )
     )
     assert detail.headers == {"host": "example.com", "x-evil": "<script>"}
@@ -236,43 +233,6 @@ def test_an_install_keeps_the_chosen_account_in_full():
     )
 
 
-def test_decoy_events_map_their_decoy():
-    view = decoy_view_event(
-        queries.GetDecoyViewsByIdsRow(
-            id_=3,
-            ip_address=IP,
-            viewed_at=AT,
-            decoy_slug=DOWNLOAD,
-            decoy_type=enums.DecoyType.BINARY,
-        )
-    )
-    assert view == DecoyViewEvent(
-        kind=EventKind.DECOY_VIEW,
-        id=3,
-        occurred_at=AT,
-        ip_address=IP,
-        decoy_slug=DOWNLOAD,
-        decoy_type=enums.DecoyType.BINARY,
-    )
-    attempt = decoy_password_attempt_event(
-        queries.GetDecoyPasswordAttemptsByIdsRow(
-            id_=4,
-            ip_address=IP,
-            attempted_at=AT,
-            decoy_slug=NOTE,
-            successful=False,
-        )
-    )
-    assert attempt == DecoyPasswordAttemptEvent(
-        kind=EventKind.DECOY_PASSWORD_ATTEMPT,
-        id=4,
-        occurred_at=AT,
-        ip_address=IP,
-        decoy_slug=NOTE,
-        decoy_accepted=False,
-    )
-
-
 def test_events_keep_the_page_order_when_kinds_interleave():
     # Ids repeat across kinds: an event is its kind and id together.
     order = [
@@ -370,6 +330,7 @@ def test_every_text_a_visitor_sent_is_hidden_in(monkeypatch: pytest.MonkeyPatch)
             body_size=len(host),
             category=PathCategory.OTHER,
             banned=False,
+            custom_response=False,
         )
     )
     assert host not in hidden.model_dump_json()
@@ -381,8 +342,7 @@ def test_every_event_kind_is_required_in_the_schema():
     for model in (
         HitEvent,
         LoginAttemptEvent,
-        DecoyViewEvent,
-        DecoyPasswordAttemptEvent,
+        InstallAttemptEvent,
     ):
         assert (
             DISCRIMINATOR in model.model_json_schema(mode="serialization")["required"]

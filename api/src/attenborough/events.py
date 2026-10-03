@@ -16,7 +16,7 @@ from psycopg import AsyncConnection
 from pydantic import AwareDatetime, BaseModel, Field, TypeAdapter, ValidationError
 
 from attenborough import settings
-from attenborough.db import enums, models, queries
+from attenborough.db import models, queries
 from attenborough.db.enums import EventKind, PathCategory
 
 # The field that tells the event models apart. Each model's `kind` has no default: with one, it
@@ -88,6 +88,9 @@ class Hit(BaseModel):
     category: PathCategory
     # Whether the decoy refused it because the address was banned.
     banned: bool
+    # Whether an admin's response rule answered it instead of the decoy's own page (what the rule
+    # said is private).
+    custom_response: bool
 
 
 class HitEvent(Hit):
@@ -154,31 +157,8 @@ class InstallAttemptEvent(BaseModel):
     password_generated: bool
 
 
-class DecoyViewEvent(BaseModel):
-    kind: Literal[EventKind.DECOY_VIEW]
-    id: int
-    occurred_at: datetime
-    ip_address: str
-    decoy_slug: str
-    decoy_type: enums.DecoyType
-
-
-class DecoyPasswordAttemptEvent(BaseModel):
-    kind: Literal[EventKind.DECOY_PASSWORD_ATTEMPT]
-    id: int
-    occurred_at: datetime
-    ip_address: str
-    decoy_slug: str
-    # Whether the decoy accepted the password: its answer, not access to anything real.
-    decoy_accepted: bool
-
-
 Event = Annotated[
-    HitEvent
-    | LoginAttemptEvent
-    | InstallAttemptEvent
-    | DecoyViewEvent
-    | DecoyPasswordAttemptEvent,
+    HitEvent | LoginAttemptEvent | InstallAttemptEvent,
     Field(discriminator=DISCRIMINATOR),
 ]
 
@@ -315,6 +295,7 @@ def hit_event(row: queries.GetHitsByIdsRow) -> HitEvent:
         body_size=row.body_size,
         category=row.category,
         banned=row.banned,
+        custom_response=row.custom_response is True,
         # The query gives an empty preview when no body was captured; body_size tells them apart.
         body_preview=None
         if row.body_size is None
@@ -337,6 +318,7 @@ def hit_detail(row: queries.GetHitRow) -> HitDetail:
         body_size=row.body_size,
         category=row.category,
         banned=row.banned,
+        custom_response=row.custom_response is True,
         headers={
             hide_honeypot(name): hide_honeypot(value)
             for name, value in _headers.validate_json(row.headers).items()
@@ -391,30 +373,6 @@ def install_attempt_event(
         email=hide_honeypot(row.email),
         password=hide_honeypot(row.password),
         password_generated=row.password_generated,
-    )
-
-
-def decoy_view_event(row: queries.GetDecoyViewsByIdsRow) -> DecoyViewEvent:
-    return DecoyViewEvent(
-        kind=EventKind.DECOY_VIEW,
-        id=row.id_,
-        occurred_at=row.viewed_at,
-        ip_address=row.ip_address,
-        decoy_slug=row.decoy_slug,
-        decoy_type=row.decoy_type,
-    )
-
-
-def decoy_password_attempt_event(
-    row: queries.GetDecoyPasswordAttemptsByIdsRow,
-) -> DecoyPasswordAttemptEvent:
-    return DecoyPasswordAttemptEvent(
-        kind=EventKind.DECOY_PASSWORD_ATTEMPT,
-        id=row.id_,
-        occurred_at=row.attempted_at,
-        ip_address=row.ip_address,
-        decoy_slug=row.decoy_slug,
-        decoy_accepted=row.successful,
     )
 
 
@@ -498,15 +456,6 @@ async def fetch_events(
         events += map(
             install_attempt_event,
             await queries.get_install_attempts_by_ids(conn, ids=ids),
-        )
-    if ids := ids_of(EventKind.DECOY_VIEW, page):
-        events += map(
-            decoy_view_event, await queries.get_decoy_views_by_ids(conn, ids=ids)
-        )
-    if ids := ids_of(EventKind.DECOY_PASSWORD_ATTEMPT, page):
-        events += map(
-            decoy_password_attempt_event,
-            await queries.get_decoy_password_attempts_by_ids(conn, ids=ids),
         )
     return in_page_order(page, events)
 

@@ -8,20 +8,13 @@ __all__: collections.abc.Sequence[str] = (
     "AdminAuditLog",
     "CanaryToken",
     "CredentialStuffingAttempt",
-    "Decoy",
-    "DecoyBinaryPath",
-    "DecoyConfig",
-    "DecoyLockout",
-    "DecoyPasswordAttempt",
-    "DecoyRevocation",
-    "DecoyTextContent",
-    "DecoyView",
     "InstallAttempt",
     "IpActivity",
     "IpBan",
     "IpLocation",
     "IpRequestPath",
     "OauthState",
+    "ResponseRule",
     "SchemaMigration",
     "Session",
     "TelemetryHit",
@@ -72,77 +65,6 @@ class CredentialStuffingAttempt(pydantic.BaseModel):
     attempted_at: datetime.datetime
     canary_id: int | None
     install_id: int | None
-
-
-class Decoy(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
-
-    id_: int
-    type: enums.DecoyType
-    slug: str
-    added: datetime.datetime
-    added_by_ip: str
-    added_by_user_id: int | None
-
-
-class DecoyBinaryPath(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
-
-    decoy_id: int
-    file_path: str
-
-
-class DecoyConfig(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
-
-    decoy_id: int
-    expires_at: datetime.datetime | None
-    password_hash: str | None
-    one_time_view: bool
-
-
-class DecoyLockout(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
-
-    id_: int
-    decoy_id: int
-    ip_address: str
-    added: datetime.datetime
-    expires: datetime.datetime
-
-
-class DecoyPasswordAttempt(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
-
-    id_: int
-    decoy_id: int
-    ip_address: str
-    successful: bool
-    attempted_at: datetime.datetime
-
-
-class DecoyRevocation(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
-
-    decoy_id: int
-    revoked_at: datetime.datetime
-    revoked_by_user_id: int
-
-
-class DecoyTextContent(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
-
-    decoy_id: int
-    content: str
-
-
-class DecoyView(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
-
-    id_: int
-    decoy_id: int
-    ip_address: str
-    viewed_at: datetime.datetime
 
 
 class InstallAttempt(pydantic.BaseModel):
@@ -216,6 +138,27 @@ class OauthState(pydantic.BaseModel):
     expires: datetime.datetime
 
 
+class ResponseRule(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    id_: int
+    position: int
+    method: str | None
+    path_pattern: str | None
+    condition: str
+    status_code: int
+    content_type: str
+    headers: str
+    body: str
+    delay_ms: int
+    expires: datetime.datetime | None
+    note: str | None
+    created_by_user_id: int
+    created: datetime.datetime
+    updated: datetime.datetime
+    removed_at: datetime.datetime | None
+
+
 class SchemaMigration(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
 
@@ -252,6 +195,7 @@ class TelemetryHit(pydantic.BaseModel):
     status_code: int
     occurred_at: datetime.datetime
     banned: bool
+    rule_id: int | None
 
 
 class User(pydantic.BaseModel):

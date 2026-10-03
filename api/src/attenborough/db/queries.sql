@@ -1,12 +1,12 @@
 -- name: CreateTelemetryHit :exec
 INSERT INTO telemetry_hits (
     ip_address, method, path, query, router_group, user_agent, headers, body, body_size, status_code,
-    banned
+    banned, rule_id
 )
 VALUES (
     sqlc.arg(ip_address), sqlc.arg(method), sqlc.arg(path), sqlc.narg(query), sqlc.arg(router_group),
     sqlc.arg(user_agent), sqlc.arg(headers), sqlc.narg(body), sqlc.narg(body_size), sqlc.arg(status_code),
-    sqlc.arg(banned)
+    sqlc.arg(banned), sqlc.narg(rule_id)
 );
 
 -- A login attempt, linked to the canary its password was, if it was one, and to the latest install
@@ -108,6 +108,73 @@ DELETE FROM sessions WHERE expires <= NOW();
 INSERT INTO admin_audit_log (user_id, action, target_ip, details)
 VALUES (sqlc.arg(user_id), sqlc.arg(action), sqlc.narg(target_ip), sqlc.arg(details));
 
+-- Response rules (rules.py; written in admin.py) ------------------------------------------------
+
+-- The rules the decoy's requests are checked against, in order: neither removed nor expired.
+-- name: ListActiveRules :many
+SELECT id, method, path_pattern, condition, status_code, content_type, headers::TEXT AS headers, body,
+    delay_ms
+FROM response_rules
+WHERE removed_at IS NULL AND (expires IS NULL OR expires > NOW())
+ORDER BY position, id;
+
+-- Every rule not removed, for the admin area, with how many hits each answered.
+-- name: ListRules :many
+SELECT
+    r.id, r.position, r.method, r.path_pattern, r.condition, r.status_code, r.content_type,
+    r.headers::TEXT AS headers, r.body, r.delay_ms, r.expires, r.note, r.updated,
+    (SELECT count(*) FROM telemetry_hits h WHERE h.rule_id = r.id) AS hits
+FROM response_rules r
+WHERE r.removed_at IS NULL
+ORDER BY r.position, r.id;
+
+-- name: CreateRule :one
+INSERT INTO response_rules (
+    position, method, path_pattern, condition, status_code, content_type, headers, body, delay_ms,
+    expires, note, created_by_user_id
+)
+VALUES (
+    (SELECT COALESCE(max(position), 0) + 1 FROM response_rules),
+    sqlc.narg(method), sqlc.narg(path_pattern), sqlc.arg(condition), sqlc.arg(status_code),
+    sqlc.arg(content_type), sqlc.arg(headers), sqlc.arg(body), sqlc.arg(delay_ms),
+    sqlc.narg(expires), sqlc.narg(note), sqlc.arg(created_by_user_id)
+)
+RETURNING id;
+
+-- No row if there is no such rule, or it was removed.
+-- name: UpdateRule :one
+UPDATE response_rules
+SET method = sqlc.narg(method), path_pattern = sqlc.narg(path_pattern),
+    condition = sqlc.arg(condition), status_code = sqlc.arg(status_code),
+    content_type = sqlc.arg(content_type), headers = sqlc.arg(headers), body = sqlc.arg(body),
+    delay_ms = sqlc.arg(delay_ms), expires = sqlc.narg(expires), note = sqlc.narg(note),
+    updated = NOW()
+WHERE id = sqlc.arg(id) AND removed_at IS NULL
+RETURNING id;
+
+-- name: SetRulePosition :exec
+UPDATE response_rules SET position = sqlc.arg(position) WHERE id = sqlc.arg(id);
+
+-- No row if there is no such rule, or it was removed already.
+-- name: RemoveRule :one
+UPDATE response_rules SET removed_at = NOW()
+WHERE id = sqlc.arg(id) AND removed_at IS NULL
+RETURNING id;
+
+-- What the response rules' markers say about a visitor (rules.py): its location and network, its
+-- running totals, its logins since a time, and whether it was ever handed a canary or banned.
+-- One row, whatever the address; NULLs where nothing is known.
+-- name: GetVisitorFacts :one
+SELECT
+    l.country_code, l.city, l.asn, l.as_organisation, a.requests, a.first_seen_at,
+    (SELECT count(*) FROM credential_stuffing_attempts c
+     WHERE c.ip_address = v.ip AND c.attempted_at >= sqlc.arg(logins_since)::timestamptz) AS logins,
+    EXISTS (SELECT 1 FROM canary_tokens t WHERE t.ip_address = v.ip) AS has_canary,
+    EXISTS (SELECT 1 FROM ip_bans b WHERE b.ip_address = v.ip) AS banned_before
+FROM (SELECT sqlc.arg(ip_address)::inet AS ip) v
+LEFT JOIN ip_locations l ON l.ip_address = v.ip
+LEFT JOIN ip_activity a ON a.ip_address = v.ip;
+
 -- The latest admin actions, newest first.
 -- name: ListAuditLog :many
 SELECT l.id, l.logged_at, u.email, l.action, l.target_ip, l.details::TEXT AS details
@@ -172,8 +239,8 @@ WHERE CASE
 END
 ORDER BY b.added DESC, b.id DESC;
 
--- Every event a visitor caused, newest first: requests to the honeypot, login attempts, decoy views,
--- decoy password attempts and installs. Details are fetched separately, per kind (below). Bans are the
+-- Every event a visitor caused, newest first: requests to the honeypot, login attempts and
+-- installs. Details are fetched separately, per kind (below). Bans are the
 -- project's own actions, not a visitor's, so they are not listed.
 --
 -- Keyset paging: a page is the events after a cursor, the previous page's last event (events.py,
@@ -196,20 +263,6 @@ SELECT * FROM (
      FROM credential_stuffing_attempts
      WHERE attempted_at <= sqlc.arg(before_at)::timestamptz
        AND (attempted_at, 'login_attempt'::event_kind, id) < (sqlc.arg(before_at)::timestamptz, sqlc.arg(before_kind)::event_kind, sqlc.arg(before_id)::bigint)
-     ORDER BY attempted_at DESC, id DESC
-     LIMIT sqlc.arg('limit')::int)
-    UNION ALL
-    (SELECT 'decoy_view'::event_kind AS kind, id, ip_address, viewed_at AS occurred_at
-     FROM decoy_views
-     WHERE viewed_at <= sqlc.arg(before_at)::timestamptz
-       AND (viewed_at, 'decoy_view'::event_kind, id) < (sqlc.arg(before_at)::timestamptz, sqlc.arg(before_kind)::event_kind, sqlc.arg(before_id)::bigint)
-     ORDER BY viewed_at DESC, id DESC
-     LIMIT sqlc.arg('limit')::int)
-    UNION ALL
-    (SELECT 'decoy_password_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
-     FROM decoy_password_attempts
-     WHERE attempted_at <= sqlc.arg(before_at)::timestamptz
-       AND (attempted_at, 'decoy_password_attempt'::event_kind, id) < (sqlc.arg(before_at)::timestamptz, sqlc.arg(before_kind)::event_kind, sqlc.arg(before_id)::bigint)
      ORDER BY attempted_at DESC, id DESC
      LIMIT sqlc.arg('limit')::int)
     UNION ALL
@@ -239,20 +292,6 @@ SELECT * FROM (
      ORDER BY attempted_at DESC, id DESC
      LIMIT sqlc.arg('limit')::int)
     UNION ALL
-    (SELECT 'decoy_view'::event_kind AS kind, id, ip_address, viewed_at AS occurred_at
-     FROM decoy_views
-     WHERE ip_address = sqlc.arg(ip_address)::inet AND viewed_at <= sqlc.arg(before_at)::timestamptz
-       AND (viewed_at, 'decoy_view'::event_kind, id) < (sqlc.arg(before_at)::timestamptz, sqlc.arg(before_kind)::event_kind, sqlc.arg(before_id)::bigint)
-     ORDER BY viewed_at DESC, id DESC
-     LIMIT sqlc.arg('limit')::int)
-    UNION ALL
-    (SELECT 'decoy_password_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
-     FROM decoy_password_attempts
-     WHERE ip_address = sqlc.arg(ip_address)::inet AND attempted_at <= sqlc.arg(before_at)::timestamptz
-       AND (attempted_at, 'decoy_password_attempt'::event_kind, id) < (sqlc.arg(before_at)::timestamptz, sqlc.arg(before_kind)::event_kind, sqlc.arg(before_id)::bigint)
-     ORDER BY attempted_at DESC, id DESC
-     LIMIT sqlc.arg('limit')::int)
-    UNION ALL
     (SELECT 'install_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
      FROM install_attempts
      WHERE ip_address = sqlc.arg(ip_address)::inet AND attempted_at <= sqlc.arg(before_at)::timestamptz
@@ -269,7 +308,8 @@ LIMIT sqlc.arg('limit')::int;
 SELECT
     id, ip_address, occurred_at, method, path, query, status_code, user_agent,
     COALESCE(substring(body FROM 1 FOR 1024), ''::BYTEA)::BYTEA AS body_preview, body_size,
-    path_category(path) AS category, banned
+    path_category(path) AS category, banned,
+    rule_id IS NOT NULL AS custom_response
 FROM telemetry_hits
 WHERE id = ANY(sqlc.arg(ids)::BIGINT[]);
 
@@ -303,24 +343,15 @@ LIMIT sqlc.arg(max_rows);
 -- name: CountInstallLogins :one
 SELECT count(*) FROM credential_stuffing_attempts WHERE install_id = sqlc.arg(install_id);
 
--- name: GetDecoyViewsByIds :many
-SELECT dv.id, dv.ip_address, dv.viewed_at, d.slug AS decoy_slug, d.type AS decoy_type
-FROM decoy_views dv
-INNER JOIN decoys d ON d.id = dv.decoy_id
-WHERE dv.id = ANY(sqlc.arg(ids)::BIGINT[]);
 
--- name: GetDecoyPasswordAttemptsByIds :many
-SELECT dpa.id, dpa.ip_address, dpa.attempted_at, d.slug AS decoy_slug, dpa.successful
-FROM decoy_password_attempts dpa
-INNER JOIN decoys d ON d.id = dpa.decoy_id
-WHERE dpa.id = ANY(sqlc.arg(ids)::BIGINT[]);
 
 -- One request in full, only if it is in the given router group (the exhibit shows honeypot hits).
 -- `headers` as TEXT: psycopg decodes JSONB to a dict, where the generated row expects a str.
 -- name: GetHit :one
 SELECT
     id, ip_address, occurred_at, method, path, query, status_code, user_agent,
-    headers::TEXT AS headers, body, body_size, path_category(path) AS category, banned
+    headers::TEXT AS headers, body, body_size, path_category(path) AS category, banned,
+    rule_id IS NOT NULL AS custom_response
 FROM telemetry_hits
 WHERE id = sqlc.arg(id) AND router_group = sqlc.arg(router_group);
 
@@ -526,21 +557,6 @@ WHERE l.latitude IS NOT NULL
 GROUP BY l.latitude, l.longitude, l.city, l.country_code
 ORDER BY requests DESC
 LIMIT sqlc.arg('limit')::INT;
-
--- name: UpsertDecoy :one
-INSERT INTO decoys (type, slug, added_by_ip)
-VALUES (sqlc.arg(type), sqlc.arg(slug), sqlc.arg(added_by_ip))
--- No-op update so RETURNING yields the existing id; added_by_ip stays the first visitor's.
-ON CONFLICT (slug) DO UPDATE SET slug = decoys.slug
-RETURNING id;
-
--- name: CreateDecoyView :exec
-INSERT INTO decoy_views (decoy_id, ip_address)
-VALUES (sqlc.arg(decoy_id), sqlc.arg(ip_address));
-
--- name: CreateDecoyPasswordAttempt :exec
-INSERT INTO decoy_password_attempts (decoy_id, ip_address, successful)
-VALUES (sqlc.arg(decoy_id), sqlc.arg(ip_address), sqlc.arg(successful));
 
 -- Schema reset and migrations (used only by db/schema.py). DROP ... CASCADE also removes the
 -- extensions installed in public; schema.sql recreates them.

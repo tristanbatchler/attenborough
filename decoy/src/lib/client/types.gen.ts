@@ -64,6 +64,10 @@ export type DecoyHit = {
      * Banned
      */
     banned: boolean;
+    /**
+     * Rule Id
+     */
+    rule_id: number | null;
 };
 
 /**
@@ -159,6 +163,36 @@ export type LoginOutcome = {
 };
 
 /**
+ * RenderedResponse
+ *
+ * What the decoy serves instead of its own page.
+ */
+export type RenderedResponse = {
+    /**
+     * Status Code
+     */
+    status_code: number;
+    /**
+     * Content Type
+     */
+    content_type: string;
+    /**
+     * Headers
+     */
+    headers: {
+        [key: string]: string;
+    };
+    /**
+     * Body
+     */
+    body: string;
+    /**
+     * Delay Ms
+     */
+    delay_ms: number;
+};
+
+/**
  * ValidationError
  */
 export type ValidationError = {
@@ -187,23 +221,63 @@ export type ValidationError = {
 };
 
 /**
+ * Visit
+ *
+ * A request the decoy app received, as the visitor sent it.
+ */
+export type Visit = {
+    /**
+     * Method
+     */
+    method: string;
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Query
+     */
+    query: string | null;
+    /**
+     * Headers
+     */
+    headers: {
+        [key: string]: string;
+    };
+};
+
+/**
  * VisitVerdict
  *
- * Whether the decoy should serve a visitor.
+ * How the decoy should answer a request.
  */
 export type VisitVerdict = {
     /**
      * Banned
      */
     banned: boolean;
+    /**
+     * Rule Id
+     */
+    rule_id: number | null;
+    response: RenderedResponse | null;
 };
 
 export type JudgeVisitData = {
-    body?: never;
+    body: Visit;
     path?: never;
     query?: never;
     url: '/ingest/visits';
 };
+
+export type JudgeVisitErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type JudgeVisitError = JudgeVisitErrors[keyof JudgeVisitErrors];
 
 export type JudgeVisitResponses = {
     /**

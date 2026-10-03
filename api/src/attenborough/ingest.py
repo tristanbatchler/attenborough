@@ -16,9 +16,11 @@ from fastapi import APIRouter, BackgroundTasks
 from pydantic import Base64Bytes, BaseModel, Field
 from starlette.status import HTTP_204_NO_CONTENT
 
+from attenborough import canaries, rules
 from attenborough.db import queries
 from attenborough.db.enums import RouterGroup
 from attenborough.dependencies import DBConn, RequestOrigin
+from attenborough.rules import RenderedResponse, Request
 from attenborough.telemetry import record_hit
 
 router = APIRouter(prefix="/ingest", tags=[RouterGroup.INGEST])
@@ -45,8 +47,6 @@ TARPIT_WINDOW = timedelta(minutes=10)
 TARPIT_FREE_ATTEMPTS = 10
 TARPIT_STEP_MS = 500
 TARPIT_MAX_DELAY_MS = 15_000
-# Random bytes in a canary secret: 24 URL-safe characters, an ordinary-looking strong password.
-_CANARY_BYTES = 18
 # The password WordPress's installer makes up when none is chosen: wp_generate_password(12, false),
 # letters and digits.
 _GENERATED_PASSWORD_LENGTH = 12
@@ -62,8 +62,8 @@ def tarpit_delay_ms(previous_attempts: int) -> int:
     return min(excess * TARPIT_STEP_MS, TARPIT_MAX_DELAY_MS)
 
 
-class DecoyHit(BaseModel):
-    """One request the decoy app served: exactly what the visitor sent, and the status it got."""
+class Visit(BaseModel):
+    """A request the decoy app received, as the visitor sent it."""
 
     method: str = Field(min_length=1, max_length=_MAX_METHOD_LENGTH)
     # The request line, one character per byte, not decoded or normalised.
@@ -71,19 +71,30 @@ class DecoyHit(BaseModel):
     # After the `?`; None when the request line had none.
     query: str | None = Field(max_length=_MAX_REQUEST_LINE)
     headers: dict[str, str] = Field(max_length=_MAX_HEADERS)
+
+
+class DecoyHit(Visit):
+    """One request the decoy app served: exactly what the visitor sent, and the status it got."""
+
     # Base64 in the JSON report; the whole body, empty when there was none. None when the decoy app
     # couldn't read it (over its BODY_SIZE_LIMIT): not captured, which is not the same as empty.
     body: Annotated[Base64Bytes, Field(max_length=_MAX_BODY_BYTES)] | None
     status_code: int = Field(ge=_MIN_STATUS, le=_MAX_STATUS)
     # Whether the decoy refused the request because the address is banned (judge_visit).
     banned: bool
+    # The response rule that answered it instead of the decoy's own page (judge_visit), if any.
+    rule_id: int | None
 
 
 class VisitVerdict(BaseModel):
-    """Whether the decoy should serve a visitor."""
+    """How the decoy should answer a request."""
 
     # Banned (admin.py): the decoy refuses it, and still reports the request.
     banned: bool
+    # A response rule's answer (rules.py), served instead of the decoy's own page, and the rule's
+    # id, reported with the hit; both null for the decoy's own page, and when banned.
+    rule_id: int | None
+    response: RenderedResponse | None
 
 
 class LoginAttempt(BaseModel):
@@ -138,11 +149,23 @@ class Canary(BaseModel):
 
 
 @router.post("/visits")
-async def judge_visit(db_conn: DBConn, origin: RequestOrigin) -> VisitVerdict:
-    """Asked before the decoy serves each request: one lookup in the active-bans index, never
-    cached, so a ban or its end applies to the very next request."""
-    banned = await queries.is_ip_banned(db_conn, ip_address=str(origin))
-    return VisitVerdict(banned=banned is True)
+async def judge_visit(
+    visit: Visit, db_conn: DBConn, origin: RequestOrigin
+) -> VisitVerdict:
+    """Asked before the decoy serves each request: is the visitor banned, and if not, does a
+    response rule answer instead (rules.respond)? Never cached, so a change to a ban or a rule
+    applies to the very next request."""
+    address = str(origin)
+    if await queries.is_ip_banned(db_conn, ip_address=address):
+        return VisitVerdict(banned=True, rule_id=None, response=None)
+    request = Request(
+        method=visit.method, path=visit.path, query=visit.query, headers=visit.headers
+    )
+    answer = await rules.respond(db_conn, address, request)
+    if answer is None:
+        return VisitVerdict(banned=False, rule_id=None, response=None)
+    rule_id, response = answer
+    return VisitVerdict(banned=False, rule_id=rule_id, response=response)
 
 
 @router.post("/hits", status_code=HTTP_204_NO_CONTENT)
@@ -164,6 +187,7 @@ async def report_hit(
         body=hit.body,
         status_code=hit.status_code,
         banned=hit.banned,
+        rule_id=hit.rule_id,
     )
 
 
@@ -237,8 +261,8 @@ async def issue_canary(
     leak: CanaryRequest, db_conn: DBConn, origin: RequestOrigin
 ) -> Canary:
     """A fresh secret for a leaked file the decoy is serving, recorded against the visitor."""
-    secret = secrets.token_urlsafe(_CANARY_BYTES)
-    await queries.create_canary_token(
-        db_conn, token=secret, path=leak.path, ip_address=str(origin)
+    return Canary(
+        secret=await canaries.issue_canary(
+            db_conn, path=leak.path, ip_address=str(origin)
+        )
     )
-    return Canary(secret=secret)

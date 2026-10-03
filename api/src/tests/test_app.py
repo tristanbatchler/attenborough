@@ -20,6 +20,7 @@ REQUEST = "method, path, status, group"
 TAKE = "take, fetched, expected_next"
 AT = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
 IP = "203.0.113.7"
+EMAIL = "admin@example.org"
 
 
 def test_operation_ids_are_unique():
@@ -100,6 +101,11 @@ async def recorded(
                 (HTTPMethod.POST, f"/admin/ip/{IP}/bans"),
                 (HTTPMethod.POST, "/admin/bans/1/revoke"),
                 (HTTPMethod.GET, "/admin/audit"),
+                (HTTPMethod.GET, "/admin/rules"),
+                (HTTPMethod.POST, "/admin/rules"),
+                (HTTPMethod.GET, "/admin/rules/1"),
+                (HTTPMethod.POST, "/admin/rules/1/move"),
+                (HTTPMethod.POST, "/admin/rules/preview"),
             ]
         ),
     ],
@@ -129,6 +135,8 @@ _ADMIN_MODELS = {
     model.__name__
     for model in (
         admin.BanRecord,
+        admin.RuleRecord,
+        admin.Preview,
         admin.AuditEntry,
         auth.Me,
         auth.Session,
@@ -230,3 +238,33 @@ def test_the_first_page_starts_after_every_event():
 def test_a_cursor_that_this_api_did_not_make_is_rejected(token: str):
     with pytest.raises(ValidationError):
         _ = Paging(before=token)
+
+
+@pytest.mark.anyio
+async def test_fixed_paths_reach_their_routes(recorded: list[RecordedHit]):
+    # A fixed path declared after a parameterised one (/rules/{rule_id}) would be taken by it: an
+    # empty preview would then fail on the rule id in its path, not on its missing rule.
+    def an_admin() -> auth.AdminSession:
+        return auth.AdminSession(user_id=1, email=EMAIL, name=EMAIL, token_hash="")
+
+    app.dependency_overrides[auth.current_admin] = an_admin
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        markers = await client.get("/admin/rules/markers")
+        preview = await client.post("/admin/rules/preview", json={})
+    assert markers.status_code == HTTPStatus.OK
+    assert preview.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert ValidationErrors.model_validate_json(preview.content).detail[0].loc[:2] == [
+        "body",
+        "rule",
+    ]
+    assert recorded == []
+
+
+class _ValidationError(BaseModel):
+    loc: list[str | int]
+
+
+class ValidationErrors(BaseModel):
+    detail: list[_ValidationError]

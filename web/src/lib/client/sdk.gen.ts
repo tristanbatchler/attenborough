@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { BanIpData, BanIpErrors, BanIpResponses, FinishGoogleLoginData, FinishGoogleLoginErrors, FinishGoogleLoginResponses, GetHitData, GetHitErrors, GetHitResponses, GetIpEventsData, GetIpEventsErrors, GetIpEventsResponses, GetIpSummaryData, GetIpSummaryErrors, GetIpSummaryResponses, GetMeData, GetMeResponses, GetPatternsData, GetPatternsResponses, GetTakeoverData, GetTakeoverErrors, GetTakeoverResponses, ListActiveBansData, ListActiveBansResponses, ListAuditLogData, ListAuditLogResponses, ListIpBansData, ListIpBansErrors, ListIpBansResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses, LogOutData, LogOutResponses, RevokeBanData, RevokeBanErrors, RevokeBanResponses, StartGoogleLoginData, StartGoogleLoginResponses } from './types.gen';
+import type { BanIpData, BanIpErrors, BanIpResponses, CreateRuleData, CreateRuleErrors, CreateRuleResponses, FinishGoogleLoginData, FinishGoogleLoginErrors, FinishGoogleLoginResponses, GetHitData, GetHitErrors, GetHitResponses, GetIpEventsData, GetIpEventsErrors, GetIpEventsResponses, GetIpSummaryData, GetIpSummaryErrors, GetIpSummaryResponses, GetMeData, GetMeResponses, GetPatternsData, GetPatternsResponses, GetRuleData, GetRuleErrors, GetRuleResponses, GetTakeoverData, GetTakeoverErrors, GetTakeoverResponses, ListActiveBansData, ListActiveBansResponses, ListAuditLogData, ListAuditLogResponses, ListIpBansData, ListIpBansErrors, ListIpBansResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses, ListRuleMarkersData, ListRuleMarkersResponses, ListRulesData, ListRulesResponses, LogOutData, LogOutResponses, MoveRuleData, MoveRuleErrors, MoveRuleResponses, PreviewRuleData, PreviewRuleErrors, PreviewRuleResponses, RemoveRuleData, RemoveRuleErrors, RemoveRuleResponses, RevokeBanData, RevokeBanErrors, RevokeBanResponses, StartGoogleLoginData, StartGoogleLoginResponses, UpdateRuleData, UpdateRuleErrors, UpdateRuleResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -167,4 +167,105 @@ export const listAuditLog = <ThrowOnError extends boolean = false>(options?: Opt
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/admin/audit',
     ...options
+});
+
+/**
+ * List Rules
+ *
+ * Every rule, in the order they are tried.
+ */
+export const listRules = <ThrowOnError extends boolean = false>(options?: Options<ListRulesData, ThrowOnError>): RequestResult<ListRulesResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListRulesResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/rules',
+    ...options
+});
+
+/**
+ * Create Rule
+ *
+ * A new rule, tried after every existing one.
+ */
+export const createRule = <ThrowOnError extends boolean = false>(options: Options<CreateRuleData, ThrowOnError>): RequestResult<CreateRuleResponses, CreateRuleErrors, ThrowOnError> => (options.client ?? client).post<CreateRuleResponses, CreateRuleErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/rules',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * List Rule Markers
+ *
+ * What a rule's templates can use.
+ */
+export const listRuleMarkers = <ThrowOnError extends boolean = false>(options?: Options<ListRuleMarkersData, ThrowOnError>): RequestResult<ListRuleMarkersResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListRuleMarkersResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/rules/markers',
+    ...options
+});
+
+/**
+ * Get Rule
+ */
+export const getRule = <ThrowOnError extends boolean = false>(options: Options<GetRuleData, ThrowOnError>): RequestResult<GetRuleResponses, GetRuleErrors, ThrowOnError> => (options.client ?? client).get<GetRuleResponses, GetRuleErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/rules/{rule_id}',
+    ...options
+});
+
+/**
+ * Update Rule
+ */
+export const updateRule = <ThrowOnError extends boolean = false>(options: Options<UpdateRuleData, ThrowOnError>): RequestResult<UpdateRuleResponses, UpdateRuleErrors, ThrowOnError> => (options.client ?? client).post<UpdateRuleResponses, UpdateRuleErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/rules/{rule_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Move Rule
+ *
+ * Swap a rule with the one before (up) or after it (down): earlier rules are tried first.
+ */
+export const moveRule = <ThrowOnError extends boolean = false>(options: Options<MoveRuleData, ThrowOnError>): RequestResult<MoveRuleResponses, MoveRuleErrors, ThrowOnError> => (options.client ?? client).post<MoveRuleResponses, MoveRuleErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/rules/{rule_id}/move',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Remove Rule
+ *
+ * Stop using a rule. It is kept, so the hits it answered still name it.
+ */
+export const removeRule = <ThrowOnError extends boolean = false>(options: Options<RemoveRuleData, ThrowOnError>): RequestResult<RemoveRuleResponses, RemoveRuleErrors, ThrowOnError> => (options.client ?? client).post<RemoveRuleResponses, RemoveRuleErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/rules/{rule_id}/remove',
+    ...options
+});
+
+/**
+ * Preview Rule
+ *
+ * What a rule (saved or not) would answer a request from an address, using everything the
+ * honeypot knows about that address. Issues no canary and records nothing.
+ */
+export const previewRule = <ThrowOnError extends boolean = false>(options: Options<PreviewRuleData, ThrowOnError>): RequestResult<PreviewRuleResponses, PreviewRuleErrors, ThrowOnError> => (options.client ?? client).post<PreviewRuleResponses, PreviewRuleErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/rules/preview',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });

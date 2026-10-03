@@ -12,17 +12,16 @@
 CREATE EXTENSION IF NOT EXISTS "citext";
 
 -- Enum types
-CREATE TYPE decoy_type AS ENUM ('text', 'binary', 'trap');
-CREATE TYPE audit_action AS ENUM ('login', 'ban_created', 'ban_revoked', 'decoy_revoked', 'settings_changed');
+CREATE TYPE audit_action AS ENUM (
+    'login', 'ban_created', 'ban_revoked', 'rule_created', 'rule_changed', 'rule_removed'
+);
 -- What a request was for, recorded with each hit; a router's tags carry its group (sqlc generates
 -- the RouterGroup enum the API uses). 'ingest' is the decoy app reporting its visitors' requests:
 -- records, not visits, so it is never stored. 'admin' is the admin area (auth.py, admin.py), never
 -- stored either: its requests carry the session token.
 CREATE TYPE router_group AS ENUM ('exhibit', 'system', 'honeypot', 'ingest', 'admin');
 -- The kinds of event the exhibit lists (queries.sql, ListRecentEvents).
-CREATE TYPE event_kind AS ENUM (
-    'hit', 'login_attempt', 'decoy_view', 'decoy_password_attempt', 'install_attempt'
-);
+CREATE TYPE event_kind AS ENUM ('hit', 'login_attempt', 'install_attempt');
 -- What a request's path was after, as path_category() (below) guesses it.
 CREATE TYPE path_category AS ENUM (
     'homepage', 'crawlers', 'secrets', 'backups', 'debug', 'exploits', 'wordpress', 'webshells',
@@ -74,46 +73,36 @@ CREATE INDEX idx_oauth_states_expires ON oauth_states (expires);
 GRANT DELETE ON sessions, oauth_states TO PUBLIC;
 
 ------------------------------------------------------------------
--- 2. DECOYS & EXHIBIT ARTIFACTS
+-- 2. RESPONSE RULES
 ------------------------------------------------------------------
 
-CREATE TABLE decoys (
-    id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    type             decoy_type NOT NULL DEFAULT 'text',
-    slug             TEXT NOT NULL,
-    added            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    added_by_ip      INET NOT NULL,
-    added_by_user_id BIGINT REFERENCES users (id) ON DELETE SET NULL,
-    
-    CONSTRAINT uq_decoys_slug UNIQUE (slug)
+-- What the decoy answers instead of its own page, written by an admin (admin.py) and applied by the
+-- API (rules.py) to every request the decoy asks about: the first active rule, by position, whose
+-- method, path pattern and condition match. The condition, header values and body are Liquid
+-- templates. Removed rules are kept (removed_at), so the hits they answered still name them.
+CREATE TABLE response_rules (
+    id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    position           INTEGER NOT NULL,
+    method             TEXT,
+    path_pattern       TEXT,
+    condition          TEXT NOT NULL DEFAULT '',
+    status_code        INTEGER NOT NULL,
+    content_type       TEXT NOT NULL,
+    headers            JSONB NOT NULL DEFAULT '{}'::jsonb,
+    body               TEXT NOT NULL DEFAULT '',
+    delay_ms           INTEGER NOT NULL DEFAULT 0,
+    expires            TIMESTAMPTZ,
+    note               TEXT,
+    created_by_user_id BIGINT NOT NULL REFERENCES users (id),
+    created            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    removed_at         TIMESTAMPTZ,
+
+    CONSTRAINT chk_response_rules_status CHECK (status_code BETWEEN 200 AND 599),
+    CONSTRAINT chk_response_rules_delay CHECK (delay_ms BETWEEN 0 AND 15000)
 );
 
-CREATE INDEX idx_decoys_added ON decoys (added DESC);
-
-CREATE TABLE decoy_text_contents (
-    decoy_id BIGINT PRIMARY KEY REFERENCES decoys (id) ON DELETE CASCADE,
-    content  TEXT NOT NULL
-);
-
-CREATE TABLE decoy_binary_paths (
-    decoy_id  BIGINT PRIMARY KEY REFERENCES decoys (id) ON DELETE CASCADE,
-    file_path TEXT NOT NULL
-);
-
-CREATE TABLE decoy_configs (
-    decoy_id      BIGINT PRIMARY KEY REFERENCES decoys (id) ON DELETE CASCADE,
-    expires_at    TIMESTAMPTZ,
-    password_hash TEXT,
-    one_time_view BOOLEAN NOT NULL DEFAULT FALSE
-);
-
-CREATE INDEX idx_decoy_configs_expiry ON decoy_configs (expires_at) WHERE expires_at IS NOT NULL;
-
-CREATE TABLE decoy_revocations (
-    decoy_id           BIGINT PRIMARY KEY REFERENCES decoys (id) ON DELETE RESTRICT,
-    revoked_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    revoked_by_user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE RESTRICT
-);
+CREATE INDEX idx_response_rules_active ON response_rules (position) WHERE removed_at IS NULL;
 
 ------------------------------------------------------------------
 -- 3. COMPREHENSIVE HONEYPOT & TELEMETRY LOGGING
@@ -141,6 +130,8 @@ CREATE TABLE telemetry_hits (
     occurred_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     -- Whether the decoy refused the request because its address was banned (ingest.py, judge_visit).
     banned       BOOLEAN NOT NULL DEFAULT FALSE,
+    -- The response rule that answered it instead of the decoy's own page, if any.
+    rule_id      BIGINT REFERENCES response_rules (id),
 
     CONSTRAINT chk_telemetry_hits_body CHECK (
         (body IS NULL) = (body_size IS NULL) AND body_size >= octet_length(body)
@@ -152,6 +143,8 @@ CREATE INDEX idx_telemetry_hits_brin ON telemetry_hits USING brin (occurred_at);
 -- The exhibit's listings page through events newest first, by (time, id): see ListRecentEvents.
 CREATE INDEX idx_telemetry_hits_ip ON telemetry_hits (ip_address, occurred_at DESC, id DESC);
 CREATE INDEX idx_telemetry_hits_router ON telemetry_hits (router_group, occurred_at DESC, id DESC);
+-- How many hits each response rule answered (the admin area's list).
+CREATE INDEX idx_telemetry_hits_rule ON telemetry_hits (rule_id) WHERE rule_id IS NOT NULL;
 
 -- What a request's path was after: an inference from the path alone, as sent (a percent-encoded
 -- probe such as /%2eenv is 'other'). The first rule that matches wins. Never stored, so changing a
@@ -195,6 +188,9 @@ CREATE TABLE canary_tokens (
     ip_address INET NOT NULL,
     issued_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- has_canary, a response rule marker (rules.py).
+CREATE INDEX idx_canary_tokens_ip ON canary_tokens (ip_address);
 
 -- Someone finishing the decoy's "unfinished" WordPress install, to become the site's administrator:
 -- the account they chose, as wp-admin/install.php took it. Nothing is installed. The submission
@@ -242,41 +238,6 @@ CREATE INDEX idx_credential_attempts_time ON credential_stuffing_attempts (attem
 -- The logins into each install's account, in order (ListInstallLoginIds): a takeover's story.
 CREATE INDEX idx_credential_attempts_install ON credential_stuffing_attempts (install_id, attempted_at, id)
     WHERE install_id IS NOT NULL;
-
--- Decoy specific interaction telemetry (views, downloads)
-CREATE TABLE decoy_views (
-    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    decoy_id   BIGINT NOT NULL REFERENCES decoys (id) ON DELETE CASCADE,
-    ip_address INET NOT NULL,
-    viewed_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_decoy_views_ip ON decoy_views (ip_address, viewed_at DESC, id DESC);
-CREATE INDEX idx_decoy_views_time ON decoy_views (viewed_at DESC, id DESC);
-
--- Decoy password attempts and lockouts
-CREATE TABLE decoy_password_attempts (
-    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    decoy_id     BIGINT NOT NULL REFERENCES decoys (id) ON DELETE CASCADE,
-    ip_address   INET NOT NULL,
-    successful   BOOLEAN NOT NULL,
-    attempted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_decoy_pwd_attempts_ip ON decoy_password_attempts (ip_address, attempted_at DESC, id DESC);
-CREATE INDEX idx_decoy_pwd_attempts_time ON decoy_password_attempts (attempted_at DESC, id DESC);
-
-CREATE TABLE decoy_lockouts (
-    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    decoy_id   BIGINT NOT NULL REFERENCES decoys (id) ON DELETE CASCADE,
-    ip_address INET NOT NULL,
-    added      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires    TIMESTAMPTZ NOT NULL,
-
-    CONSTRAINT chk_decoy_lockouts_expiry CHECK (expires > added)
-);
-
-CREATE INDEX idx_decoy_lockouts_ip ON decoy_lockouts (ip_address, expires DESC);
 
 -- Running totals per address, for the exhibit's summary of one IP: counting a busy scanner's
 -- million rows on every page view would take seconds. Kept by the insert triggers below, so every

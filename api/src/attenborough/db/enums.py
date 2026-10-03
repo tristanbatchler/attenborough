@@ -6,7 +6,6 @@ from __future__ import annotations
 
 __all__: collections.abc.Sequence[str] = (
     "AuditAction",
-    "DecoyType",
     "EventKind",
     "PathCategory",
     "RouterGroup",
@@ -23,21 +22,14 @@ class AuditAction(enum.StrEnum):
     LOGIN = "login"
     BAN_CREATED = "ban_created"
     BAN_REVOKED = "ban_revoked"
-    DECOY_REVOKED = "decoy_revoked"
-    SETTINGS_CHANGED = "settings_changed"
-
-
-class DecoyType(enum.StrEnum):
-    TEXT = "text"
-    BINARY = "binary"
-    TRAP = "trap"
+    RULE_CREATED = "rule_created"
+    RULE_CHANGED = "rule_changed"
+    RULE_REMOVED = "rule_removed"
 
 
 class EventKind(enum.StrEnum):
     HIT = "hit"
     LOGIN_ATTEMPT = "login_attempt"
-    DECOY_VIEW = "decoy_view"
-    DECOY_PASSWORD_ATTEMPT = "decoy_password_attempt"
     INSTALL_ATTEMPT = "install_attempt"
 
 

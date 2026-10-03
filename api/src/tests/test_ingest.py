@@ -52,6 +52,7 @@ def hit(
             "body": body,
             "status_code": status_code,
             "banned": False,
+            "rule_id": None,
         }
     )
 

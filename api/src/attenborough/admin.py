@@ -1,15 +1,26 @@
-"""The admin area: bans and the audit log, for a logged-in admin only (auth.py). To anyone else
-every route is a 404, like an unknown path. Nothing here ever reaches the public exhibit except
-an active ban's dates (exhibit.py, the IP summary); its reason and author stay here.
+"""The admin area: bans, response rules (rules.py) and the audit log, for a logged-in admin only
+(auth.py). To anyone else every route is a 404, like an unknown path. Nothing here ever reaches the
+public exhibit except an active ban's dates (exhibit.py, the IP summary) and whether a rule answered
+a hit; reasons, authors, rules and notes stay here.
 """
 
 from datetime import UTC, datetime
-from http import HTTPStatus
-from typing import Annotated
+from enum import StrEnum
+from http import HTTPMethod, HTTPStatus
+from typing import Annotated, ClassVar
 
 from fastapi import APIRouter, HTTPException, Path
-from pydantic import AfterValidator, AwareDatetime, BaseModel, Field, IPvAnyAddress
+from liquid2.exceptions import LiquidError
+from pydantic import (
+    AfterValidator,
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    IPvAnyAddress,
+)
 
+from attenborough import rules
 from attenborough.auth import CurrentAdmin, audit
 from attenborough.db import queries
 from attenborough.db.enums import AuditAction, RouterGroup
@@ -24,9 +35,14 @@ _MAX_REASON_LENGTH = 1000
 _AUDIT_LOG_LENGTH = 200
 
 BanId = Annotated[int, Path(ge=1, le=MAX_ID)]
+RuleId = Annotated[int, Path(ge=1, le=MAX_ID)]
+_RULE = "/rules/{rule_id}"
 _IP_BANS = "/ip/{ip_addr}/bans"
 # Keys of the audit log's details.
 _BAN_ID = "ban_id"
+_RULE_ID = "rule_id"
+_MOVED = "moved"
+_NO_SUCH_RULE = "No such rule."
 _REASON = "reason"
 
 
@@ -177,3 +193,213 @@ async def list_audit_log(_admin: CurrentAdmin, db_conn: DBConn) -> list[AuditEnt
         )
         async for row in rows
     ]
+
+
+class RuleRecord(rules.RuleForm):
+    """A saved rule, with how many hits it answered."""
+
+    # Every field is there in a response, defaults or not.
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        json_schema_serialization_defaults_required=True
+    )
+
+    id: int
+    position: int
+    updated: datetime
+    hits: int
+
+
+class NewRule(BaseModel):
+    id: int
+
+
+class Direction(StrEnum):
+    UP = "up"
+    DOWN = "down"
+
+
+class Move(BaseModel):
+    direction: Direction
+
+
+class PreviewRequest(BaseModel):
+    """A rule, and the request to try it on: as if `ip` had sent it."""
+
+    rule: rules.RuleForm
+    ip: IPvAnyAddress
+    method: str = Field(default=HTTPMethod.GET, min_length=1, max_length=32)
+    path: str = Field(default=rules.ROOT_PATH, max_length=rules.MAX_PREVIEW_PATH)
+
+
+class Preview(BaseModel):
+    """Whether the rule would answer that request, and what it would send (with a sample canary,
+    never a real one)."""
+
+    matches: bool
+    response: rules.RenderedResponse
+
+
+def _rule_record(row: queries.ListRulesRow) -> RuleRecord:
+    return RuleRecord.model_construct(
+        id=row.id_,
+        position=row.position,
+        updated=row.updated,
+        hits=row.hits,
+        method=row.method,
+        path_pattern=row.path_pattern,
+        condition=row.condition,
+        status_code=row.status_code,
+        content_type=row.content_type,
+        headers=rules.headers_from_json(row.headers),
+        body=row.body,
+        delay_ms=row.delay_ms,
+        expires=row.expires,
+        note=row.note,
+    )
+
+
+async def _rules(db_conn: DBConn) -> list[RuleRecord]:
+    return [_rule_record(row) async for row in queries.list_rules(db_conn)]
+
+
+@router.get("/rules")
+async def list_rules(_admin: CurrentAdmin, db_conn: DBConn) -> list[RuleRecord]:
+    """Every rule, in the order they are tried."""
+    return await _rules(db_conn)
+
+
+class Marker(BaseModel):
+    name: str
+    description: str
+
+
+# These two come before _RULE, which would take "markers" or "preview" for a rule id
+# (test_fixed_paths_reach_their_routes).
+@router.get("/rules/markers")
+async def list_rule_markers(_admin: CurrentAdmin) -> list[Marker]:
+    """What a rule's templates can use."""
+    return [Marker(name=name, description=text) for name, text in rules.MARKERS.items()]
+
+
+@router.post("/rules/preview")
+async def preview_rule(
+    preview: PreviewRequest, _admin: CurrentAdmin, db_conn: DBConn
+) -> Preview:
+    """What a rule (saved or not) would answer a request from an address, using everything the
+    honeypot knows about that address. Issues no canary and records nothing."""
+    rule = preview.rule.rule()
+    request = rules.Request(
+        method=preview.method.upper(), path=preview.path, query=None, headers={}
+    )
+    markers = await rules.visitor_context(db_conn, str(preview.ip), request)
+    markers[rules.Marker.CANARY] = rules.SAMPLE_CANARY
+    try:
+        matches = rule.matches_request(request.method, request.path) and rule.holds(
+            markers
+        )
+        response = rule.render(markers)
+    except LiquidError as exc:
+        raise HTTPException(HTTPStatus.UNPROCESSABLE_ENTITY, str(exc)) from exc
+    return Preview(matches=matches, response=response)
+
+
+@router.get(_RULE)
+async def get_rule(
+    rule_id: RuleId, _admin: CurrentAdmin, db_conn: DBConn
+) -> RuleRecord:
+    # ponytail: reads every rule to find one; a GetRule query if there are ever hundreds.
+    for rule in await _rules(db_conn):
+        if rule.id == rule_id:
+            return rule
+    raise HTTPException(HTTPStatus.NOT_FOUND, _NO_SUCH_RULE)
+
+
+@router.post("/rules")
+async def create_rule(
+    form: rules.RuleForm, admin: CurrentAdmin, db_conn: DBConn
+) -> NewRule:
+    """A new rule, tried after every existing one."""
+    async with db_conn.transaction():
+        rule_id = await queries.create_rule(
+            db_conn,
+            method=form.method,
+            path_pattern=form.path_pattern,
+            condition=form.condition,
+            status_code=form.status_code,
+            content_type=form.content_type,
+            headers=rules.headers_json(form.headers),
+            body=form.body,
+            delay_ms=form.delay_ms,
+            expires=form.expires,
+            note=form.note,
+            created_by_user_id=admin.user_id,
+        )
+        if rule_id is None:
+            # Unreachable: INSERT ... RETURNING returns the row it inserted.
+            raise RuntimeError("Creating a rule returned no row")
+        await audit(
+            db_conn, admin, AuditAction.RULE_CREATED, details={_RULE_ID: str(rule_id)}
+        )
+    return NewRule(id=rule_id)
+
+
+@router.post(_RULE, status_code=HTTPStatus.NO_CONTENT)
+async def update_rule(
+    rule_id: RuleId, form: rules.RuleForm, admin: CurrentAdmin, db_conn: DBConn
+) -> None:
+    async with db_conn.transaction():
+        updated = await queries.update_rule(
+            db_conn,
+            id_=rule_id,
+            method=form.method,
+            path_pattern=form.path_pattern,
+            condition=form.condition,
+            status_code=form.status_code,
+            content_type=form.content_type,
+            headers=rules.headers_json(form.headers),
+            body=form.body,
+            delay_ms=form.delay_ms,
+            expires=form.expires,
+            note=form.note,
+        )
+        if updated is None:
+            raise HTTPException(HTTPStatus.NOT_FOUND, _NO_SUCH_RULE)
+        await audit(
+            db_conn, admin, AuditAction.RULE_CHANGED, details={_RULE_ID: str(rule_id)}
+        )
+
+
+@router.post(_RULE + "/move", status_code=HTTPStatus.NO_CONTENT)
+async def move_rule(
+    rule_id: RuleId, move: Move, admin: CurrentAdmin, db_conn: DBConn
+) -> None:
+    """Swap a rule with the one before (up) or after it (down): earlier rules are tried first."""
+    async with db_conn.transaction():
+        order = await _rules(db_conn)
+        index = next((i for i, rule in enumerate(order) if rule.id == rule_id), None)
+        if index is None:
+            raise HTTPException(HTTPStatus.NOT_FOUND, _NO_SUCH_RULE)
+        other = index - 1 if move.direction is Direction.UP else index + 1
+        if not 0 <= other < len(order):
+            return
+        order[index], order[other] = order[other], order[index]
+        # ponytail: renumbers every rule; fine for the handful an admin writes.
+        for position, rule in enumerate(order):
+            await queries.set_rule_position(db_conn, id_=rule.id, position=position)
+        await audit(
+            db_conn,
+            admin,
+            AuditAction.RULE_CHANGED,
+            details={_RULE_ID: str(rule_id), _MOVED: move.direction},
+        )
+
+
+@router.post(_RULE + "/remove", status_code=HTTPStatus.NO_CONTENT)
+async def remove_rule(rule_id: RuleId, admin: CurrentAdmin, db_conn: DBConn) -> None:
+    """Stop using a rule. It is kept, so the hits it answered still name it."""
+    async with db_conn.transaction():
+        if await queries.remove_rule(db_conn, id_=rule_id) is None:
+            raise HTTPException(HTTPStatus.NOT_FOUND, _NO_SUCH_RULE)
+        await audit(
+            db_conn, admin, AuditAction.RULE_REMOVED, details={_RULE_ID: str(rule_id)}
+        )

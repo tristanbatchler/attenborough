@@ -41,7 +41,7 @@ export type AddressActivity = {
 /**
  * AuditAction
  */
-export type AuditAction = 'login' | 'ban_created' | 'ban_revoked' | 'decoy_revoked' | 'settings_changed';
+export type AuditAction = 'login' | 'ban_created' | 'ban_revoked' | 'rule_created' | 'rule_changed' | 'rule_removed';
 
 /**
  * AuditEntry
@@ -224,66 +224,9 @@ export type DayActivity = {
 };
 
 /**
- * DecoyPasswordAttemptEvent
+ * Direction
  */
-export type DecoyPasswordAttemptEvent = {
-    /**
-     * Kind
-     */
-    kind: 'decoy_password_attempt';
-    /**
-     * Id
-     */
-    id: number;
-    /**
-     * Occurred At
-     */
-    occurred_at: string;
-    /**
-     * Ip Address
-     */
-    ip_address: string;
-    /**
-     * Decoy Slug
-     */
-    decoy_slug: string;
-    /**
-     * Decoy Accepted
-     */
-    decoy_accepted: boolean;
-};
-
-/**
- * DecoyType
- */
-export type DecoyType = 'text' | 'binary' | 'trap';
-
-/**
- * DecoyViewEvent
- */
-export type DecoyViewEvent = {
-    /**
-     * Kind
-     */
-    kind: 'decoy_view';
-    /**
-     * Id
-     */
-    id: number;
-    /**
-     * Occurred At
-     */
-    occurred_at: string;
-    /**
-     * Ip Address
-     */
-    ip_address: string;
-    /**
-     * Decoy Slug
-     */
-    decoy_slug: string;
-    decoy_type: DecoyType;
-};
+export type Direction = 'up' | 'down';
 
 /**
  * EventPage
@@ -294,7 +237,7 @@ export type EventPage = {
     /**
      * Items
      */
-    items: Array<HitEvent | LoginAttemptEvent | InstallAttemptEvent | DecoyViewEvent | DecoyPasswordAttemptEvent>;
+    items: Array<HitEvent | LoginAttemptEvent | InstallAttemptEvent>;
     /**
      * Next Cursor
      */
@@ -395,6 +338,10 @@ export type HitDetail = {
      */
     banned: boolean;
     /**
+     * Custom Response
+     */
+    custom_response: boolean;
+    /**
      * Headers
      */
     headers: {
@@ -459,6 +406,10 @@ export type HitEvent = {
      * Banned
      */
     banned: boolean;
+    /**
+     * Custom Response
+     */
+    custom_response: boolean;
     /**
      * Body Preview
      */
@@ -690,6 +641,20 @@ export type MapPlace = {
 };
 
 /**
+ * Marker
+ */
+export type Marker = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string;
+};
+
+/**
  * Me
  *
  * Who is logged in.
@@ -703,6 +668,13 @@ export type Me = {
      * Name
      */
     name: string;
+};
+
+/**
+ * Move
+ */
+export type Move = {
+    direction: Direction;
 };
 
 /**
@@ -739,6 +711,16 @@ export type NewBan = {
      * Expires
      */
     expires?: string | null;
+};
+
+/**
+ * NewRule
+ */
+export type NewRule = {
+    /**
+     * Id
+     */
+    id: number;
 };
 
 /**
@@ -829,6 +811,71 @@ export type Patterns = {
 };
 
 /**
+ * Preview
+ *
+ * Whether the rule would answer that request, and what it would send (with a sample canary,
+ * never a real one).
+ */
+export type Preview = {
+    /**
+     * Matches
+     */
+    matches: boolean;
+    response: RenderedResponse;
+};
+
+/**
+ * PreviewRequest
+ *
+ * A rule, and the request to try it on: as if `ip` had sent it.
+ */
+export type PreviewRequest = {
+    rule: RuleForm;
+    /**
+     * Ip
+     */
+    ip: string;
+    /**
+     * Method
+     */
+    method?: string;
+    /**
+     * Path
+     */
+    path?: string;
+};
+
+/**
+ * RenderedResponse
+ *
+ * What the decoy serves instead of its own page.
+ */
+export type RenderedResponse = {
+    /**
+     * Status Code
+     */
+    status_code: number;
+    /**
+     * Content Type
+     */
+    content_type: string;
+    /**
+     * Headers
+     */
+    headers: {
+        [key: string]: string;
+    };
+    /**
+     * Body
+     */
+    body: string;
+    /**
+     * Delay Ms
+     */
+    delay_ms: number;
+};
+
+/**
  * Revocation
  */
 export type Revocation = {
@@ -836,6 +883,123 @@ export type Revocation = {
      * Reason
      */
     reason?: string | null;
+};
+
+/**
+ * RuleForm
+ *
+ * A rule as the admin writes it. Refused (422, with Liquid's message) unless every template
+ * parses and renders for a sample visitor.
+ */
+export type RuleForm = {
+    /**
+     * Method
+     */
+    method?: string | null;
+    /**
+     * Path Pattern
+     */
+    path_pattern?: string | null;
+    /**
+     * Condition
+     */
+    condition?: string;
+    /**
+     * Status Code
+     */
+    status_code?: number;
+    /**
+     * Content Type
+     */
+    content_type?: string;
+    /**
+     * Headers
+     */
+    headers?: {
+        [key: string]: string;
+    };
+    /**
+     * Body
+     */
+    body?: string;
+    /**
+     * Delay Ms
+     */
+    delay_ms?: number;
+    /**
+     * Expires
+     */
+    expires?: string | null;
+    /**
+     * Note
+     */
+    note?: string | null;
+};
+
+/**
+ * RuleRecord
+ *
+ * A saved rule, with how many hits it answered.
+ */
+export type RuleRecord = {
+    /**
+     * Method
+     */
+    method: string | null;
+    /**
+     * Path Pattern
+     */
+    path_pattern: string | null;
+    /**
+     * Condition
+     */
+    condition: string;
+    /**
+     * Status Code
+     */
+    status_code: number;
+    /**
+     * Content Type
+     */
+    content_type: string;
+    /**
+     * Headers
+     */
+    headers: {
+        [key: string]: string;
+    };
+    /**
+     * Body
+     */
+    body: string;
+    /**
+     * Delay Ms
+     */
+    delay_ms: number;
+    /**
+     * Expires
+     */
+    expires: string | null;
+    /**
+     * Note
+     */
+    note: string | null;
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Position
+     */
+    position: number;
+    /**
+     * Updated
+     */
+    updated: string;
+    /**
+     * Hits
+     */
+    hits: number;
 };
 
 /**
@@ -1367,3 +1531,209 @@ export type ListAuditLogResponses = {
 };
 
 export type ListAuditLogResponse = ListAuditLogResponses[keyof ListAuditLogResponses];
+
+export type ListRulesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/rules';
+};
+
+export type ListRulesResponses = {
+    /**
+     * Response List Rules
+     *
+     * Successful Response
+     */
+    200: Array<RuleRecord>;
+};
+
+export type ListRulesResponse = ListRulesResponses[keyof ListRulesResponses];
+
+export type CreateRuleData = {
+    body: RuleForm;
+    path?: never;
+    query?: never;
+    url: '/admin/rules';
+};
+
+export type CreateRuleErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateRuleError = CreateRuleErrors[keyof CreateRuleErrors];
+
+export type CreateRuleResponses = {
+    /**
+     * Successful Response
+     */
+    200: NewRule;
+};
+
+export type CreateRuleResponse = CreateRuleResponses[keyof CreateRuleResponses];
+
+export type ListRuleMarkersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/rules/markers';
+};
+
+export type ListRuleMarkersResponses = {
+    /**
+     * Response List Rule Markers
+     *
+     * Successful Response
+     */
+    200: Array<Marker>;
+};
+
+export type ListRuleMarkersResponse = ListRuleMarkersResponses[keyof ListRuleMarkersResponses];
+
+export type GetRuleData = {
+    body?: never;
+    path: {
+        /**
+         * Rule Id
+         */
+        rule_id: number;
+    };
+    query?: never;
+    url: '/admin/rules/{rule_id}';
+};
+
+export type GetRuleErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRuleError = GetRuleErrors[keyof GetRuleErrors];
+
+export type GetRuleResponses = {
+    /**
+     * Successful Response
+     */
+    200: RuleRecord;
+};
+
+export type GetRuleResponse = GetRuleResponses[keyof GetRuleResponses];
+
+export type UpdateRuleData = {
+    body: RuleForm;
+    path: {
+        /**
+         * Rule Id
+         */
+        rule_id: number;
+    };
+    query?: never;
+    url: '/admin/rules/{rule_id}';
+};
+
+export type UpdateRuleErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateRuleError = UpdateRuleErrors[keyof UpdateRuleErrors];
+
+export type UpdateRuleResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type UpdateRuleResponse = UpdateRuleResponses[keyof UpdateRuleResponses];
+
+export type MoveRuleData = {
+    body: Move;
+    path: {
+        /**
+         * Rule Id
+         */
+        rule_id: number;
+    };
+    query?: never;
+    url: '/admin/rules/{rule_id}/move';
+};
+
+export type MoveRuleErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MoveRuleError = MoveRuleErrors[keyof MoveRuleErrors];
+
+export type MoveRuleResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type MoveRuleResponse = MoveRuleResponses[keyof MoveRuleResponses];
+
+export type RemoveRuleData = {
+    body?: never;
+    path: {
+        /**
+         * Rule Id
+         */
+        rule_id: number;
+    };
+    query?: never;
+    url: '/admin/rules/{rule_id}/remove';
+};
+
+export type RemoveRuleErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RemoveRuleError = RemoveRuleErrors[keyof RemoveRuleErrors];
+
+export type RemoveRuleResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type RemoveRuleResponse = RemoveRuleResponses[keyof RemoveRuleResponses];
+
+export type PreviewRuleData = {
+    body: PreviewRequest;
+    path?: never;
+    query?: never;
+    url: '/admin/rules/preview';
+};
+
+export type PreviewRuleErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PreviewRuleError = PreviewRuleErrors[keyof PreviewRuleErrors];
+
+export type PreviewRuleResponses = {
+    /**
+     * Successful Response
+     */
+    200: Preview;
+};
+
+export type PreviewRuleResponse = PreviewRuleResponses[keyof PreviewRuleResponses];

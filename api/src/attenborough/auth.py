@@ -206,7 +206,7 @@ async def audit(
 _bearer = HTTPBearer(auto_error=False)
 
 
-async def _current_admin(
+async def current_admin(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
     db_conn: DBConn,
 ) -> AdminSession:
@@ -222,7 +222,7 @@ async def _current_admin(
     )
 
 
-CurrentAdmin = Annotated[AdminSession, Depends(_current_admin)]
+CurrentAdmin = Annotated[AdminSession, Depends(current_admin)]
 
 
 @router.get("/google")
