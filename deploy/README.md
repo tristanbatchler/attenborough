@@ -68,7 +68,14 @@ Run from the repository's root on the host, e.g. `~/attenborough`, cloned from G
 
    The site makes the decoy nginx's `default_server` on ports 80 and 443: every request that matches no other site on this host now reaches the decoy, instead of the first site in `sites-enabled`. No other site may also claim `default_server`.
 
-6. **Build, migrate, start:**
+6. **The geolocation databases.** DB-IP's free City Lite and ASN Lite (CC BY 4.0), which the API reads from `/var/lib/attenborough/geoip`, mounted read-only (`../api/README.md`, "Geolocation"). The API refuses to start without them. Download them now, and every month from root's crontab, on the 3rd (DB-IP publishes at the start of the month); the script restarts the API to open the new ones:
+
+   ```sh
+   sudo sh deploy/update-geoip.sh
+   echo "0 6 3 * * root cd $PWD && sh deploy/update-geoip.sh" | sudo tee /etc/cron.d/attenborough-geoip
+   ```
+
+7. **Build, migrate, start:**
 
    ```sh
    docker compose build
@@ -76,7 +83,7 @@ Run from the repository's root on the host, e.g. `~/attenborough`, cloned from G
    docker compose up -d
    ```
 
-7. Run every check below.
+8. Run every check below.
 
 ## Updating
 
@@ -88,6 +95,8 @@ docker compose up -d
 ```
 
 Then run the checks. If `deploy/nginx/` changed, copy `decoy-proxy.conf` again and render and reload the site (step 5's `render` and the reload).
+
+**Turning geolocation on** (the release that added it): before `docker compose up -d`, set up the databases as in step 6, and after it, locate the addresses seen so far: `docker compose exec api python scripts/locate_ips.py`.
 
 ## Changing the decoy's domain
 

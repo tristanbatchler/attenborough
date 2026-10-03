@@ -6,4 +6,5 @@
 !src/attenborough
 !scripts/migrate.py
 !scripts/exhibit_latency.py
+!scripts/locate_ips.py
 **/__pycache__

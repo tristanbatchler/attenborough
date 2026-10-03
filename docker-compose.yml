@@ -52,8 +52,16 @@ services:
       # Only the decoy may name a visitor in X-Forwarded-For: its fixed address below. Never `*`,
       # never a range: web shares no network with the decoy, but must not be trusted either.
       FORWARDED_ALLOW_IPS: 10.89.1.10
+      GEOIP_DIRECTORY: /geoip
     volumes:
       - *postgres-socket
+      # DB-IP's geolocation databases, downloaded monthly by deploy/update-geoip.sh.
+      - type: bind
+        source: /var/lib/attenborough/geoip
+        target: /geoip
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       decoy:
       web:

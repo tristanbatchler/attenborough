@@ -20,8 +20,9 @@ FROM python:3.14-slim-bookworm
 
 WORKDIR /app
 COPY --from=build /app/.venv ./.venv
-# The scripts a deployment runs: `docker compose run --rm migrate`, and the latency check.
-COPY scripts/migrate.py scripts/exhibit_latency.py ./scripts/
+# The scripts a deployment runs: `docker compose run --rm migrate`, the latency check, and locating
+# the addresses seen before geolocation was set up.
+COPY scripts/migrate.py scripts/exhibit_latency.py scripts/locate_ips.py ./scripts/
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
