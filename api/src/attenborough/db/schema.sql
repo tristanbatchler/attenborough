@@ -16,8 +16,8 @@ CREATE TYPE decoy_type AS ENUM ('text', 'binary', 'trap');
 CREATE TYPE audit_action AS ENUM ('login', 'ban_created', 'ban_revoked', 'decoy_revoked', 'settings_changed');
 -- What a request was for, recorded with each hit; a router's tags carry its group (sqlc generates
 -- the RouterGroup enum the API uses). 'ingest' is the decoy app reporting its visitors' requests:
--- records, not visits, so it is never stored.
-CREATE TYPE router_group AS ENUM ('exhibit', 'system', 'honeypot', 'ingest');
+-- records, not visits, so it is never stored. 'admin' is the admin area (auth.py, admin.py).
+CREATE TYPE router_group AS ENUM ('exhibit', 'system', 'honeypot', 'ingest', 'admin');
 -- The kinds of event the exhibit lists (queries.sql, ListRecentEvents).
 CREATE TYPE event_kind AS ENUM (
     'hit', 'login_attempt', 'decoy_view', 'decoy_password_attempt', 'install_attempt'
@@ -38,8 +38,7 @@ CREATE TABLE users (
     email       CITEXT NOT NULL UNIQUE,
     name        TEXT NOT NULL, 
     created     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_login  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    is_admin    BOOLEAN NOT NULL DEFAULT FALSE
+    last_login  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE sessions (
@@ -61,12 +60,17 @@ CREATE TABLE oauth_states (
     code_verifier TEXT NOT NULL,
     created       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires       TIMESTAMPTZ NOT NULL,
-    ip_address    INET NOT NULL,
 
     CONSTRAINT chk_oauth_states_expiry CHECK (expires > created)
 );
 
 CREATE INDEX idx_oauth_states_expires ON oauth_states (expires);
+
+-- The app role may delete these two, and only these: a login's state is used once, logging out
+-- ends a session, and expired ones are pruned. PUBLIC rather than a role name (names are
+-- deployment settings): only roles with USAGE on the schema can reach them, which
+-- deploy/database.sql gives the app role alone.
+GRANT DELETE ON sessions, oauth_states TO PUBLIC;
 
 ------------------------------------------------------------------
 -- 2. DECOYS & EXHIBIT ARTIFACTS
@@ -134,6 +138,8 @@ CREATE TABLE telemetry_hits (
     body_size    INTEGER,
     status_code  INTEGER NOT NULL,
     occurred_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Whether the decoy refused the request because its address was banned (ingest.py, judge_visit).
+    banned       BOOLEAN NOT NULL DEFAULT FALSE,
 
     CONSTRAINT chk_telemetry_hits_body CHECK (
         (body IS NULL) = (body_size IS NULL) AND body_size >= octet_length(body)
@@ -284,7 +290,9 @@ CREATE TABLE ip_activity (
     -- The first and last honeypot request; NULL while there are none.
     first_seen_at    TIMESTAMPTZ,
     last_seen_at     TIMESTAMPTZ,
-    install_attempts BIGINT NOT NULL DEFAULT 0
+    install_attempts BIGINT NOT NULL DEFAULT 0,
+    -- Honeypot requests refused because the address was banned.
+    banned_requests  BIGINT NOT NULL DEFAULT 0
 );
 
 -- Each path an address requested, once, by the MD5 of the path as sent: paths can be longer than
@@ -304,13 +312,16 @@ BEGIN
     VALUES (NEW.ip_address, md5(NEW.path)::uuid)
     ON CONFLICT DO NOTHING;
     GET DIAGNOSTICS new_paths = ROW_COUNT;
-    INSERT INTO ip_activity AS a (ip_address, requests, distinct_paths, first_seen_at, last_seen_at)
-    VALUES (NEW.ip_address, 1, new_paths, NEW.occurred_at, NEW.occurred_at)
+    INSERT INTO ip_activity AS a (
+        ip_address, requests, distinct_paths, first_seen_at, last_seen_at, banned_requests
+    )
+    VALUES (NEW.ip_address, 1, new_paths, NEW.occurred_at, NEW.occurred_at, NEW.banned::INTEGER)
     ON CONFLICT (ip_address) DO UPDATE SET
         requests = a.requests + 1,
         distinct_paths = a.distinct_paths + EXCLUDED.distinct_paths,
         first_seen_at = LEAST(a.first_seen_at, EXCLUDED.first_seen_at),
-        last_seen_at = GREATEST(a.last_seen_at, EXCLUDED.last_seen_at);
+        last_seen_at = GREATEST(a.last_seen_at, EXCLUDED.last_seen_at),
+        banned_requests = a.banned_requests + EXCLUDED.banned_requests;
     RETURN NULL;
 END
 $$;

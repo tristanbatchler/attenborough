@@ -5,9 +5,9 @@ from http import HTTPMethod, HTTPStatus
 import pytest
 from fastapi.openapi.utils import get_openapi
 from httpx import ASGITransport, AsyncClient
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, JsonValue, ValidationError
 
-from attenborough import telemetry
+from attenborough import admin, auth, exhibit, telemetry
 from attenborough.db import queries
 from attenborough.db.enums import EventKind, RouterGroup
 from attenborough.db.ops import get_db_conn
@@ -88,6 +88,19 @@ async def recorded(
         ),
         # The decoy app's reports are records of other requests, never recorded themselves.
         (HTTPMethod.POST, "/ingest/hits", HTTPStatus.UNPROCESSABLE_ENTITY, None),
+        # Without a session, the admin area is a 404, like an unknown path, before any body is read.
+        *(
+            (method, path, HTTPStatus.NOT_FOUND, RouterGroup.ADMIN)
+            for method, path in [
+                (HTTPMethod.GET, "/auth/me"),
+                (HTTPMethod.POST, "/auth/logout"),
+                (HTTPMethod.GET, "/admin/bans"),
+                (HTTPMethod.GET, f"/admin/ip/{IP}/bans"),
+                (HTTPMethod.POST, f"/admin/ip/{IP}/bans"),
+                (HTTPMethod.POST, "/admin/bans/1/revoke"),
+                (HTTPMethod.GET, "/admin/audit"),
+            ]
+        ),
     ],
 )
 async def test_every_request_is_recorded_once_by_group(
@@ -108,6 +121,68 @@ async def test_every_request_is_recorded_once_by_group(
         else [RecordedHit(router_group=group, status_code=status, path=path)]
     )
     assert recorded == expected
+
+
+# The admin area's own models: none may be reachable from a public response.
+_ADMIN_MODELS = {
+    model.__name__
+    for model in (
+        admin.BanRecord,
+        admin.AuditEntry,
+        auth.Me,
+        auth.Session,
+        auth.GoogleLogin,
+    )
+}
+
+
+class _Operation(BaseModel):
+    responses: dict[str, JsonValue]
+
+
+class _Components(BaseModel):
+    schemas: dict[str, JsonValue]
+
+
+class _Spec(BaseModel):
+    """The parts of the OpenAPI document that say which models each route returns."""
+
+    paths: dict[str, dict[str, _Operation]]
+    components: _Components
+
+
+def _refs(schema: JsonValue) -> set[str]:
+    """The names of the models a piece of the OpenAPI document refers to."""
+    match schema:
+        case {"$ref": str(ref)}:
+            return {ref.rsplit("/", 1)[-1]}
+        case dict():
+            return {name for value in schema.values() for name in _refs(value)}
+        case list():
+            return {name for value in schema for name in _refs(value)}
+        case _:
+            return set()
+
+
+def test_no_public_response_reaches_admin_data():
+    spec = _Spec.model_validate(
+        get_openapi(title=app.title, version=app.version, routes=app.routes)
+    )
+    models = spec.components.schemas
+    pending = {
+        name
+        for path, operations in spec.paths.items()
+        if path.startswith(exhibit.router.prefix)
+        for operation in operations.values()
+        for name in _refs(operation.responses)
+    }
+    reached: set[str] = set()
+    while pending:
+        name = pending.pop()
+        reached.add(name)
+        pending |= _refs(models[name]) - reached
+    assert _ADMIN_MODELS <= set(models)
+    assert not reached & _ADMIN_MODELS
 
 
 def _event(n: int) -> queries.ListRecentEventsRow:

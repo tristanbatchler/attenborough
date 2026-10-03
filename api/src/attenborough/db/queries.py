@@ -10,6 +10,7 @@ __all__: collections.abc.Sequence[str] = (
     "CountCategoriesSinceRow",
     "CountRequestsPerHourSinceRow",
     "CreateCredentialStuffingAttemptRow",
+    "GetActiveIpBanRow",
     "GetDecoyPasswordAttemptsByIdsRow",
     "GetDecoyViewsByIdsRow",
     "GetHitRow",
@@ -20,6 +21,8 @@ __all__: collections.abc.Sequence[str] = (
     "GetObservationSpanRow",
     "GetPatternTotalsRow",
     "ListAppliedMigrationsRow",
+    "ListAuditLogRow",
+    "ListIpBansRow",
     "ListIpEventsRow",
     "ListMapPlacesRow",
     "ListRecentEventsRow",
@@ -32,6 +35,7 @@ __all__: collections.abc.Sequence[str] = (
     "TopPathsSinceRow",
     "TopUserAgentsSinceRow",
     "TopUsernamesSinceRow",
+    "UseSessionRow",
     "busiest_addresses",
     "categorise_path",
     "count_categories_since",
@@ -39,16 +43,21 @@ __all__: collections.abc.Sequence[str] = (
     "count_login_attempts_since",
     "count_requests_per_hour_since",
     "count_requests_since",
-    "create_active_ip_ban",
+    "create_audit_log_entry",
     "create_canary_token",
     "create_credential_stuffing_attempt",
     "create_decoy_password_attempt",
     "create_decoy_view",
     "create_install_attempt",
+    "create_ip_ban",
     "create_ip_location",
+    "create_o_auth_state",
     "create_public_schema",
+    "create_session",
     "create_telemetry_hit",
+    "delete_session",
     "drop_public_schema",
+    "get_active_ip_ban",
     "get_decoy_password_attempts_by_ids",
     "get_decoy_views_by_ids",
     "get_hit",
@@ -59,9 +68,11 @@ __all__: collections.abc.Sequence[str] = (
     "get_login_attempts_by_ids",
     "get_observation_span",
     "get_pattern_totals",
-    "get_user_by_session_token_hash",
+    "is_ip_banned",
     "list_applied_migrations",
+    "list_audit_log",
     "list_install_login_ids",
+    "list_ip_bans",
     "list_ip_events",
     "list_map_places",
     "list_paths_of",
@@ -69,9 +80,13 @@ __all__: collections.abc.Sequence[str] = (
     "list_toolkits",
     "list_unlocated_addresses",
     "longest_seen_addresses",
+    "prune_o_auth_states",
+    "prune_sessions",
     "record_migration",
+    "revoke_ip_ban",
     "seed_hits",
     "seed_login_attempts",
+    "take_o_auth_state",
     "top_countries",
     "top_networks",
     "top_passwords_since",
@@ -80,6 +95,7 @@ __all__: collections.abc.Sequence[str] = (
     "top_usernames_since",
     "upsert_decoy",
     "upsert_user",
+    "use_session",
 )
 
 import collections.abc
@@ -105,6 +121,47 @@ class CreateCredentialStuffingAttemptRow(pydantic.BaseModel):
 
     was_fake_success: bool
     known_account: bool
+
+
+class UseSessionRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    id_: int
+    email: str
+    name: str
+
+
+class ListAuditLogRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    id_: int
+    logged_at: datetime.datetime
+    email: str
+    action: enums.AuditAction
+    target_ip: str | None
+    details: str
+
+
+class GetActiveIpBanRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    added: datetime.datetime
+    expires: datetime.datetime | None
+
+
+class ListIpBansRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    id_: int
+    ip_address: str
+    added: datetime.datetime
+    expires: datetime.datetime | None
+    reason: str | None
+    added_by: str
+    revoked_at: datetime.datetime | None
+    revoked_by: str | None
+    revocation_reason: str | None
+    active: bool | None
 
 
 class ListRecentEventsRow(pydantic.BaseModel):
@@ -139,6 +196,7 @@ class GetHitsByIdsRow(pydantic.BaseModel):
     body_preview: memoryview
     body_size: int | None
     category: enums.PathCategory
+    banned: bool
 
 
 class GetLoginAttemptsByIdsRow(pydantic.BaseModel):
@@ -208,6 +266,7 @@ class GetHitRow(pydantic.BaseModel):
     body: memoryview | None
     body_size: int | None
     category: enums.PathCategory
+    banned: bool
 
 
 class GetIpActivityRow(pydantic.BaseModel):
@@ -219,6 +278,7 @@ class GetIpActivityRow(pydantic.BaseModel):
     install_attempts: int
     first_seen_at: datetime.datetime | None
     last_seen_at: datetime.datetime | None
+    banned_requests: int
 
 
 class GetPatternTotalsRow(pydantic.BaseModel):
@@ -354,34 +414,15 @@ class ListAppliedMigrationsRow(pydantic.BaseModel):
     sha256: str
 
 
-UPSERT_USER: typing.Final[typing.LiteralString] = """-- name: UpsertUser :one
-INSERT INTO users (google_sub, email, name, is_admin)
-VALUES (%(p1)s, %(p2)s, %(p3)s, %(p4)s)
-ON CONFLICT (google_sub)
-DO UPDATE SET
-    email = EXCLUDED.email,
-    name = EXCLUDED.name,
-    last_login = CURRENT_TIMESTAMP,
-    is_admin = EXCLUDED.is_admin
-RETURNING id, google_sub, email, name, created, last_login, is_admin
-"""
-
-GET_USER_BY_SESSION_TOKEN_HASH: typing.Final[typing.LiteralString] = """-- name: GetUserBySessionTokenHash :one
-SELECT 
-    u.id, u.google_sub, u.email, u.name, u.created, u.last_login, u.is_admin
-FROM users u
-INNER JOIN sessions s ON u.id = s.user_id
-WHERE s.token_hash = %(p1)s
-  AND s.expires > NOW()
-"""
-
 CREATE_TELEMETRY_HIT: typing.Final[typing.LiteralString] = """-- name: CreateTelemetryHit :exec
 INSERT INTO telemetry_hits (
-    ip_address, method, path, query, router_group, user_agent, headers, body, body_size, status_code
+    ip_address, method, path, query, router_group, user_agent, headers, body, body_size, status_code,
+    banned
 )
 VALUES (
     %(p1)s, %(p2)s, %(p3)s, %(p4)s, %(p5)s,
-    %(p6)s, %(p7)s, %(p8)s, %(p9)s, %(p10)s
+    %(p6)s, %(p7)s, %(p8)s, %(p9)s, %(p10)s,
+    %(p11)s
 )
 """
 
@@ -432,10 +473,118 @@ FROM credential_stuffing_attempts
 WHERE ip_address = %(p1)s::inet AND attempted_at >= %(p2)s::timestamptz
 """
 
-CREATE_ACTIVE_IP_BAN: typing.Final[typing.LiteralString] = """-- name: CreateActiveIpBan :one
-INSERT INTO ip_bans (ip_address, expires, reason, added_by_user_id)
+CREATE_O_AUTH_STATE: typing.Final[typing.LiteralString] = """-- name: CreateOAuthState :exec
+
+INSERT INTO oauth_states (state, code_verifier, expires)
+VALUES (%(p1)s, %(p2)s, %(p3)s)
+"""
+
+TAKE_O_AUTH_STATE: typing.Final[typing.LiteralString] = """-- name: TakeOAuthState :one
+DELETE FROM oauth_states
+WHERE state = %(p1)s AND expires > NOW()
+RETURNING code_verifier
+"""
+
+PRUNE_O_AUTH_STATES: typing.Final[typing.LiteralString] = """-- name: PruneOAuthStates :exec
+DELETE FROM oauth_states WHERE expires <= NOW()
+"""
+
+UPSERT_USER: typing.Final[typing.LiteralString] = """-- name: UpsertUser :one
+INSERT INTO users (google_sub, email, name)
+VALUES (%(p1)s, %(p2)s, %(p3)s)
+ON CONFLICT (email)
+DO UPDATE SET
+    google_sub = EXCLUDED.google_sub,
+    name = EXCLUDED.name,
+    last_login = CURRENT_TIMESTAMP
+RETURNING id
+"""
+
+CREATE_SESSION: typing.Final[typing.LiteralString] = """-- name: CreateSession :exec
+INSERT INTO sessions (user_id, token_hash, expires)
+VALUES (%(p1)s, %(p2)s, %(p3)s)
+"""
+
+USE_SESSION: typing.Final[typing.LiteralString] = """-- name: UseSession :one
+UPDATE sessions s SET last_used = NOW()
+FROM users u
+WHERE s.token_hash = %(p1)s AND s.expires > NOW() AND u.id = s.user_id
+RETURNING u.id, u.email, u.name
+"""
+
+DELETE_SESSION: typing.Final[typing.LiteralString] = """-- name: DeleteSession :exec
+DELETE FROM sessions WHERE token_hash = %(p1)s
+"""
+
+PRUNE_SESSIONS: typing.Final[typing.LiteralString] = """-- name: PruneSessions :exec
+DELETE FROM sessions WHERE expires <= NOW()
+"""
+
+CREATE_AUDIT_LOG_ENTRY: typing.Final[typing.LiteralString] = """-- name: CreateAuditLogEntry :exec
+INSERT INTO admin_audit_log (user_id, action, target_ip, details)
 VALUES (%(p1)s, %(p2)s, %(p3)s, %(p4)s)
-RETURNING id, ip_address, added, expires, reason, added_by_user_id, revoked_at, revoked_by_user_id, revocation_reason
+"""
+
+LIST_AUDIT_LOG: typing.Final[typing.LiteralString] = """-- name: ListAuditLog :many
+SELECT l.id, l.logged_at, u.email, l.action, l.target_ip, l.details::TEXT AS details
+FROM admin_audit_log l
+JOIN users u ON u.id = l.user_id
+ORDER BY l.logged_at DESC, l.id DESC
+LIMIT %(p1)s
+"""
+
+IS_IP_BANNED: typing.Final[typing.LiteralString] = """-- name: IsIpBanned :one
+
+SELECT EXISTS (
+    SELECT 1 FROM ip_bans
+    WHERE ip_address = %(p1)s::inet
+      AND revoked_at IS NULL AND (expires IS NULL OR expires > NOW())
+) AS banned
+"""
+
+CREATE_IP_BAN: typing.Final[typing.LiteralString] = """-- name: CreateIpBan :one
+INSERT INTO ip_bans (ip_address, expires, reason, added_by_user_id)
+SELECT %(p1)s::inet, %(p2)s, %(p3)s, %(p4)s
+WHERE NOT EXISTS (
+    SELECT 1 FROM ip_bans
+    WHERE ip_address = %(p1)s::inet
+      AND revoked_at IS NULL AND (expires IS NULL OR expires > NOW())
+)
+RETURNING id
+"""
+
+REVOKE_IP_BAN: typing.Final[typing.LiteralString] = """-- name: RevokeIpBan :one
+UPDATE ip_bans
+SET revoked_at = NOW(), revoked_by_user_id = %(p1)s,
+    revocation_reason = %(p2)s
+WHERE id = %(p3)s
+  AND revoked_at IS NULL AND (expires IS NULL OR expires > NOW())
+RETURNING ip_address
+"""
+
+GET_ACTIVE_IP_BAN: typing.Final[typing.LiteralString] = """-- name: GetActiveIpBan :one
+SELECT added, expires
+FROM ip_bans
+WHERE ip_address = %(p1)s::inet
+  AND revoked_at IS NULL AND (expires IS NULL OR expires > NOW())
+ORDER BY added
+LIMIT 1
+"""
+
+LIST_IP_BANS: typing.Final[typing.LiteralString] = """-- name: ListIpBans :many
+SELECT
+    b.id, b.ip_address, b.added, b.expires, b.reason, a.email AS added_by, b.revoked_at,
+    r.email AS revoked_by, b.revocation_reason,
+    b.revoked_at IS NULL AND (b.expires IS NULL OR b.expires > NOW()) AS active
+FROM ip_bans b
+JOIN users a ON a.id = b.added_by_user_id
+LEFT JOIN users r ON r.id = b.revoked_by_user_id
+WHERE CASE
+    WHEN %(p1)s::inet IS NULL
+        THEN b.revoked_at IS NULL AND (b.expires IS NULL OR b.expires > NOW())
+    ELSE b.ip_address = %(p1)s::inet
+END
+ORDER BY b.added DESC, b.id DESC
 """
 
 LIST_RECENT_EVENTS: typing.Final[typing.LiteralString] = """-- name: ListRecentEvents :many
@@ -524,7 +673,7 @@ GET_HITS_BY_IDS: typing.Final[typing.LiteralString] = """-- name: GetHitsByIds :
 SELECT
     id, ip_address, occurred_at, method, path, query, status_code, user_agent,
     COALESCE(substring(body FROM 1 FOR 1024), ''::BYTEA)::BYTEA AS body_preview, body_size,
-    path_category(path) AS category
+    path_category(path) AS category, banned
 FROM telemetry_hits
 WHERE id = ANY(%(p1)s::BIGINT[])
 """
@@ -577,7 +726,7 @@ WHERE dpa.id = ANY(%(p1)s::BIGINT[])
 GET_HIT: typing.Final[typing.LiteralString] = """-- name: GetHit :one
 SELECT
     id, ip_address, occurred_at, method, path, query, status_code, user_agent,
-    headers::TEXT AS headers, body, body_size, path_category(path) AS category
+    headers::TEXT AS headers, body, body_size, path_category(path) AS category, banned
 FROM telemetry_hits
 WHERE id = %(p1)s AND router_group = %(p2)s
 """
@@ -587,7 +736,9 @@ SELECT path_category(%(p1)s::TEXT) AS category
 """
 
 GET_IP_ACTIVITY: typing.Final[typing.LiteralString] = """-- name: GetIpActivity :one
-SELECT requests, distinct_paths, login_attempts, install_attempts, first_seen_at, last_seen_at
+SELECT
+    requests, distinct_paths, login_attempts, install_attempts, first_seen_at, last_seen_at,
+    banned_requests
 FROM ip_activity
 WHERE ip_address = %(p1)s::inet
 """
@@ -914,22 +1065,8 @@ class QueryResults[T]:
         return self._decode_hook(record)
 
 
-async def upsert_user(conn: ConnectionLike, *, google_sub: str, email: str, name: str, is_admin: bool) -> models.User | None:
-    row = await (await conn.execute(UPSERT_USER, {"p1": google_sub, "p2": email, "p3": name, "p4": is_admin})).fetchone()
-    if row is None:
-        return None
-    return models.User(id_=row[0], google_sub=row[1], email=row[2], name=row[3], created=row[4], last_login=row[5], is_admin=row[6])
-
-
-async def get_user_by_session_token_hash(conn: ConnectionLike, *, token_hash: str) -> models.User | None:
-    row = await (await conn.execute(GET_USER_BY_SESSION_TOKEN_HASH, {"p1": token_hash})).fetchone()
-    if row is None:
-        return None
-    return models.User(id_=row[0], google_sub=row[1], email=row[2], name=row[3], created=row[4], last_login=row[5], is_admin=row[6])
-
-
-async def create_telemetry_hit(conn: ConnectionLike, *, ip_address: str, method: str, path: str, query: str | None, router_group: enums.RouterGroup, user_agent: str | None, headers: str, body: memoryview | None, body_size: int | None, status_code: int) -> None:
-    await conn.execute(CREATE_TELEMETRY_HIT, {"p1": ip_address, "p2": method, "p3": path, "p4": query, "p5": router_group, "p6": user_agent, "p7": headers, "p8": body, "p9": body_size, "p10": status_code})
+async def create_telemetry_hit(conn: ConnectionLike, *, ip_address: str, method: str, path: str, query: str | None, router_group: enums.RouterGroup, user_agent: str | None, headers: str, body: memoryview | None, body_size: int | None, status_code: int, banned: bool) -> None:
+    await conn.execute(CREATE_TELEMETRY_HIT, {"p1": ip_address, "p2": method, "p3": path, "p4": query, "p5": router_group, "p6": user_agent, "p7": headers, "p8": body, "p9": body_size, "p10": status_code, "p11": banned})
 
 
 async def create_credential_stuffing_attempt(conn: ConnectionLike, *, ip_address: str, endpoint_path: str, username: str, password: str) -> CreateCredentialStuffingAttemptRow | None:
@@ -957,11 +1094,91 @@ async def count_login_attempts_since(conn: ConnectionLike, *, ip_address: str, s
     return row[0]
 
 
-async def create_active_ip_ban(conn: ConnectionLike, *, ip_address: str, expires: datetime.datetime | None, reason: str | None, added_by_user_id: int) -> models.IpBan | None:
-    row = await (await conn.execute(CREATE_ACTIVE_IP_BAN, {"p1": ip_address, "p2": expires, "p3": reason, "p4": added_by_user_id})).fetchone()
+async def create_o_auth_state(conn: ConnectionLike, *, state: str, code_verifier: str, expires: datetime.datetime) -> None:
+    await conn.execute(CREATE_O_AUTH_STATE, {"p1": state, "p2": code_verifier, "p3": expires})
+
+
+async def take_o_auth_state(conn: ConnectionLike, *, state: str) -> str | None:
+    row = await (await conn.execute(TAKE_O_AUTH_STATE, {"p1": state})).fetchone()
     if row is None:
         return None
-    return models.IpBan(id_=row[0], ip_address=str(row[1]), added=row[2], expires=row[3], reason=row[4], added_by_user_id=row[5], revoked_at=row[6], revoked_by_user_id=row[7], revocation_reason=row[8])
+    return row[0]
+
+
+async def prune_o_auth_states(conn: ConnectionLike) -> None:
+    await conn.execute(PRUNE_O_AUTH_STATES)
+
+
+async def upsert_user(conn: ConnectionLike, *, google_sub: str, email: str, name: str) -> int | None:
+    row = await (await conn.execute(UPSERT_USER, {"p1": google_sub, "p2": email, "p3": name})).fetchone()
+    if row is None:
+        return None
+    return row[0]
+
+
+async def create_session(conn: ConnectionLike, *, user_id: int, token_hash: str, expires: datetime.datetime) -> None:
+    await conn.execute(CREATE_SESSION, {"p1": user_id, "p2": token_hash, "p3": expires})
+
+
+async def use_session(conn: ConnectionLike, *, token_hash: str) -> UseSessionRow | None:
+    row = await (await conn.execute(USE_SESSION, {"p1": token_hash})).fetchone()
+    if row is None:
+        return None
+    return UseSessionRow(id_=row[0], email=row[1], name=row[2])
+
+
+async def delete_session(conn: ConnectionLike, *, token_hash: str) -> None:
+    await conn.execute(DELETE_SESSION, {"p1": token_hash})
+
+
+async def prune_sessions(conn: ConnectionLike) -> None:
+    await conn.execute(PRUNE_SESSIONS)
+
+
+async def create_audit_log_entry(conn: ConnectionLike, *, user_id: int, action: enums.AuditAction, target_ip: str | None, details: str) -> None:
+    await conn.execute(CREATE_AUDIT_LOG_ENTRY, {"p1": user_id, "p2": action, "p3": target_ip, "p4": details})
+
+
+def list_audit_log(conn: ConnectionLike, *, limit_: int) -> QueryResults[ListAuditLogRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> ListAuditLogRow:
+        return ListAuditLogRow(id_=row[0], logged_at=row[1], email=row[2], action=enums.AuditAction(row[3]), target_ip=str(row[4]) if row[4] is not None else None, details=row[5])
+
+    return QueryResults(conn, LIST_AUDIT_LOG, _decode_hook, {"p1": limit_})
+
+
+async def is_ip_banned(conn: ConnectionLike, *, ip_address: str) -> bool | None:
+    row = await (await conn.execute(IS_IP_BANNED, {"p1": ip_address})).fetchone()
+    if row is None:
+        return None
+    return row[0]
+
+
+async def create_ip_ban(conn: ConnectionLike, *, ip_address: str, expires: datetime.datetime | None, reason: str | None, added_by_user_id: int) -> int | None:
+    row = await (await conn.execute(CREATE_IP_BAN, {"p1": ip_address, "p2": expires, "p3": reason, "p4": added_by_user_id})).fetchone()
+    if row is None:
+        return None
+    return row[0]
+
+
+async def revoke_ip_ban(conn: ConnectionLike, *, revoked_by_user_id: int | None, revocation_reason: str | None, id_: int) -> str | None:
+    row = await (await conn.execute(REVOKE_IP_BAN, {"p1": revoked_by_user_id, "p2": revocation_reason, "p3": id_})).fetchone()
+    if row is None:
+        return None
+    return str(row[0])
+
+
+async def get_active_ip_ban(conn: ConnectionLike, *, ip_address: str) -> GetActiveIpBanRow | None:
+    row = await (await conn.execute(GET_ACTIVE_IP_BAN, {"p1": ip_address})).fetchone()
+    if row is None:
+        return None
+    return GetActiveIpBanRow(added=row[0], expires=row[1])
+
+
+def list_ip_bans(conn: ConnectionLike, *, ip_address: str | None) -> QueryResults[ListIpBansRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> ListIpBansRow:
+        return ListIpBansRow(id_=row[0], ip_address=str(row[1]), added=row[2], expires=row[3], reason=row[4], added_by=row[5], revoked_at=row[6], revoked_by=row[7], revocation_reason=row[8], active=row[9])
+
+    return QueryResults(conn, LIST_IP_BANS, _decode_hook, {"p1": ip_address})
 
 
 def list_recent_events(conn: ConnectionLike, *, before_at: datetime.datetime, before_kind: enums.EventKind, before_id: int, limit: int) -> QueryResults[ListRecentEventsRow]:
@@ -980,7 +1197,7 @@ def list_ip_events(conn: ConnectionLike, *, ip_address: str, before_at: datetime
 
 def get_hits_by_ids(conn: ConnectionLike, *, ids: collections.abc.Sequence[int]) -> QueryResults[GetHitsByIdsRow]:
     def _decode_hook(row: psycopg.rows.TupleRow) -> GetHitsByIdsRow:
-        return GetHitsByIdsRow(id_=row[0], ip_address=str(row[1]), occurred_at=row[2], method=row[3], path=row[4], query=row[5], status_code=row[6], user_agent=row[7], body_preview=memoryview(row[8]), body_size=row[9], category=enums.PathCategory(row[10]))
+        return GetHitsByIdsRow(id_=row[0], ip_address=str(row[1]), occurred_at=row[2], method=row[3], path=row[4], query=row[5], status_code=row[6], user_agent=row[7], body_preview=memoryview(row[8]), body_size=row[9], category=enums.PathCategory(row[10]), banned=row[11])
 
     return QueryResults(conn, GET_HITS_BY_IDS, _decode_hook, {"p1": list(ids)})
 
@@ -1042,7 +1259,7 @@ async def get_hit(conn: ConnectionLike, *, id_: int, router_group: enums.RouterG
     row = await (await conn.execute(GET_HIT, {"p1": id_, "p2": router_group})).fetchone()
     if row is None:
         return None
-    return GetHitRow(id_=row[0], ip_address=str(row[1]), occurred_at=row[2], method=row[3], path=row[4], query=row[5], status_code=row[6], user_agent=row[7], headers=row[8], body=memoryview(row[9]) if row[9] is not None else None, body_size=row[10], category=enums.PathCategory(row[11]))
+    return GetHitRow(id_=row[0], ip_address=str(row[1]), occurred_at=row[2], method=row[3], path=row[4], query=row[5], status_code=row[6], user_agent=row[7], headers=row[8], body=memoryview(row[9]) if row[9] is not None else None, body_size=row[10], category=enums.PathCategory(row[11]), banned=row[12])
 
 
 async def categorise_path(conn: ConnectionLike, *, path: str) -> enums.PathCategory | None:
@@ -1056,7 +1273,7 @@ async def get_ip_activity(conn: ConnectionLike, *, ip_address: str) -> GetIpActi
     row = await (await conn.execute(GET_IP_ACTIVITY, {"p1": ip_address})).fetchone()
     if row is None:
         return None
-    return GetIpActivityRow(requests=row[0], distinct_paths=row[1], login_attempts=row[2], install_attempts=row[3], first_seen_at=row[4], last_seen_at=row[5])
+    return GetIpActivityRow(requests=row[0], distinct_paths=row[1], login_attempts=row[2], install_attempts=row[3], first_seen_at=row[4], last_seen_at=row[5], banned_requests=row[6])
 
 
 async def create_ip_location(conn: ConnectionLike, *, ip_address: str, country_code: str | None, city: str | None, latitude: float | None, longitude: float | None, asn: int | None, as_organisation: str | None, source: str) -> None:

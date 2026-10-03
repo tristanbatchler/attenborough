@@ -1,5 +1,6 @@
-"""Where the decoy app (decoy/) reports its visitors: every request it served, and every login
-attempt and WordPress install, whose outcomes are decided here. Everything in a report is attacker-controlled: it is bounded
+"""Where the decoy app (decoy/) asks whether to serve a visitor at all, and reports its visitors:
+every request it served, and every login attempt and WordPress install, whose outcomes are decided
+here. Everything in a report is attacker-controlled: it is bounded
 here and recorded as data, never interpreted.
 
 A report names its visitor in X-Forwarded-For, which only counts because the decoy app's address is
@@ -74,6 +75,15 @@ class DecoyHit(BaseModel):
     # couldn't read it (over its BODY_SIZE_LIMIT): not captured, which is not the same as empty.
     body: Annotated[Base64Bytes, Field(max_length=_MAX_BODY_BYTES)] | None
     status_code: int = Field(ge=_MIN_STATUS, le=_MAX_STATUS)
+    # Whether the decoy refused the request because the address is banned (judge_visit).
+    banned: bool
+
+
+class VisitVerdict(BaseModel):
+    """Whether the decoy should serve a visitor."""
+
+    # Banned (admin.py): the decoy refuses it, and still reports the request.
+    banned: bool
 
 
 class LoginAttempt(BaseModel):
@@ -127,6 +137,14 @@ class Canary(BaseModel):
     secret: str
 
 
+@router.post("/visits")
+async def judge_visit(db_conn: DBConn, origin: RequestOrigin) -> VisitVerdict:
+    """Asked before the decoy serves each request: one lookup in the active-bans index, never
+    cached, so a ban or its end applies to the very next request."""
+    banned = await queries.is_ip_banned(db_conn, ip_address=str(origin))
+    return VisitVerdict(banned=banned is True)
+
+
 @router.post("/hits", status_code=HTTP_204_NO_CONTENT)
 async def report_hit(
     hit: DecoyHit, origin: RequestOrigin, background_tasks: BackgroundTasks
@@ -145,6 +163,7 @@ async def report_hit(
         headers=hit.headers,
         body=hit.body,
         status_code=hit.status_code,
+        banned=hit.banned,
     )
 
 

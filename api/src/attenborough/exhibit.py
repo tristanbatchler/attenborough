@@ -124,12 +124,13 @@ async def get_ip_events(
 
 @router.get("/ip/{ip_addr}/summary")
 async def get_ip_summary(ip_addr: IPvAnyAddress, db_conn: DBConn) -> IpSummary:
-    """What one IP address did, in numbers, and where it is."""
+    """What one IP address did, in numbers, where it is, and whether it is banned."""
     address = str(ip_addr)
     locations = await fetch_locations(db_conn, [address])
     return ip_summary(
         await queries.get_ip_activity(db_conn, ip_address=address),
         locations.get(address),
+        await queries.get_active_ip_ban(db_conn, ip_address=address),
     )
 
 

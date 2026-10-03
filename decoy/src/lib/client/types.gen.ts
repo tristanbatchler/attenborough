@@ -60,6 +60,10 @@ export type DecoyHit = {
      * Status Code
      */
     status_code: number;
+    /**
+     * Banned
+     */
+    banned: boolean;
 };
 
 /**
@@ -181,6 +185,34 @@ export type ValidationError = {
         [key: string]: unknown;
     };
 };
+
+/**
+ * VisitVerdict
+ *
+ * Whether the decoy should serve a visitor.
+ */
+export type VisitVerdict = {
+    /**
+     * Banned
+     */
+    banned: boolean;
+};
+
+export type JudgeVisitData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/ingest/visits';
+};
+
+export type JudgeVisitResponses = {
+    /**
+     * Successful Response
+     */
+    200: VisitVerdict;
+};
+
+export type JudgeVisitResponse = JudgeVisitResponses[keyof JudgeVisitResponses];
 
 export type ReportHitData = {
     body: DecoyHit;

@@ -51,6 +51,7 @@ def hit(
             "headers": headers or {},
             "body": body,
             "status_code": status_code,
+            "banned": False,
         }
     )
 

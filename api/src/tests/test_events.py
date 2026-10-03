@@ -59,6 +59,7 @@ def hit_row(body_preview: bytes, body_size: int | None) -> queries.GetHitsByIdsR
         body_preview=memoryview(body_preview),
         body_size=body_size,
         category=PathCategory.WORDPRESS,
+        banned=False,
     )
 
 
@@ -103,6 +104,7 @@ def test_a_hit_maps_every_field():
         body_preview="x",
         body_size=1,
         category=PathCategory.WORDPRESS,
+        banned=False,
         body_truncated=False,
     )
 
@@ -122,6 +124,7 @@ def test_a_hit_detail_has_its_headers_and_whole_body():
             body=memoryview(b"\xff" * 2000),
             body_size=2000,
             category=PathCategory.WORDPRESS,
+            banned=False,
         )
     )
     assert detail.headers == {"host": "example.com", "x-evil": "<script>"}
@@ -306,8 +309,15 @@ def test_events_keep_the_page_order_when_kinds_interleave():
 
 
 def test_an_address_with_no_activity_has_an_empty_summary():
-    summary = ip_summary(None, None)
-    assert (summary.requests, summary.first_seen_at) == (0, None)
+    summary = ip_summary(None, None, None)
+    assert (summary.requests, summary.first_seen_at, summary.ban) == (0, None, None)
+
+
+def test_a_ban_shows_only_its_dates():
+    ban = queries.GetActiveIpBanRow(added=AT, expires=None)
+    summary = ip_summary(None, None, ban)
+    assert summary.ban is not None
+    assert summary.ban.model_dump() == {"since": AT, "until": None}
 
 
 HIDDEN_NAME = "secret.example.org"
@@ -359,6 +369,7 @@ def test_every_text_a_visitor_sent_is_hidden_in(monkeypatch: pytest.MonkeyPatch)
             body=memoryview(host.encode()),
             body_size=len(host),
             category=PathCategory.OTHER,
+            banned=False,
         )
     )
     assert host not in hidden.model_dump_json()

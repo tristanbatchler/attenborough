@@ -43,6 +43,7 @@ async def record_hit(
     headers: Mapping[str, str],
     body: bytes | None,
     status_code: int,
+    banned: bool,
 ) -> None:
     """Record one request, with `path` and `query` exactly as sent and the whole `body` (None if it
     wasn't captured); only its first MAX_STORED_BODY_BYTES are stored. A visitor's address is
@@ -63,6 +64,7 @@ async def record_hit(
                 body=None if body is None else memoryview(body[:MAX_STORED_BODY_BYTES]),
                 body_size=None if body is None else len(body),
                 status_code=status_code,
+                banned=banned,
             )
             # Only visitors are located: the exhibit's own requests come from its web server.
             if router_group is RouterGroup.HONEYPOT:
@@ -128,6 +130,8 @@ async def _record_served_hit(
         # The API serves its own routes without capturing bodies.
         body=None,
         status_code=status_code,
+        # Bans apply to the decoy's visitors (ingest.py, judge_visit), never to the API's own.
+        banned=False,
     )
 
 

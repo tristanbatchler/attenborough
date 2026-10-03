@@ -86,6 +86,8 @@ class Hit(BaseModel):
     body_size: int | None
     # What the path was after: a guess from the path alone (schema.sql, path_category).
     category: PathCategory
+    # Whether the decoy refused it because the address was banned.
+    banned: bool
 
 
 class HitEvent(Hit):
@@ -261,6 +263,14 @@ class Takeover(BaseModel):
     locations: dict[str, IpLocation]
 
 
+class Ban(BaseModel):
+    """An address's active ban, as the public sees it: when, never why or by whom."""
+
+    since: datetime
+    # Null when it doesn't expire.
+    until: datetime | None
+
+
 class IpSummary(BaseModel):
     """What one IP address did, in numbers. The times are null when it sent no requests."""
 
@@ -268,10 +278,14 @@ class IpSummary(BaseModel):
     distinct_paths: int
     login_attempts: int
     install_attempts: int
+    # Requests refused because the address was banned, at any time.
+    banned_requests: int
     first_seen_at: datetime | None
     last_seen_at: datetime | None
     # Null when the address was never located.
     location: IpLocation | None
+    # Null when it isn't banned now.
+    ban: Ban | None
 
 
 _headers = TypeAdapter(dict[str, str])
@@ -300,6 +314,7 @@ def hit_event(row: queries.GetHitsByIdsRow) -> HitEvent:
         user_agent=_hide_optional(row.user_agent),
         body_size=row.body_size,
         category=row.category,
+        banned=row.banned,
         # The query gives an empty preview when no body was captured; body_size tells them apart.
         body_preview=None
         if row.body_size is None
@@ -321,6 +336,7 @@ def hit_detail(row: queries.GetHitRow) -> HitDetail:
         user_agent=_hide_optional(row.user_agent),
         body_size=row.body_size,
         category=row.category,
+        banned=row.banned,
         headers={
             hide_honeypot(name): hide_honeypot(value)
             for name, value in _headers.validate_json(row.headers).items()
@@ -424,27 +440,34 @@ async def fetch_locations(
 
 
 def ip_summary(
-    row: queries.GetIpActivityRow | None, location: IpLocation | None
+    row: queries.GetIpActivityRow | None,
+    location: IpLocation | None,
+    ban: queries.GetActiveIpBanRow | None,
 ) -> IpSummary:
-    """`row` is None for an address that did nothing."""
+    """`row` is None for an address that did nothing, `ban` for one that isn't banned."""
+    public_ban = None if ban is None else Ban(since=ban.added, until=ban.expires)
     if row is None:
         return IpSummary(
             requests=0,
             distinct_paths=0,
             login_attempts=0,
             install_attempts=0,
+            banned_requests=0,
             first_seen_at=None,
             last_seen_at=None,
             location=location,
+            ban=public_ban,
         )
     return IpSummary(
         requests=row.requests,
         distinct_paths=row.distinct_paths,
         login_attempts=row.login_attempts,
         install_attempts=row.install_attempts,
+        banned_requests=row.banned_requests,
         first_seen_at=row.first_seen_at,
         last_seen_at=row.last_seen_at,
         location=location,
+        ban=public_ban,
     )
 
 

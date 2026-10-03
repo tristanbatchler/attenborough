@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, ClassVar, Self, cast
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_core import PydanticUndefined
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
@@ -21,16 +21,21 @@ example_settings_path = app_directory / ".example.env"
 SOURCE_CHECKOUT = (app_directory / "pyproject.toml").is_file()
 
 _HONEYPOT_ADDRESSES = "HONEYPOT_ADDRESSES"
+_ADMIN_EMAILS = "ADMIN_EMAILS"
 _LIST_SEPARATOR = ","
 
 
 class _Settings(BaseSettings):
-    @field_validator(_HONEYPOT_ADDRESSES, mode="before")
+    @field_validator(_HONEYPOT_ADDRESSES, _ADMIN_EMAILS, mode="before")
     @classmethod
-    def split_honeypot_addresses(cls, v: object) -> object:
-        """A comma-separated string from the environment; the names are matched ignoring case."""
+    def split_list(cls, v: object) -> object:
+        """A comma-separated string from the environment; both lists are matched ignoring case."""
         if isinstance(v, str):
-            return [name.strip() for name in v.split(_LIST_SEPARATOR) if name.strip()]
+            return [
+                item.strip().lower()
+                for item in v.split(_LIST_SEPARATOR)
+                if item.strip()
+            ]
         return v
 
     @model_validator(mode="after")
@@ -69,6 +74,19 @@ class _Settings(BaseSettings):
     # The directory holding DB-IP's free Lite databases, dbip-city-lite.mmdb and dbip-asn-lite.mmdb
     # (geolocation.py; deploy/update-geoip.sh downloads them). Unset, no address is located.
     GEOIP_DIRECTORY: Path | None = Field(default=None)
+    # The exhibit's public URL, without a trailing slash. Google sends the admin back to its
+    # /auth/google/callback, which must be listed in the OAuth client (Google Cloud Console).
+    WEB_BASE_URL: str = Field(default=...)
+    # The Google OAuth client (a "Web application") the admin logs in with.
+    GOOGLE_CLIENT_ID: str = Field(default=...)
+    GOOGLE_CLIENT_SECRET: SecretStr = Field(default=...)
+    # The only Google accounts that may log in, comma-separated. Checked on every request, so
+    # removing one ends its sessions.
+    ADMIN_EMAILS: Annotated[list[str], NoDecode] = Field(default=..., min_length=1)
+    SESSION_DURATION_DAYS: int = Field(default=30, ge=1)
+    # A unix socket through which nginx forwards to Google's token endpoint, for a deployment whose
+    # API has no route out (deploy/nginx/attenborough.conf). Unset, the API calls Google directly.
+    GOOGLE_TOKEN_SOCKET: Path | None = Field(default=None)
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_file=settings_path,

@@ -1,29 +1,12 @@
--- name: UpsertUser :one
-INSERT INTO users (google_sub, email, name, is_admin)
-VALUES (sqlc.arg(google_sub), sqlc.arg(email), sqlc.arg(name), sqlc.arg(is_admin))
-ON CONFLICT (google_sub)
-DO UPDATE SET
-    email = EXCLUDED.email,
-    name = EXCLUDED.name,
-    last_login = CURRENT_TIMESTAMP,
-    is_admin = EXCLUDED.is_admin
-RETURNING *;
-
--- name: GetUserBySessionTokenHash :one
-SELECT 
-    u.id, u.google_sub, u.email, u.name, u.created, u.last_login, u.is_admin
-FROM users u
-INNER JOIN sessions s ON u.id = s.user_id
-WHERE s.token_hash = sqlc.arg(token_hash)
-  AND s.expires > NOW();
-
 -- name: CreateTelemetryHit :exec
 INSERT INTO telemetry_hits (
-    ip_address, method, path, query, router_group, user_agent, headers, body, body_size, status_code
+    ip_address, method, path, query, router_group, user_agent, headers, body, body_size, status_code,
+    banned
 )
 VALUES (
     sqlc.arg(ip_address), sqlc.arg(method), sqlc.arg(path), sqlc.narg(query), sqlc.arg(router_group),
-    sqlc.arg(user_agent), sqlc.arg(headers), sqlc.narg(body), sqlc.narg(body_size), sqlc.arg(status_code)
+    sqlc.arg(user_agent), sqlc.arg(headers), sqlc.narg(body), sqlc.narg(body_size), sqlc.arg(status_code),
+    sqlc.arg(banned)
 );
 
 -- A login attempt, linked to the canary its password was, if it was one, and to the latest install
@@ -75,10 +58,119 @@ SELECT count(*) AS attempts
 FROM credential_stuffing_attempts
 WHERE ip_address = sqlc.arg(ip_address)::inet AND attempted_at >= sqlc.arg(since)::timestamptz;
 
--- name: CreateActiveIpBan :one
+-- The admin login (auth.py) ------------------------------------------------------------------
+
+-- A Google login in progress: the state it was sent with and its PKCE verifier.
+-- name: CreateOAuthState :exec
+INSERT INTO oauth_states (state, code_verifier, expires)
+VALUES (sqlc.arg(state), sqlc.arg(code_verifier), sqlc.arg(expires));
+
+-- A login's state, used once: deleted as it is read, so a replayed callback finds nothing.
+-- name: TakeOAuthState :one
+DELETE FROM oauth_states
+WHERE state = sqlc.arg(state) AND expires > NOW()
+RETURNING code_verifier;
+
+-- name: PruneOAuthStates :exec
+DELETE FROM oauth_states WHERE expires <= NOW();
+
+-- An admin is their email, the identity ADMIN_EMAILS authorises: the Google account behind it is
+-- recorded, and replaced if the email moves to another.
+-- name: UpsertUser :one
+INSERT INTO users (google_sub, email, name)
+VALUES (sqlc.arg(google_sub), sqlc.arg(email), sqlc.arg(name))
+ON CONFLICT (email)
+DO UPDATE SET
+    google_sub = EXCLUDED.google_sub,
+    name = EXCLUDED.name,
+    last_login = CURRENT_TIMESTAMP
+RETURNING id;
+
+-- The session's token is stored only as its SHA-256.
+-- name: CreateSession :exec
+INSERT INTO sessions (user_id, token_hash, expires)
+VALUES (sqlc.arg(user_id), sqlc.arg(token_hash), sqlc.arg(expires));
+
+-- The user of an unexpired session, marking the session used.
+-- name: UseSession :one
+UPDATE sessions s SET last_used = NOW()
+FROM users u
+WHERE s.token_hash = sqlc.arg(token_hash) AND s.expires > NOW() AND u.id = s.user_id
+RETURNING u.id, u.email, u.name;
+
+-- name: DeleteSession :exec
+DELETE FROM sessions WHERE token_hash = sqlc.arg(token_hash);
+
+-- name: PruneSessions :exec
+DELETE FROM sessions WHERE expires <= NOW();
+
+-- name: CreateAuditLogEntry :exec
+INSERT INTO admin_audit_log (user_id, action, target_ip, details)
+VALUES (sqlc.arg(user_id), sqlc.arg(action), sqlc.narg(target_ip), sqlc.arg(details));
+
+-- The latest admin actions, newest first.
+-- name: ListAuditLog :many
+SELECT l.id, l.logged_at, u.email, l.action, l.target_ip, l.details::TEXT AS details
+FROM admin_audit_log l
+JOIN users u ON u.id = l.user_id
+ORDER BY l.logged_at DESC, l.id DESC
+LIMIT sqlc.arg(limit_);
+
+-- Bans (admin.py; the decoy asks through ingest.py) ---------------------------------------------
+-- A ban is active until it expires or is revoked: the condition idx_ip_bans_active serves.
+
+-- name: IsIpBanned :one
+SELECT EXISTS (
+    SELECT 1 FROM ip_bans
+    WHERE ip_address = sqlc.arg(ip_address)::inet
+      AND revoked_at IS NULL AND (expires IS NULL OR expires > NOW())
+) AS banned;
+
+-- A new ban, unless the address already has an active one (no row then).
+-- name: CreateIpBan :one
 INSERT INTO ip_bans (ip_address, expires, reason, added_by_user_id)
-VALUES (sqlc.arg(ip_address), sqlc.arg(expires), sqlc.arg(reason), sqlc.arg(added_by_user_id))
-RETURNING *;
+SELECT sqlc.arg(ip_address)::inet, sqlc.narg(expires), sqlc.narg(reason), sqlc.arg(added_by_user_id)
+WHERE NOT EXISTS (
+    SELECT 1 FROM ip_bans
+    WHERE ip_address = sqlc.arg(ip_address)::inet
+      AND revoked_at IS NULL AND (expires IS NULL OR expires > NOW())
+)
+RETURNING id;
+
+-- Ends an active ban; no row if there is none with that id.
+-- name: RevokeIpBan :one
+UPDATE ip_bans
+SET revoked_at = NOW(), revoked_by_user_id = sqlc.arg(revoked_by_user_id),
+    revocation_reason = sqlc.narg(revocation_reason)
+WHERE id = sqlc.arg(id)
+  AND revoked_at IS NULL AND (expires IS NULL OR expires > NOW())
+RETURNING ip_address;
+
+-- An address's active ban, as the public exhibit shows it: when, never why or by whom.
+-- name: GetActiveIpBan :one
+SELECT added, expires
+FROM ip_bans
+WHERE ip_address = sqlc.arg(ip_address)::inet
+  AND revoked_at IS NULL AND (expires IS NULL OR expires > NOW())
+ORDER BY added
+LIMIT 1;
+
+-- Bans in full, for the admin area: one address's (every one, newest first), or with no address,
+-- every active one.
+-- name: ListIpBans :many
+SELECT
+    b.id, b.ip_address, b.added, b.expires, b.reason, a.email AS added_by, b.revoked_at,
+    r.email AS revoked_by, b.revocation_reason,
+    b.revoked_at IS NULL AND (b.expires IS NULL OR b.expires > NOW()) AS active
+FROM ip_bans b
+JOIN users a ON a.id = b.added_by_user_id
+LEFT JOIN users r ON r.id = b.revoked_by_user_id
+WHERE CASE
+    WHEN sqlc.narg(ip_address)::inet IS NULL
+        THEN b.revoked_at IS NULL AND (b.expires IS NULL OR b.expires > NOW())
+    ELSE b.ip_address = sqlc.narg(ip_address)::inet
+END
+ORDER BY b.added DESC, b.id DESC;
 
 -- Every event a visitor caused, newest first: requests to the honeypot, login attempts, decoy views,
 -- decoy password attempts and installs. Details are fetched separately, per kind (below). Bans are the
@@ -177,7 +269,7 @@ LIMIT sqlc.arg('limit')::int;
 SELECT
     id, ip_address, occurred_at, method, path, query, status_code, user_agent,
     COALESCE(substring(body FROM 1 FOR 1024), ''::BYTEA)::BYTEA AS body_preview, body_size,
-    path_category(path) AS category
+    path_category(path) AS category, banned
 FROM telemetry_hits
 WHERE id = ANY(sqlc.arg(ids)::BIGINT[]);
 
@@ -228,7 +320,7 @@ WHERE dpa.id = ANY(sqlc.arg(ids)::BIGINT[]);
 -- name: GetHit :one
 SELECT
     id, ip_address, occurred_at, method, path, query, status_code, user_agent,
-    headers::TEXT AS headers, body, body_size, path_category(path) AS category
+    headers::TEXT AS headers, body, body_size, path_category(path) AS category, banned
 FROM telemetry_hits
 WHERE id = sqlc.arg(id) AND router_group = sqlc.arg(router_group);
 
@@ -238,7 +330,9 @@ SELECT path_category(sqlc.arg(path)::TEXT) AS category;
 
 -- What one IP address did, in numbers (running totals, see schema.sql); no row if it did nothing.
 -- name: GetIpActivity :one
-SELECT requests, distinct_paths, login_attempts, install_attempts, first_seen_at, last_seen_at
+SELECT
+    requests, distinct_paths, login_attempts, install_attempts, first_seen_at, last_seen_at,
+    banned_requests
 FROM ip_activity
 WHERE ip_address = sqlc.arg(ip_address)::inet;
 

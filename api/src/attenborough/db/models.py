@@ -169,6 +169,7 @@ class IpActivity(pydantic.BaseModel):
     first_seen_at: datetime.datetime | None
     last_seen_at: datetime.datetime | None
     install_attempts: int
+    banned_requests: int
 
 
 class IpBan(pydantic.BaseModel):
@@ -213,7 +214,6 @@ class OauthState(pydantic.BaseModel):
     code_verifier: str
     created: datetime.datetime
     expires: datetime.datetime
-    ip_address: str
 
 
 class SchemaMigration(pydantic.BaseModel):
@@ -251,6 +251,7 @@ class TelemetryHit(pydantic.BaseModel):
     body_size: int | None
     status_code: int
     occurred_at: datetime.datetime
+    banned: bool
 
 
 class User(pydantic.BaseModel):
@@ -262,4 +263,3 @@ class User(pydantic.BaseModel):
     name: str
     created: datetime.datetime
     last_login: datetime.datetime
-    is_admin: bool

@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from attenborough import exhibit, ingest, settings
+from attenborough import admin, auth, exhibit, ingest, settings
 from attenborough.db.ops import db_conn_pool
 from attenborough.db.schema import (
     SchemaStatus,
@@ -122,6 +122,8 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.FORWARDED_ALLO
 
 app.include_router(exhibit.router)
 app.include_router(ingest.router)
+app.include_router(auth.router)
+app.include_router(admin.router)
 
 # Development only. Left out of the OpenAPI spec so that openapi.json (tracked, and rewritten at
 # startup) doesn't depend on the setting.

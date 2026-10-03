@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { IssueCanaryData, IssueCanaryErrors, IssueCanaryResponses, ReportHitData, ReportHitErrors, ReportHitResponses, ReportInstallData, ReportInstallErrors, ReportInstallResponses, ReportLoginData, ReportLoginErrors, ReportLoginResponses } from './types.gen';
+import type { IssueCanaryData, IssueCanaryErrors, IssueCanaryResponses, JudgeVisitData, JudgeVisitResponses, ReportHitData, ReportHitErrors, ReportHitResponses, ReportInstallData, ReportInstallErrors, ReportInstallResponses, ReportLoginData, ReportLoginErrors, ReportLoginResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -17,6 +17,14 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
      */
     meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
 };
+
+/**
+ * Judge Visit
+ *
+ * Asked before the decoy serves each request: one lookup in the active-bans index, never
+ * cached, so a ban or its end applies to the very next request.
+ */
+export const judgeVisit = <ThrowOnError extends boolean = false>(options?: Options<JudgeVisitData, ThrowOnError>): RequestResult<JudgeVisitResponses, unknown, ThrowOnError> => (options?.client ?? client).post<JudgeVisitResponses, unknown, ThrowOnError>({ url: '/ingest/visits', ...options });
 
 /**
  * Report Hit

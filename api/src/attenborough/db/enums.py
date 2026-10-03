@@ -60,3 +60,4 @@ class RouterGroup(enum.StrEnum):
     SYSTEM = "system"
     HONEYPOT = "honeypot"
     INGEST = "ingest"
+    ADMIN = "admin"
