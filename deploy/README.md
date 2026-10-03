@@ -115,7 +115,7 @@ Then run the checks. If `deploy/nginx/` changed, copy `decoy-proxy.conf` again a
 On the host:
 
 ```sh
-docker compose ps                         # api, decoy and web up; the PORTS column empty
+docker compose ps                         # api, decoy and web up; nothing published (no `->` under PORTS; the API's bare 8000/tcp is only its image's declared port)
 sh deploy/check-isolation.sh              # must end "isolation: all checks passed"
 docker compose logs --since 1h | grep -vE ' INFO|INFO:'   # anything that isn't an INFO line
 docker compose exec api python scripts/exhibit_latency.py --base-url http://127.0.0.1:8000
