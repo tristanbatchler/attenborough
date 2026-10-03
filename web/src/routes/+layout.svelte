@@ -3,7 +3,7 @@
 	import { resolve } from '$app/paths';
 	import type { LayoutProps } from './$types';
 
-	let { children }: LayoutProps = $props();
+	let { data, children }: LayoutProps = $props();
 </script>
 
 <header>
@@ -14,6 +14,12 @@
 		<ul>
 			<li><a href={resolve('/')}>Exhibit</a></li>
 			<li><a href={resolve('/patterns')}>Patterns</a></li>
+			{#if data.admin}
+				<li><a href={resolve('/admin')}>Admin</a></li>
+			{:else}
+				<!-- A server endpoint (off to Google), so a full page load, not client-side routing. -->
+				<li><a href={resolve('/auth/google')} data-sveltekit-reload>Log in</a></li>
+			{/if}
 		</ul>
 	</nav>
 </header>

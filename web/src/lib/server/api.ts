@@ -27,7 +27,7 @@ export function apiOptions(fetch: typeof globalThis.fetch) {
 }
 
 /** The part of a generated SDK call's result that says whether it succeeded. */
-interface ApiResult<T> {
+export interface ApiResult<T> {
 	data: T | undefined;
 	error: unknown;
 	response?: Response;

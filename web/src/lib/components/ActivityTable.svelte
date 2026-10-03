@@ -43,6 +43,7 @@
 								<code>{event.method} {requestTarget(event)}</code>
 							</a>
 							→ <code>{event.status_code}</code>
+							{#if event.banned}<small>refused: banned</small>{/if}
 							{#if event.body_preview}
 								<samp>{event.body_preview}</samp>
 								<small

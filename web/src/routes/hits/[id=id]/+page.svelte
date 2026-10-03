@@ -36,7 +36,10 @@
 			</tr>
 			<tr>
 				<th scope="row">Status</th>
-				<td><code>{hit.status_code}</code></td>
+				<td>
+					<code>{hit.status_code}</code>
+					{#if hit.banned}<small>Refused: the address was banned.</small>{/if}
+				</td>
 			</tr>
 			<tr>
 				<th scope="row">Looking for</th>

@@ -29,6 +29,23 @@
 	<p>Everything this address did, most recent first. Times are in UTC.</p>
 </hgroup>
 
+{#if data.admin}
+	<p>
+		<a href={resolve('/admin/ip/[address]', { address: data.address })}>Ban or unban this address</a
+		>
+	</p>
+{/if}
+
+{#if data.summary.ban !== null}
+	<p>
+		<mark>Banned</mark> since
+		<time datetime={data.summary.ban.since}>{formatUtc(data.summary.ban.since)}</time
+		>{#if data.summary.ban.until !== null}, until <time datetime={data.summary.ban.until}
+				>{formatUtc(data.summary.ban.until)}</time
+			>{/if}. The honeypot answers every request from it with a 403, and still records each one.
+	</p>
+{/if}
+
 {#if data.summary.first_seen_at !== null && data.summary.last_seen_at !== null}
 	<figure>
 		<table>
@@ -37,6 +54,12 @@
 				<tr><th scope="row">Distinct paths</th><td>{data.summary.distinct_paths}</td></tr>
 				<tr><th scope="row">Login attempts</th><td>{data.summary.login_attempts}</td></tr>
 				<tr><th scope="row">WordPress installs</th><td>{data.summary.install_attempts}</td></tr>
+				{#if data.summary.banned_requests > 0}
+					<tr>
+						<th scope="row">Refused while banned</th>
+						<td>{data.summary.banned_requests}</td>
+					</tr>
+				{/if}
 				<tr>
 					<th scope="row">First seen</th>
 					<td>

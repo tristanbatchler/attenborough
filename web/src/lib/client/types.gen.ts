@@ -39,6 +39,102 @@ export type AddressActivity = {
 };
 
 /**
+ * AuditAction
+ */
+export type AuditAction = 'login' | 'ban_created' | 'ban_revoked' | 'decoy_revoked' | 'settings_changed';
+
+/**
+ * AuditEntry
+ */
+export type AuditEntry = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Logged At
+     */
+    logged_at: string;
+    /**
+     * Email
+     */
+    email: string;
+    action: AuditAction;
+    /**
+     * Target Ip
+     */
+    target_ip: string | null;
+    /**
+     * Details
+     */
+    details: string;
+};
+
+/**
+ * Ban
+ *
+ * An address's active ban, as the public sees it: when, never why or by whom.
+ */
+export type Ban = {
+    /**
+     * Since
+     */
+    since: string;
+    /**
+     * Until
+     */
+    until: string | null;
+};
+
+/**
+ * BanRecord
+ *
+ * A ban in full: who made it and why, and whether and why it was revoked.
+ */
+export type BanRecord = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Ip Address
+     */
+    ip_address: string;
+    /**
+     * Added
+     */
+    added: string;
+    /**
+     * Expires
+     */
+    expires: string | null;
+    /**
+     * Reason
+     */
+    reason: string | null;
+    /**
+     * Added By
+     */
+    added_by: string;
+    /**
+     * Revoked At
+     */
+    revoked_at: string | null;
+    /**
+     * Revoked By
+     */
+    revoked_by: string | null;
+    /**
+     * Revocation Reason
+     */
+    revocation_reason: string | null;
+    /**
+     * Active
+     */
+    active: boolean;
+};
+
+/**
  * CanaryOrigin
  *
  * Where a canary password was handed out: the leaked file, to whom, and when.
@@ -212,6 +308,34 @@ export type EventPage = {
 };
 
 /**
+ * GoogleCallback
+ *
+ * What Google's redirect to the web app carried.
+ */
+export type GoogleCallback = {
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * State
+     */
+    state: string;
+};
+
+/**
+ * GoogleLogin
+ *
+ * Where to send the admin to log in.
+ */
+export type GoogleLogin = {
+    /**
+     * Url
+     */
+    url: string;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -266,6 +390,10 @@ export type HitDetail = {
      */
     body_size: number | null;
     category: PathCategory;
+    /**
+     * Banned
+     */
+    banned: boolean;
     /**
      * Headers
      */
@@ -327,6 +455,10 @@ export type HitEvent = {
      */
     body_size: number | null;
     category: PathCategory;
+    /**
+     * Banned
+     */
+    banned: boolean;
     /**
      * Body Preview
      */
@@ -470,6 +602,10 @@ export type IpSummary = {
      */
     install_attempts: number;
     /**
+     * Banned Requests
+     */
+    banned_requests: number;
+    /**
      * First Seen At
      */
     first_seen_at: string | null;
@@ -478,6 +614,7 @@ export type IpSummary = {
      */
     last_seen_at: string | null;
     location: IpLocation | null;
+    ban: Ban | null;
 };
 
 /**
@@ -553,6 +690,22 @@ export type MapPlace = {
 };
 
 /**
+ * Me
+ *
+ * Who is logged in.
+ */
+export type Me = {
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
  * NetworkCount
  */
 export type NetworkCount = {
@@ -572,6 +725,20 @@ export type NetworkCount = {
      * Addresses
      */
     addresses: number;
+};
+
+/**
+ * NewBan
+ */
+export type NewBan = {
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Expires
+     */
+    expires?: string | null;
 };
 
 /**
@@ -659,6 +826,32 @@ export type Patterns = {
      * Places
      */
     places: Array<MapPlace>;
+};
+
+/**
+ * Revocation
+ */
+export type Revocation = {
+    /**
+     * Reason
+     */
+    reason?: string | null;
+};
+
+/**
+ * Session
+ *
+ * A new session: the token to send as a bearer token, and when it stops working.
+ */
+export type Session = {
+    /**
+     * Token
+     */
+    token: string;
+    /**
+     * Expires At
+     */
+    expires_at: string;
 };
 
 /**
@@ -973,3 +1166,204 @@ export type GetPatternsResponses = {
 };
 
 export type GetPatternsResponse = GetPatternsResponses[keyof GetPatternsResponses];
+
+export type StartGoogleLoginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/auth/google';
+};
+
+export type StartGoogleLoginResponses = {
+    /**
+     * Successful Response
+     */
+    200: GoogleLogin;
+};
+
+export type StartGoogleLoginResponse = StartGoogleLoginResponses[keyof StartGoogleLoginResponses];
+
+export type FinishGoogleLoginData = {
+    body: GoogleCallback;
+    path?: never;
+    query?: never;
+    url: '/auth/google/callback';
+};
+
+export type FinishGoogleLoginErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type FinishGoogleLoginError = FinishGoogleLoginErrors[keyof FinishGoogleLoginErrors];
+
+export type FinishGoogleLoginResponses = {
+    /**
+     * Successful Response
+     */
+    200: Session;
+};
+
+export type FinishGoogleLoginResponse = FinishGoogleLoginResponses[keyof FinishGoogleLoginResponses];
+
+export type GetMeData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/auth/me';
+};
+
+export type GetMeResponses = {
+    /**
+     * Successful Response
+     */
+    200: Me;
+};
+
+export type GetMeResponse = GetMeResponses[keyof GetMeResponses];
+
+export type LogOutData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/auth/logout';
+};
+
+export type LogOutResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type LogOutResponse = LogOutResponses[keyof LogOutResponses];
+
+export type ListActiveBansData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/bans';
+};
+
+export type ListActiveBansResponses = {
+    /**
+     * Response List Active Bans
+     *
+     * Successful Response
+     */
+    200: Array<BanRecord>;
+};
+
+export type ListActiveBansResponse = ListActiveBansResponses[keyof ListActiveBansResponses];
+
+export type ListIpBansData = {
+    body?: never;
+    path: {
+        /**
+         * Ip Addr
+         */
+        ip_addr: string;
+    };
+    query?: never;
+    url: '/admin/ip/{ip_addr}/bans';
+};
+
+export type ListIpBansErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListIpBansError = ListIpBansErrors[keyof ListIpBansErrors];
+
+export type ListIpBansResponses = {
+    /**
+     * Response List Ip Bans
+     *
+     * Successful Response
+     */
+    200: Array<BanRecord>;
+};
+
+export type ListIpBansResponse = ListIpBansResponses[keyof ListIpBansResponses];
+
+export type BanIpData = {
+    body: NewBan;
+    path: {
+        /**
+         * Ip Addr
+         */
+        ip_addr: string;
+    };
+    query?: never;
+    url: '/admin/ip/{ip_addr}/bans';
+};
+
+export type BanIpErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type BanIpError = BanIpErrors[keyof BanIpErrors];
+
+export type BanIpResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type BanIpResponse = BanIpResponses[keyof BanIpResponses];
+
+export type RevokeBanData = {
+    body: Revocation;
+    path: {
+        /**
+         * Ban Id
+         */
+        ban_id: number;
+    };
+    query?: never;
+    url: '/admin/bans/{ban_id}/revoke';
+};
+
+export type RevokeBanErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RevokeBanError = RevokeBanErrors[keyof RevokeBanErrors];
+
+export type RevokeBanResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type RevokeBanResponse = RevokeBanResponses[keyof RevokeBanResponses];
+
+export type ListAuditLogData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/admin/audit';
+};
+
+export type ListAuditLogResponses = {
+    /**
+     * Response List Audit Log
+     *
+     * Successful Response
+     */
+    200: Array<AuditEntry>;
+};
+
+export type ListAuditLogResponse = ListAuditLogResponses[keyof ListAuditLogResponses];

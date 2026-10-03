@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetHitData, GetHitErrors, GetHitResponses, GetIpEventsData, GetIpEventsErrors, GetIpEventsResponses, GetIpSummaryData, GetIpSummaryErrors, GetIpSummaryResponses, GetPatternsData, GetPatternsResponses, GetTakeoverData, GetTakeoverErrors, GetTakeoverResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses } from './types.gen';
+import type { BanIpData, BanIpErrors, BanIpResponses, FinishGoogleLoginData, FinishGoogleLoginErrors, FinishGoogleLoginResponses, GetHitData, GetHitErrors, GetHitResponses, GetIpEventsData, GetIpEventsErrors, GetIpEventsResponses, GetIpSummaryData, GetIpSummaryErrors, GetIpSummaryResponses, GetMeData, GetMeResponses, GetPatternsData, GetPatternsResponses, GetTakeoverData, GetTakeoverErrors, GetTakeoverResponses, ListActiveBansData, ListActiveBansResponses, ListAuditLogData, ListAuditLogResponses, ListIpBansData, ListIpBansErrors, ListIpBansResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses, LogOutData, LogOutResponses, RevokeBanData, RevokeBanErrors, RevokeBanResponses, StartGoogleLoginData, StartGoogleLoginResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -35,7 +35,7 @@ export const getIpEvents = <ThrowOnError extends boolean = false>(options: Optio
 /**
  * Get Ip Summary
  *
- * What one IP address did, in numbers, and where it is.
+ * What one IP address did, in numbers, where it is, and whether it is banned.
  */
 export const getIpSummary = <ThrowOnError extends boolean = false>(options: Options<GetIpSummaryData, ThrowOnError>): RequestResult<GetIpSummaryResponses, GetIpSummaryErrors, ThrowOnError> => (options.client ?? client).get<GetIpSummaryResponses, GetIpSummaryErrors, ThrowOnError>({ url: '/exhibit/ip/{ip_addr}/summary', ...options });
 
@@ -62,3 +62,109 @@ export const getTakeover = <ThrowOnError extends boolean = false>(options: Optio
  * aggregate. Recomputed at most every few minutes (patterns.py).
  */
 export const getPatterns = <ThrowOnError extends boolean = false>(options?: Options<GetPatternsData, ThrowOnError>): RequestResult<GetPatternsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetPatternsResponses, unknown, ThrowOnError>({ url: '/exhibit/patterns', ...options });
+
+/**
+ * Start Google Login
+ *
+ * Where to send the admin: Google's consent screen, with a fresh state and PKCE challenge.
+ */
+export const startGoogleLogin = <ThrowOnError extends boolean = false>(options?: Options<StartGoogleLoginData, ThrowOnError>): RequestResult<StartGoogleLoginResponses, unknown, ThrowOnError> => (options?.client ?? client).get<StartGoogleLoginResponses, unknown, ThrowOnError>({ url: '/auth/google', ...options });
+
+/**
+ * Finish Google Login
+ *
+ * Finish a login: a session for a verified ADMIN_EMAILS account, a 404 for anything else.
+ * The state is used up whatever happens, so the same callback never works twice.
+ */
+export const finishGoogleLogin = <ThrowOnError extends boolean = false>(options: Options<FinishGoogleLoginData, ThrowOnError>): RequestResult<FinishGoogleLoginResponses, FinishGoogleLoginErrors, ThrowOnError> => (options.client ?? client).post<FinishGoogleLoginResponses, FinishGoogleLoginErrors, ThrowOnError>({
+    url: '/auth/google/callback',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Get Me
+ */
+export const getMe = <ThrowOnError extends boolean = false>(options?: Options<GetMeData, ThrowOnError>): RequestResult<GetMeResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetMeResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/auth/me',
+    ...options
+});
+
+/**
+ * Log Out
+ *
+ * End this session.
+ */
+export const logOut = <ThrowOnError extends boolean = false>(options?: Options<LogOutData, ThrowOnError>): RequestResult<LogOutResponses, unknown, ThrowOnError> => (options?.client ?? client).post<LogOutResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/auth/logout',
+    ...options
+});
+
+/**
+ * List Active Bans
+ *
+ * Every active ban, newest first.
+ */
+export const listActiveBans = <ThrowOnError extends boolean = false>(options?: Options<ListActiveBansData, ThrowOnError>): RequestResult<ListActiveBansResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListActiveBansResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/bans',
+    ...options
+});
+
+/**
+ * List Ip Bans
+ *
+ * Every ban an address has had, newest first.
+ */
+export const listIpBans = <ThrowOnError extends boolean = false>(options: Options<ListIpBansData, ThrowOnError>): RequestResult<ListIpBansResponses, ListIpBansErrors, ThrowOnError> => (options.client ?? client).get<ListIpBansResponses, ListIpBansErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/ip/{ip_addr}/bans',
+    ...options
+});
+
+/**
+ * Ban Ip
+ *
+ * Ban an address: the decoy refuses it from now on (ingest.py, judge_visit). 409 if it is
+ * already banned.
+ */
+export const banIp = <ThrowOnError extends boolean = false>(options: Options<BanIpData, ThrowOnError>): RequestResult<BanIpResponses, BanIpErrors, ThrowOnError> => (options.client ?? client).post<BanIpResponses, BanIpErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/ip/{ip_addr}/bans',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Revoke Ban
+ *
+ * End an active ban now. 404 if there is no active ban with that id.
+ */
+export const revokeBan = <ThrowOnError extends boolean = false>(options: Options<RevokeBanData, ThrowOnError>): RequestResult<RevokeBanResponses, RevokeBanErrors, ThrowOnError> => (options.client ?? client).post<RevokeBanResponses, RevokeBanErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/bans/{ban_id}/revoke',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * List Audit Log
+ *
+ * The latest admin actions, newest first.
+ */
+export const listAuditLog = <ThrowOnError extends boolean = false>(options?: Options<ListAuditLogData, ThrowOnError>): RequestResult<ListAuditLogResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListAuditLogResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/audit',
+    ...options
+});
