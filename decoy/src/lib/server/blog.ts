@@ -4,7 +4,6 @@ import {
 	AUTHORS,
 	type Author,
 	POSTS,
-	POWERED_BY,
 	type Post,
 	SITE_NAME,
 	TAGLINE,
@@ -19,11 +18,14 @@ import PostPage from '$lib/site/PostPage.svelte';
 import {
 	CONTENT_TYPE_HEADER,
 	JSON_CONTENT_TYPE,
+	POWERED_BY_HEADER,
 	RSS_CONTENT_TYPE,
 	TEXT_CONTENT_TYPE
 } from '$lib/server/headers';
+import { BATCH_ROUTE, batch } from '$lib/server/batch';
 import { htmlPage } from '$lib/server/html';
 import { nginxError } from '$lib/server/nginx';
+import { REST_NO_ROUTE } from '$lib/server/rest-errors';
 
 // The blog's responses: its pages, REST API, feed and the small files every WordPress has. All of
 // it is fixed content from $lib/site/blog; nothing a visitor sends is put into a response.
@@ -44,7 +46,7 @@ export const QueryVar = {
 
 // What every page WordPress generates carries: PHP's banner, and where its REST API is.
 const WORDPRESS_HEADERS = {
-	'x-powered-by': POWERED_BY,
+	...POWERED_BY_HEADER,
 	link: `<${REST_PREFIX}/>; rel="https://api.w.org/"`
 };
 
@@ -84,10 +86,29 @@ export function authorPage(author: Author): Response {
 	);
 }
 
-function json(body: unknown, status: number = constants.HTTP_STATUS_OK): Response {
-	return new Response(JSON.stringify(body), {
+// What PHP's json_encode() escapes by default and JavaScript's doesn't: slashes, and every
+// character outside ASCII (as UTF-16 code units, `\u2019`).
+const PHP_JSON_ESCAPES = /[/\u0080-\uffff]/g;
+const UNICODE_ESCAPE_DIGITS = 4;
+const HEX = 16;
+
+/** JSON as WordPress writes it (wp_json_encode). */
+function phpJson(body: unknown): string {
+	return JSON.stringify(body).replace(PHP_JSON_ESCAPES, (character) =>
+		character === '/'
+			? '\\/'
+			: `\\u${character.charCodeAt(0).toString(HEX).padStart(UNICODE_ESCAPE_DIGITS, '0')}`
+	);
+}
+
+function json(
+	body: unknown,
+	status: number = constants.HTTP_STATUS_OK,
+	headers: Record<string, string> = {}
+): Response {
+	return new Response(phpJson(body), {
 		status,
-		headers: { ...WORDPRESS_HEADERS, [CONTENT_TYPE_HEADER]: JSON_CONTENT_TYPE }
+		headers: { ...WORDPRESS_HEADERS, ...headers, [CONTENT_TYPE_HEADER]: JSON_CONTENT_TYPE }
 	});
 }
 
@@ -118,12 +139,6 @@ function restPost(post: Post) {
 	};
 }
 
-const REST_NO_ROUTE = {
-	code: 'rest_no_route',
-	message: 'No route was found matching the URL and request method.',
-	data: { status: constants.HTTP_STATUS_NOT_FOUND }
-};
-
 const REST_INVALID_USER = {
 	code: 'rest_user_invalid_id',
 	message: 'Invalid user ID.',
@@ -131,8 +146,12 @@ const REST_INVALID_USER = {
 };
 
 /** The REST API's answer for `route` (after /wp-json, or a `rest_route` query parameter). */
-export function rest(route: string): Response {
+export async function rest(route: string, request: Request): Promise<Response> {
 	const normalised = route === '' ? REST_INDEX : route.replace(/\/$/, '') || REST_INDEX;
+	if (normalised === BATCH_ROUTE && request.method === constants.HTTP2_METHOD_POST) {
+		const result = await batch(request);
+		return json(result.body, result.status, result.headers);
+	}
 	if (normalised === REST_INDEX) {
 		return json({
 			name: SITE_NAME,
@@ -209,11 +228,11 @@ export function robots(): Response {
  * `/` and `/index.php`: WordPress routes them by query parameters before it shows the front page.
  * Anything it doesn't know falls through to the front page, as WordPress's does.
  */
-export function home(url: URL): Response {
+export async function home(request: Request, url: URL): Promise<Response> {
 	const query = url.searchParams;
 	const route = query.get(QueryVar.REST_ROUTE);
 	if (route !== null) {
-		return rest(route);
+		return rest(route, request);
 	}
 	const authorId = query.get(QueryVar.AUTHOR);
 	if (authorId !== null) {
