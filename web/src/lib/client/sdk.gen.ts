@@ -207,6 +207,22 @@ export const listRuleMarkers = <ThrowOnError extends boolean = false>(options?: 
 });
 
 /**
+ * Preview Rule
+ *
+ * What a rule (saved or not) would answer a request from an address, using everything the
+ * honeypot knows about that address. Issues no canary and records nothing.
+ */
+export const previewRule = <ThrowOnError extends boolean = false>(options: Options<PreviewRuleData, ThrowOnError>): RequestResult<PreviewRuleResponses, PreviewRuleErrors, ThrowOnError> => (options.client ?? client).post<PreviewRuleResponses, PreviewRuleErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/admin/rules/preview',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Get Rule
  */
 export const getRule = <ThrowOnError extends boolean = false>(options: Options<GetRuleData, ThrowOnError>): RequestResult<GetRuleResponses, GetRuleErrors, ThrowOnError> => (options.client ?? client).get<GetRuleResponses, GetRuleErrors, ThrowOnError>({
@@ -252,20 +268,4 @@ export const removeRule = <ThrowOnError extends boolean = false>(options: Option
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/admin/rules/{rule_id}/remove',
     ...options
-});
-
-/**
- * Preview Rule
- *
- * What a rule (saved or not) would answer a request from an address, using everything the
- * honeypot knows about that address. Issues no canary and records nothing.
- */
-export const previewRule = <ThrowOnError extends boolean = false>(options: Options<PreviewRuleData, ThrowOnError>): RequestResult<PreviewRuleResponses, PreviewRuleErrors, ThrowOnError> => (options.client ?? client).post<PreviewRuleResponses, PreviewRuleErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/admin/rules/preview',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
 });

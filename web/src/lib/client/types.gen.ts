@@ -1593,6 +1593,31 @@ export type ListRuleMarkersResponses = {
 
 export type ListRuleMarkersResponse = ListRuleMarkersResponses[keyof ListRuleMarkersResponses];
 
+export type PreviewRuleData = {
+    body: PreviewRequest;
+    path?: never;
+    query?: never;
+    url: '/admin/rules/preview';
+};
+
+export type PreviewRuleErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PreviewRuleError = PreviewRuleErrors[keyof PreviewRuleErrors];
+
+export type PreviewRuleResponses = {
+    /**
+     * Successful Response
+     */
+    200: Preview;
+};
+
+export type PreviewRuleResponse = PreviewRuleResponses[keyof PreviewRuleResponses];
+
 export type GetRuleData = {
     body?: never;
     path: {
@@ -1712,28 +1737,3 @@ export type RemoveRuleResponses = {
 };
 
 export type RemoveRuleResponse = RemoveRuleResponses[keyof RemoveRuleResponses];
-
-export type PreviewRuleData = {
-    body: PreviewRequest;
-    path?: never;
-    query?: never;
-    url: '/admin/rules/preview';
-};
-
-export type PreviewRuleErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type PreviewRuleError = PreviewRuleErrors[keyof PreviewRuleErrors];
-
-export type PreviewRuleResponses = {
-    /**
-     * Successful Response
-     */
-    200: Preview;
-};
-
-export type PreviewRuleResponse = PreviewRuleResponses[keyof PreviewRuleResponses];
