@@ -43,6 +43,8 @@ services:
   api:
     <<: *hardened
     build: ./api
+    # Named, so that migrate runs this same image (below).
+    image: attenborough-api
     mem_limit: 512m
     environment:
       <<: *database
@@ -109,10 +111,13 @@ services:
       web:
 
   # Applies pending migrations as the schema's owner, then exits: `docker compose run --rm migrate`.
-  # The only place the owner's password is used; the API never sees it.
+  # The only place the owner's password is used; the API never sees it. It runs the API's image,
+  # which `docker compose build` builds: a build of its own would be skipped, being in a profile,
+  # and an old copy would apply the old migrations while the new API refuses to start.
   migrate:
     <<: *hardened
-    build: ./api
+    image: attenborough-api
+    pull_policy: never
     restart: "no"
     profiles: [tools]
     command: ["python", "scripts/migrate.py"]
