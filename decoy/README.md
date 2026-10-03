@@ -4,7 +4,7 @@ The fake sites that visitors see: a SvelteKit app, separate from the exhibit (`.
 
 ```
 visitor → nginx → decoy (this app) → API /ingest/... → PostgreSQL
-                  ├─ hooks.server.ts: reports every request, 404s included, with its status
+                  ├─ hooks.server.ts: asks whether the visitor is banned, then reports every request, 404s included, with its status
                   └─ form actions: report submitted credentials, get back the outcome
 ```
 
@@ -24,12 +24,14 @@ The API trusts this app to name the visitor (see "Client IP attribution" below).
 
 ## How it works
 
+**Banned visitors.** Before serving anything, the hook asks the API whether the visitor is banned (`POST /ingest/visits`; bans are made in the exhibit's admin area). A banned visitor gets nginx's 403 page for every request, and is still reported, marked as refused. If the API can't answer within 2 seconds, the visitor is served as usual.
+
 **Every request is reported once, exactly as sent.** The `handle` hook in `src/hooks.server.ts` captures what the visitor sent (`$lib/server/visit`), serves the request, then reports it to `POST /ingest/hits` with the status they got. The API records it as a `honeypot` hit, as if it had served the request itself. What's recorded is the visitor's own request, not SvelteKit's view of it:
 
 - **The path and query as sent,** from adapter-node's raw `req.url`, one character per byte. SvelteKit's `event.url` is normalised (`/cgi-bin/.%2e/.%2e/etc/passwd` would become `/etc/passwd`) and drops `__data.json` suffixes, so it is never used for recording.
 - **The whole body,** read from a copy of the request. The API stores the first 64 KiB and the full size. A body the server refuses to read (over `BODY_SIZE_LIMIT`, 1M in `.env.example` like nginx's default `client_max_body_size`) is recorded as not captured, never as empty.
 
-The hook waits for the report, rather than leaving a promise floating, so no report is lost when the server stops. The API answers before writing to the database, so the wait is one quick local round trip, capped at 2 seconds if the API is down. A failed report is logged and never changes the visitor's response.
+The hook waits for the report, rather than leaving a promise floating, so no report is lost when the server stops. The API answers before writing to the database, so the wait is one quick local round trip, capped at 2 seconds if the API is down (as is the ban check before it). A failed report is logged and never changes the visitor's response.
 
 **An unfinished install, and the batch API.** Bots poll `/wp-admin/install.php` for a WordPress whose database is still empty, to finish the install as its administrator. This one shows WordPress 6.6.2's setup form and checks a submission as WordPress does (`$lib/server/install.ts`). One it accepts goes to `POST /ingest/installs`, which records the account and decides its password (the chosen one, or one it makes up, which the page shows), and the page answers "Success!". If the API can't take it, the page is WordPress's "Error establishing a database connection". Nothing is installed: the blog stays as it was. The login knows the account, though: with its password it is the one login the decoy pretends to accept, a 302 to `/wp-admin/` with WordPress's login cookies, which open nothing (`/wp-admin/` sends everyone back to the login); with any other password it gets WordPress's "password you entered … is incorrect", as the blog's own authors always do. A login that opens it is linked to the install on the exhibit. `setup-config.php` says `wp-config.php` already exists and points to the installer, as WordPress does. `POST /wp-json/batch/v1` answers each sub-request with the error WordPress gives a visitor who isn't logged in, in one 207 (`$lib/server/batch.ts`). A sub-request whose path PHP can't parse gets WordPress 6.6.2's own fatal error (a JSON 500), which is what scanners send it to provoke. The REST API's JSON is written as PHP writes it, with `/` and non-ASCII characters escaped.
 
