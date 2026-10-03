@@ -3,7 +3,8 @@ import { constants } from 'node:http2';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { reportLogin } from '$lib/client';
 import { apiOptions } from '$lib/server/api';
-import { CONTENT_TYPE_HEADER } from '$lib/server/headers';
+import { field, postedForm } from '$lib/server/forms';
+import { NOCACHE_HEADERS } from '$lib/server/headers';
 import { htmlPage } from '$lib/server/html';
 import { requestTarget } from '$lib/server/visit';
 import LoginPage from '$lib/wordpress/LoginPage.svelte';
@@ -13,17 +14,9 @@ import type { RequestHandler } from './$types';
 // The cookie WordPress sets on its login page to check that the browser keeps cookies.
 const TEST_COOKIE = 'wordpress_test_cookie';
 const TEST_COOKIE_VALUE = 'WP Cookie check';
-// WordPress's no-cache headers (wp_get_nocache_headers) and its frame protection.
-const LOGIN_PAGE_HEADERS = {
-	'cache-control': 'no-cache, must-revalidate, max-age=0',
-	expires: 'Wed, 11 Jan 1984 05:00:00 GMT',
-	'x-frame-options': 'SAMEORIGIN'
-};
+// WordPress's no-cache headers and its frame protection.
+const LOGIN_PAGE_HEADERS = { ...NOCACHE_HEADERS, 'x-frame-options': 'SAMEORIGIN' };
 const BODY_CLASS = 'login no-js login-action-login wp-core-ui locale-en-us';
-// PHP fills $_POST, where WordPress reads the login form, only for these content types. Any other
-// POST (JSON, XML, credentials in the query string) looks empty to it. The body is still recorded
-// with the hit, so nothing sent this way is lost.
-const FORM_CONTENT_TYPES = ['application/x-www-form-urlencoded', 'multipart/form-data'];
 
 function loginPage(cookies: Cookies, username: string, error: LoginError | null): Response {
 	cookies.set(TEST_COOKIE, TEST_COOKIE_VALUE, { path: '/', httpOnly: false });
@@ -32,26 +25,6 @@ function loginPage(cookies: Cookies, username: string, error: LoginError | null)
 		{ username, error },
 		{ headers: LOGIN_PAGE_HEADERS, bodyClass: BODY_CLASS }
 	);
-}
-
-/** The posted form, as PHP would see it: null for anything that isn't a form post. */
-async function postedForm(request: Request): Promise<FormData | null> {
-	const contentType = request.headers.get(CONTENT_TYPE_HEADER) ?? '';
-	if (!FORM_CONTENT_TYPES.some((type) => contentType.startsWith(type))) {
-		return null;
-	}
-	try {
-		return await request.formData();
-	} catch {
-		// A malformed form: PHP ignores what it can't parse.
-		return null;
-	}
-}
-
-/** A submitted text field, or '' if it is missing or a file. */
-function field(form: FormData | null, name: string): string {
-	const value = form?.get(name);
-	return typeof value === 'string' ? value : '';
 }
 
 /**
@@ -79,8 +52,8 @@ export const fallback: RequestHandler = ({ cookies }) => loginPage(cookies, '', 
 
 export const POST: RequestHandler = async (event) => {
 	const form = await postedForm(event.request);
-	const username = field(form, USERNAME_FIELD);
-	const password = field(form, PASSWORD_FIELD);
+	const username = field(form, USERNAME_FIELD) ?? '';
+	const password = field(form, PASSWORD_FIELD) ?? '';
 	if (form && (await attemptLogin(event, username, password))) {
 		redirect(constants.HTTP_STATUS_FOUND, ADMIN_PATH);
 	}

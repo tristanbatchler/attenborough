@@ -73,6 +73,48 @@ export type HttpValidationError = {
 };
 
 /**
+ * InstallAttempt
+ *
+ * A WordPress install the decoy app's installer accepted: the site and administrator account
+ * the visitor chose, as submitted. The installer has already checked them as WordPress does.
+ */
+export type InstallAttempt = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Site Title
+     */
+    site_title: string;
+    /**
+     * Username
+     */
+    username: string;
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Password
+     */
+    password: string;
+};
+
+/**
+ * InstallOutcome
+ *
+ * The installed account's password, when WordPress made one up (none was chosen): the
+ * installer shows it. Null when the visitor chose their own.
+ */
+export type InstallOutcome = {
+    /**
+     * Generated Password
+     */
+    generated_password: string | null;
+};
+
+/**
  * LoginAttempt
  *
  * Credentials a visitor submitted to one of the decoy app's login forms.
@@ -185,6 +227,31 @@ export type ReportLoginResponses = {
 };
 
 export type ReportLoginResponse = ReportLoginResponses[keyof ReportLoginResponses];
+
+export type ReportInstallData = {
+    body: InstallAttempt;
+    path?: never;
+    query?: never;
+    url: '/ingest/installs';
+};
+
+export type ReportInstallErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReportInstallError = ReportInstallErrors[keyof ReportInstallErrors];
+
+export type ReportInstallResponses = {
+    /**
+     * Successful Response
+     */
+    200: InstallOutcome;
+};
+
+export type ReportInstallResponse = ReportInstallResponses[keyof ReportInstallResponses];
 
 export type IssueCanaryData = {
     body: CanaryRequest;

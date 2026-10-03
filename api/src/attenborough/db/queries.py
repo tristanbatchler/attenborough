@@ -13,6 +13,7 @@ __all__: collections.abc.Sequence[str] = (
     "GetDecoyViewsByIdsRow",
     "GetHitRow",
     "GetHitsByIdsRow",
+    "GetInstallAttemptsByIdsRow",
     "GetIpActivityRow",
     "GetLoginAttemptsByIdsRow",
     "GetObservationSpanRow",
@@ -41,6 +42,7 @@ __all__: collections.abc.Sequence[str] = (
     "create_credential_stuffing_attempt",
     "create_decoy_password_attempt",
     "create_decoy_view",
+    "create_install_attempt",
     "create_ip_location",
     "create_public_schema",
     "create_telemetry_hit",
@@ -49,6 +51,7 @@ __all__: collections.abc.Sequence[str] = (
     "get_decoy_views_by_ids",
     "get_hit",
     "get_hits_by_ids",
+    "get_install_attempts_by_ids",
     "get_ip_activity",
     "get_ip_locations",
     "get_login_attempts_by_ids",
@@ -141,6 +144,23 @@ class GetLoginAttemptsByIdsRow(pydantic.BaseModel):
     canary_path: str | None
     canary_ip_address: str | None
     canary_issued_at: datetime.datetime | None
+    install_id: int | None
+    install_ip_address: str | None
+    install_attempted_at: datetime.datetime | None
+
+
+class GetInstallAttemptsByIdsRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    id_: int
+    ip_address: str
+    attempted_at: datetime.datetime
+    path: str
+    site_title: str
+    username: str
+    email: str
+    password: str
+    password_generated: bool
 
 
 class GetDecoyViewsByIdsRow(pydantic.BaseModel):
@@ -355,12 +375,27 @@ VALUES (
 
 CREATE_CREDENTIAL_STUFFING_ATTEMPT: typing.Final[typing.LiteralString] = """-- name: CreateCredentialStuffingAttempt :exec
 INSERT INTO credential_stuffing_attempts (
-    ip_address, endpoint_path, username, password, was_fake_success, canary_id
+    ip_address, endpoint_path, username, password, was_fake_success, canary_id, install_id
 )
 VALUES (
     %(p1)s, %(p2)s, %(p3)s, %(p4)s,
     %(p5)s,
-    (SELECT id FROM canary_tokens WHERE token = %(p4)s)
+    (SELECT id FROM canary_tokens WHERE token = %(p4)s),
+    (SELECT id FROM install_attempts
+     WHERE (username = %(p3)s OR email = %(p3)s)
+       AND password = %(p4)s
+     ORDER BY attempted_at DESC, id DESC
+     LIMIT 1)
+)
+"""
+
+CREATE_INSTALL_ATTEMPT: typing.Final[typing.LiteralString] = """-- name: CreateInstallAttempt :exec
+INSERT INTO install_attempts (
+    ip_address, path, site_title, username, email, password, password_generated
+)
+VALUES (
+    %(p1)s, %(p2)s, %(p3)s, %(p4)s,
+    %(p5)s, %(p6)s, %(p7)s
 )
 """
 
@@ -410,6 +445,13 @@ SELECT kind, id, ip_address, occurred_at FROM (
        AND (attempted_at, 'decoy_password_attempt'::event_kind, id) < (%(p1)s::timestamptz, %(p2)s::event_kind, %(p3)s::bigint)
      ORDER BY attempted_at DESC, id DESC
      LIMIT %(p4)s::int)
+    UNION ALL
+    (SELECT 'install_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
+     FROM install_attempts
+     WHERE attempted_at <= %(p1)s::timestamptz
+       AND (attempted_at, 'install_attempt'::event_kind, id) < (%(p1)s::timestamptz, %(p2)s::event_kind, %(p3)s::bigint)
+     ORDER BY attempted_at DESC, id DESC
+     LIMIT %(p4)s::int)
 ) AS page
 ORDER BY occurred_at DESC, kind DESC, id DESC
 LIMIT %(p4)s::int
@@ -444,6 +486,13 @@ SELECT kind, id, ip_address, occurred_at FROM (
        AND (attempted_at, 'decoy_password_attempt'::event_kind, id) < (%(p2)s::timestamptz, %(p3)s::event_kind, %(p4)s::bigint)
      ORDER BY attempted_at DESC, id DESC
      LIMIT %(p5)s::int)
+    UNION ALL
+    (SELECT 'install_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
+     FROM install_attempts
+     WHERE ip_address = %(p1)s::inet AND attempted_at <= %(p2)s::timestamptz
+       AND (attempted_at, 'install_attempt'::event_kind, id) < (%(p2)s::timestamptz, %(p3)s::event_kind, %(p4)s::bigint)
+     ORDER BY attempted_at DESC, id DESC
+     LIMIT %(p5)s::int)
 ) AS page
 ORDER BY occurred_at DESC, kind DESC, id DESC
 LIMIT %(p5)s::int
@@ -462,10 +511,19 @@ GET_LOGIN_ATTEMPTS_BY_IDS: typing.Final[typing.LiteralString] = """-- name: GetL
 SELECT
     a.id, a.ip_address, a.attempted_at, a.endpoint_path, a.username, a.password,
     a.was_fake_success, c.path AS canary_path, c.ip_address AS canary_ip_address,
-    c.issued_at AS canary_issued_at
+    c.issued_at AS canary_issued_at, i.id AS install_id, i.ip_address AS install_ip_address,
+    i.attempted_at AS install_attempted_at
 FROM credential_stuffing_attempts a
 LEFT JOIN canary_tokens c ON c.id = a.canary_id
+LEFT JOIN install_attempts i ON i.id = a.install_id
 WHERE a.id = ANY(%(p1)s::BIGINT[])
+"""
+
+GET_INSTALL_ATTEMPTS_BY_IDS: typing.Final[typing.LiteralString] = """-- name: GetInstallAttemptsByIds :many
+SELECT
+    id, ip_address, attempted_at, path, site_title, username, email, password, password_generated
+FROM install_attempts
+WHERE id = ANY(%(p1)s::BIGINT[])
 """
 
 GET_DECOY_VIEWS_BY_IDS: typing.Final[typing.LiteralString] = """-- name: GetDecoyViewsByIds :many
@@ -843,6 +901,10 @@ async def create_credential_stuffing_attempt(conn: ConnectionLike, *, ip_address
     await conn.execute(CREATE_CREDENTIAL_STUFFING_ATTEMPT, {"p1": ip_address, "p2": endpoint_path, "p3": username, "p4": password, "p5": was_fake_success})
 
 
+async def create_install_attempt(conn: ConnectionLike, *, ip_address: str, path: str, site_title: str, username: str, email: str, password: str, password_generated: bool) -> None:
+    await conn.execute(CREATE_INSTALL_ATTEMPT, {"p1": ip_address, "p2": path, "p3": site_title, "p4": username, "p5": email, "p6": password, "p7": password_generated})
+
+
 async def create_canary_token(conn: ConnectionLike, *, token: str, path: str, ip_address: str) -> None:
     await conn.execute(CREATE_CANARY_TOKEN, {"p1": token, "p2": path, "p3": ip_address})
 
@@ -884,9 +946,30 @@ def get_hits_by_ids(conn: ConnectionLike, *, ids: collections.abc.Sequence[int])
 
 def get_login_attempts_by_ids(conn: ConnectionLike, *, ids: collections.abc.Sequence[int]) -> QueryResults[GetLoginAttemptsByIdsRow]:
     def _decode_hook(row: psycopg.rows.TupleRow) -> GetLoginAttemptsByIdsRow:
-        return GetLoginAttemptsByIdsRow(id_=row[0], ip_address=str(row[1]), attempted_at=row[2], endpoint_path=row[3], username=row[4], password=row[5], was_fake_success=row[6], canary_path=row[7], canary_ip_address=str(row[8]) if row[8] is not None else None, canary_issued_at=row[9])
+        return GetLoginAttemptsByIdsRow(
+            id_=row[0],
+            ip_address=str(row[1]),
+            attempted_at=row[2],
+            endpoint_path=row[3],
+            username=row[4],
+            password=row[5],
+            was_fake_success=row[6],
+            canary_path=row[7],
+            canary_ip_address=str(row[8]) if row[8] is not None else None,
+            canary_issued_at=row[9],
+            install_id=row[10],
+            install_ip_address=str(row[11]) if row[11] is not None else None,
+            install_attempted_at=row[12],
+        )
 
     return QueryResults(conn, GET_LOGIN_ATTEMPTS_BY_IDS, _decode_hook, {"p1": list(ids)})
+
+
+def get_install_attempts_by_ids(conn: ConnectionLike, *, ids: collections.abc.Sequence[int]) -> QueryResults[GetInstallAttemptsByIdsRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> GetInstallAttemptsByIdsRow:
+        return GetInstallAttemptsByIdsRow(id_=row[0], ip_address=str(row[1]), attempted_at=row[2], path=row[3], site_title=row[4], username=row[5], email=row[6], password=row[7], password_generated=row[8])
+
+    return QueryResults(conn, GET_INSTALL_ATTEMPTS_BY_IDS, _decode_hook, {"p1": list(ids)})
 
 
 def get_decoy_views_by_ids(conn: ConnectionLike, *, ids: collections.abc.Sequence[int]) -> QueryResults[GetDecoyViewsByIdsRow]:

@@ -67,11 +67,33 @@
 									>.
 								</small>
 							{/if}
+							{#if event.install}
+								<small>
+									An account created through the decoy's installer, by
+									<a href={resolve('/ip/[address]', { address: event.install.ip_address })}
+										><code>{event.install.ip_address}</code></a
+									>,
+									<time datetime={event.install.attempted_at}
+										>{formatUtc(event.install.attempted_at)}</time
+									>.
+								</small>
+							{/if}
+						</td>
+					{:else if event.kind === 'install_attempt'}
+						<td>WordPress install</td>
+						<td>
+							<code>{event.username}</code> / <code>{event.password}</code>, email
+							<code>{event.email}</code>, site title <code>{event.site_title}</code>, at
+							<code>{event.path}</code>
+							(the decoy pretended to install it)
+							{#if event.password_generated}
+								<small>No password was chosen: the decoy's installer made this one up.</small>
+							{/if}
 						</td>
 					{:else if event.kind === 'decoy_view'}
 						<td>{event.decoy_type === 'binary' ? 'Decoy download' : 'Decoy view'}</td>
 						<td><code>{event.decoy_slug}</code></td>
-					{:else}
+					{:else if event.kind === 'decoy_password_attempt'}
 						<td>Decoy password</td>
 						<td>
 							<code>{event.decoy_slug}</code>

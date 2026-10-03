@@ -17,8 +17,8 @@ Subcommands:
 
 Every probe request carries `User-Agent: attenborough-probe/<run>` and a unique `x-probe: <run>-<n>-<label>`
 header, so rows map one-to-one onto requests and test data can be identified later. `verify` writes real
-rows to the configured database (telemetry, and through the decoy app credential attempts); the
-inspection commands only read.
+rows to the configured database (telemetry, and through the decoy app login and install attempts);
+the inspection commands only read.
 """
 
 import argparse
@@ -58,6 +58,21 @@ BURST_NOT_FOUND_PATH = "/burst/not/found"
 WP_LOGIN_PATH = "/wp-login.php"
 # WordPress's login form fields, as the decoy app's login page expects them.
 WP_LOGIN_FORM = {"log": PROBE_CREDENTIAL, "pwd": PROBE_CREDENTIAL}
+# WordPress's installer form (wp-admin/install.php, step 2), as a takeover bot submits it.
+WP_INSTALL_FORM = {
+    "weblog_title": PROBE_CREDENTIAL,
+    "user_name": PROBE_CREDENTIAL,
+    "admin_password": PROBE_CREDENTIAL,
+    "admin_password2": PROBE_CREDENTIAL,
+    "admin_email": "probe@example.com",
+}
+# A REST batch whose first path PHP can't parse, as the scanners seen in the field send it.
+WP_BATCH_PROBE = {
+    "requests": [
+        {"method": "POST", "path": "http://:"},
+        {"method": "DELETE", "path": "/wp/v2/categories/0"},
+    ]
+}
 INDEX_PATH = "/index.php"
 CONTENT_TYPE_HEADER = "Content-Type"
 # The XML-RPC brute force scanners send WordPress: many logins in one system.multicall.
@@ -188,6 +203,22 @@ def decoy_request_matrix() -> list[Case]:
             RouterGroup.HONEYPOT,
             content=XMLRPC_MULTICALL,
             headers={CONTENT_TYPE_HEADER: "text/xml"},
+        ),
+        # A bot finishing the "unfinished" install: its admin account is recorded in the body.
+        Case(
+            "decoy-install",
+            HTTPMethod.POST,
+            "/wp-admin/install.php?step=2",
+            RouterGroup.HONEYPOT,
+            form=WP_INSTALL_FORM,
+        ),
+        # The batch-API probe scanners send, unparseable path first: WordPress's fatal error, a 500.
+        Case(
+            "decoy-batch",
+            HTTPMethod.POST,
+            "/?rest_route=/batch/v1",
+            RouterGroup.HONEYPOT,
+            json=WP_BATCH_PROBE,
         ),
         Case(
             "decoy-traversal",

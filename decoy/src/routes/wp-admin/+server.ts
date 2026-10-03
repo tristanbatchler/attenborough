@@ -3,4 +3,4 @@ import type { RequestHandler } from './$types';
 
 export const trailingSlash = 'ignore';
 
-export const fallback: RequestHandler = () => adminPage('');
+export const fallback: RequestHandler = (event) => adminPage('', event);

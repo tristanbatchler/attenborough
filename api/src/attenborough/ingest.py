@@ -1,5 +1,5 @@
 """Where the decoy app (decoy/) reports its visitors: every request it served, and every login
-attempt, whose outcome is decided here. Everything in a report is attacker-controlled: it is bounded
+attempt and WordPress install, whose outcomes are decided here. Everything in a report is attacker-controlled: it is bounded
 here and recorded as data, never interpreted.
 
 A report names its visitor in X-Forwarded-For, which only counts because the decoy app's address is
@@ -7,6 +7,7 @@ in FORWARDED_ALLOW_IPS; the visitor is the `RequestOrigin`.
 """
 
 import secrets
+import string
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -45,6 +46,12 @@ TARPIT_STEP_MS = 500
 TARPIT_MAX_DELAY_MS = 15_000
 # Random bytes in a canary secret: 24 URL-safe characters, an ordinary-looking strong password.
 _CANARY_BYTES = 18
+# The password WordPress's installer makes up when none is chosen: wp_generate_password(12, false),
+# letters and digits.
+_GENERATED_PASSWORD_LENGTH = 12
+_GENERATED_PASSWORD_ALPHABET = string.ascii_letters + string.digits
+# What PHP's trim() strips, which is what WordPress stores of a chosen password.
+_PHP_WHITESPACE = " \t\n\r\0\x0b"
 
 
 def tarpit_delay_ms(previous_attempts: int) -> int:
@@ -83,6 +90,24 @@ class LoginOutcome(BaseModel):
     success: bool
     # How long to wait before answering: the tarpit for persistent guessers (tarpit_delay_ms).
     delay_ms: int = Field(ge=0, le=TARPIT_MAX_DELAY_MS)
+
+
+class InstallAttempt(BaseModel):
+    """A WordPress install the decoy app's installer accepted: the site and administrator account
+    the visitor chose, as submitted. The installer has already checked them as WordPress does."""
+
+    path: str = Field(max_length=_MAX_REQUEST_LINE)
+    site_title: str = Field(max_length=_MAX_BODY_BYTES)
+    username: str = Field(max_length=_MAX_BODY_BYTES)
+    email: str = Field(max_length=_MAX_BODY_BYTES)
+    password: str = Field(max_length=_MAX_BODY_BYTES)
+
+
+class InstallOutcome(BaseModel):
+    """The installed account's password, when WordPress made one up (none was chosen): the
+    installer shows it. Null when the visitor chose their own."""
+
+    generated_password: str | None
 
 
 class CanaryRequest(BaseModel):
@@ -138,6 +163,40 @@ async def report_login(
         was_fake_success=success,
     )
     return LoginOutcome(success=success, delay_ms=tarpit_delay_ms(previous or 0))
+
+
+def account_password(chosen: str) -> tuple[str, bool]:
+    """An installed account's password, as wp_install() decides it, and whether it was made up:
+    the chosen one, trimmed, or a random one (wp_generate_password(12, false)) if that leaves
+    nothing."""
+    trimmed = chosen.strip(_PHP_WHITESPACE)
+    if trimmed:
+        return trimmed, False
+    generated = "".join(
+        secrets.choice(_GENERATED_PASSWORD_ALPHABET)
+        for _ in range(_GENERATED_PASSWORD_LENGTH)
+    )
+    return generated, True
+
+
+@router.post("/installs")
+async def report_install(
+    install: InstallAttempt, db_conn: DBConn, origin: RequestOrigin
+) -> InstallOutcome:
+    """Record a WordPress install and decide its account's password (account_password).
+    Nothing is installed; a later login with the account is linked to this install."""
+    password, generated = account_password(install.password)
+    await queries.create_install_attempt(
+        db_conn,
+        ip_address=str(origin),
+        path=install.path,
+        site_title=install.site_title,
+        username=install.username,
+        email=install.email,
+        password=password,
+        password_generated=generated,
+    )
+    return InstallOutcome(generated_password=password if generated else None)
 
 
 @router.post("/canaries")

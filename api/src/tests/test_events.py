@@ -13,6 +13,8 @@ from attenborough.events import (
     DecoyPasswordAttemptEvent,
     DecoyViewEvent,
     HitEvent,
+    InstallAttemptEvent,
+    InstallOrigin,
     LoginAttemptEvent,
     decode_body,
     decoy_password_attempt_event,
@@ -21,6 +23,7 @@ from attenborough.events import (
     hit_event,
     honeypot_pattern,
     in_page_order,
+    install_attempt_event,
     ip_summary,
     login_attempt_event,
 )
@@ -37,6 +40,9 @@ DOWNLOAD = "backup.zip"
 NOTE = "notes"
 CANARY_PATH = "/.env"
 CANARY_IP = "198.51.100.4"
+INSTALL_PATH = "/wp-admin/install.php"
+INSTALL_IP = "192.0.2.9"
+EMAIL = "owner@example.net"
 
 
 def hit_row(body_preview: bytes, body_size: int | None) -> queries.GetHitsByIdsRow:
@@ -135,6 +141,9 @@ def test_a_login_attempt_keeps_the_credentials_in_full():
             canary_path=None,
             canary_ip_address=None,
             canary_issued_at=None,
+            install_id=None,
+            install_ip_address=None,
+            install_attempted_at=None,
         )
     )
     assert event == LoginAttemptEvent(
@@ -147,6 +156,7 @@ def test_a_login_attempt_keeps_the_credentials_in_full():
         password=PASSWORD,
         decoy_accepted=True,
         canary=None,
+        install=None,
     )
 
 
@@ -163,10 +173,62 @@ def test_a_canary_password_says_where_it_was_handed_out():
             canary_path=CANARY_PATH,
             canary_ip_address=CANARY_IP,
             canary_issued_at=AT,
+            install_id=None,
+            install_ip_address=None,
+            install_attempted_at=None,
         )
     )
     assert event.canary == CanaryOrigin(
         path=CANARY_PATH, ip_address=CANARY_IP, issued_at=AT
+    )
+
+
+def test_a_login_with_an_installed_account_says_which_install_created_it():
+    event = login_attempt_event(
+        queries.GetLoginAttemptsByIdsRow(
+            id_=4,
+            ip_address=IP,
+            attempted_at=AT,
+            endpoint_path=PATH,
+            username=USERNAME,
+            password=PASSWORD,
+            was_fake_success=False,
+            canary_path=None,
+            canary_ip_address=None,
+            canary_issued_at=None,
+            install_id=9,
+            install_ip_address=INSTALL_IP,
+            install_attempted_at=AT,
+        )
+    )
+    assert event.install == InstallOrigin(id=9, ip_address=INSTALL_IP, attempted_at=AT)
+
+
+def test_an_install_keeps_the_chosen_account_in_full():
+    event = install_attempt_event(
+        queries.GetInstallAttemptsByIdsRow(
+            id_=5,
+            ip_address=IP,
+            attempted_at=AT,
+            path=INSTALL_PATH,
+            site_title=PASSWORD,
+            username=USERNAME,
+            email=EMAIL,
+            password=PASSWORD,
+            password_generated=True,
+        )
+    )
+    assert event == InstallAttemptEvent(
+        kind=EventKind.INSTALL_ATTEMPT,
+        id=5,
+        occurred_at=AT,
+        ip_address=IP,
+        path=INSTALL_PATH,
+        site_title=PASSWORD,
+        username=USERNAME,
+        email=EMAIL,
+        password=PASSWORD,
+        password_generated=True,
     )
 
 
@@ -231,6 +293,7 @@ def test_events_keep_the_page_order_when_kinds_interleave():
             password="p",
             decoy_accepted=False,
             canary=None,
+            install=None,
         )
         for n in (2, 1)
     ]

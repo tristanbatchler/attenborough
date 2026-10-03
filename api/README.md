@@ -1,6 +1,6 @@
 # Attenborough API
 
-The backend of Attenborough, a public honeypot. The decoy app (`../decoy`) serves the fake sites and reports every visit and login attempt here (`/ingest/...`); the API records them, decides every outcome, and publishes what it observed on the public **exhibit** (`/exhibit/...`). Requests to any other path of the API itself are recorded too, as honeypot 404s.
+The backend of Attenborough, a public honeypot. The decoy app (`../decoy`) serves the fake sites and reports every visit, login attempt and WordPress install here (`/ingest/...`); the API records them, decides every outcome, and publishes what it observed on the public **exhibit** (`/exhibit/...`). Requests to any other path of the API itself are recorded too, as honeypot 404s.
 
 The code is small and flat: `main.py` composes the app (middleware, routers, startup), `exhibit.py` and `ingest.py` are the two routers, `events.py` the exhibit's event models, `patterns.py` the Patterns page's figures, `telemetry.py` records every request (`record_hit`, `TelemetryMiddleware`), `geolocation.py` locates visitors' addresses, `dependencies.py` has the client address and database dependencies, and `db/` the schema, queries and connection pool.
 
@@ -113,9 +113,10 @@ uv run python scripts/locate_ips.py                          # locate every addr
 
 Generated sqlc code is excluded from ruff and basedpyright (`pyproject.toml`). If you run basedpyright by hand, run it from this directory. It reads its config from the current directory, so running it from the repo root gives different, misleading results.
 
-## Canaries and the tarpit
+## Canaries, installs and the tarpit
 
 - **Canaries:** `POST /ingest/canaries` issues a fresh random secret (`secrets.token_urlsafe`) for a leaked file the decoy is serving, recorded in `canary_tokens` with the path and the visitor. `POST /ingest/logins` links an attempt whose password is a recorded secret (`credential_stuffing_attempts.canary_id`), and the exhibit's login events carry where and when it was handed out (`canary`). The secrets are our own random format, not imitations of any real service's credentials, and open nothing.
+- **Installs:** the decoy's WordPress installer (`/wp-admin/install.php`) reports every install it accepts to `POST /ingest/installs`, recorded in `install_attempts`: the site title, username and email chosen, and the account's password. The API decides that password as WordPress does (`ingest.account_password`): the chosen one, trimmed, or, when none was chosen, a random one that the installer shows. Nothing is installed. `POST /ingest/logins` links an attempt that uses an installed account, by username or email and that password, to its latest install (`credential_stuffing_attempts.install_id`), and the exhibit lists installs as events of their own (`install_attempt`) and gives login events the install that created their account (`install`).
 - **Tarpit:** the login outcome's `delay_ms` (`ingest.tarpit_delay_ms`): an address's first ten attempts in ten minutes are answered at once, then each waits half a second longer, up to 15 s, under nginx's 60 s proxy timeout. It slows fast guessers without blocking anyone, and forgets an address that slows down.
 
 ## Geolocation

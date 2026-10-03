@@ -38,6 +38,7 @@ class EventKind(enum.StrEnum):
     LOGIN_ATTEMPT = "login_attempt"
     DECOY_VIEW = "decoy_view"
     DECOY_PASSWORD_ATTEMPT = "decoy_password_attempt"
+    INSTALL_ATTEMPT = "install_attempt"
 
 
 class PathCategory(enum.StrEnum):

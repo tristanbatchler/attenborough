@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { IssueCanaryData, IssueCanaryErrors, IssueCanaryResponses, ReportHitData, ReportHitErrors, ReportHitResponses, ReportLoginData, ReportLoginErrors, ReportLoginResponses } from './types.gen';
+import type { IssueCanaryData, IssueCanaryErrors, IssueCanaryResponses, ReportHitData, ReportHitErrors, ReportHitResponses, ReportInstallData, ReportInstallErrors, ReportInstallResponses, ReportLoginData, ReportLoginErrors, ReportLoginResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -41,6 +41,21 @@ export const reportHit = <ThrowOnError extends boolean = false>(options: Options
  */
 export const reportLogin = <ThrowOnError extends boolean = false>(options: Options<ReportLoginData, ThrowOnError>): RequestResult<ReportLoginResponses, ReportLoginErrors, ThrowOnError> => (options.client ?? client).post<ReportLoginResponses, ReportLoginErrors, ThrowOnError>({
     url: '/ingest/logins',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Report Install
+ *
+ * Record a WordPress install and decide its account's password (account_password).
+ * Nothing is installed; a later login with the account is linked to this install.
+ */
+export const reportInstall = <ThrowOnError extends boolean = false>(options: Options<ReportInstallData, ThrowOnError>): RequestResult<ReportInstallResponses, ReportInstallErrors, ThrowOnError> => (options.client ?? client).post<ReportInstallResponses, ReportInstallErrors, ThrowOnError>({
+    url: '/ingest/installs',
     ...options,
     headers: {
         'Content-Type': 'application/json',

@@ -9,13 +9,17 @@ from attenborough.ingest import (
     TARPIT_MAX_DELAY_MS,
     TARPIT_STEP_MS,
     DecoyHit,
+    InstallAttempt,
     LoginAttempt,
+    account_password,
     tarpit_delay_ms,
 )
 
 # The parametrized argument: a function building one report.
 REPORT = "report"
+CHOSEN = "chosen"
 LOGIN_PATH = "/wp-login.php"
+INSTALL_PATH = "/wp-admin/install.php"
 # Any character, repeated past a limit.
 FILLER = "x"
 TOO_LONG = FILLER * (16 * 1024 + 1)
@@ -53,7 +57,24 @@ def login(
     return LoginAttempt(path=path, username=username, password=password)
 
 
-@pytest.mark.parametrize(REPORT, [hit, login])
+def install(
+    *,
+    path: str = INSTALL_PATH,
+    site_title: str = "",
+    username: str = "admin",
+    email: str = "owner@example.net",
+    password: str = "",
+) -> InstallAttempt:
+    return InstallAttempt(
+        path=path,
+        site_title=site_title,
+        username=username,
+        email=email,
+        password=password,
+    )
+
+
+@pytest.mark.parametrize(REPORT, [hit, login, install])
 def test_ingest_accepts_valid_reports(report: Callable[[], BaseModel]):
     _ = report()
 
@@ -72,6 +93,11 @@ def test_ingest_accepts_valid_reports(report: Callable[[], BaseModel]):
         lambda: login(path=TOO_LONG),
         lambda: login(username=TOO_LONG_CREDENTIAL),
         lambda: login(password=TOO_LONG_CREDENTIAL),
+        lambda: install(path=TOO_LONG),
+        lambda: install(site_title=TOO_LONG_CREDENTIAL),
+        lambda: install(username=TOO_LONG_CREDENTIAL),
+        lambda: install(email=TOO_LONG_CREDENTIAL),
+        lambda: install(password=TOO_LONG_CREDENTIAL),
     ],
 )
 def test_ingest_rejects_out_of_bounds_reports(report: Callable[[], BaseModel]):
@@ -85,3 +111,19 @@ def test_the_tarpit_lets_the_first_attempts_through_then_slows_down_to_a_cap():
     assert tarpit_delay_ms(TARPIT_FREE_ATTEMPTS) == TARPIT_STEP_MS
     assert tarpit_delay_ms(TARPIT_FREE_ATTEMPTS + 1) == 2 * TARPIT_STEP_MS
     assert tarpit_delay_ms(1_000_000) == TARPIT_MAX_DELAY_MS
+
+
+def test_an_installed_account_keeps_its_chosen_password_trimmed_as_wordpress_stores_it():
+    assert account_password(" hunter2\t\n") == ("hunter2", False)
+
+
+@pytest.mark.parametrize(CHOSEN, ["", " \t\r\n\0\x0b"])
+def test_an_install_without_a_password_gets_a_made_up_one_like_wordpress_gives(
+    chosen: str,
+):
+    password, generated = account_password(chosen)
+    assert generated
+    assert len(password) == 12
+    assert password.isascii()
+    assert password.isalnum()
+    assert account_password(chosen)[0] != password

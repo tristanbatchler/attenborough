@@ -26,15 +26,30 @@ VALUES (
     sqlc.arg(user_agent), sqlc.arg(headers), sqlc.narg(body), sqlc.narg(body_size), sqlc.arg(status_code)
 );
 
--- A login attempt, linked to the canary its password was, if it was one.
+-- A login attempt, linked to the canary its password was, if it was one, and to the latest install
+-- whose account it used (by username or email, as WordPress's login takes either), if any.
 -- name: CreateCredentialStuffingAttempt :exec
 INSERT INTO credential_stuffing_attempts (
-    ip_address, endpoint_path, username, password, was_fake_success, canary_id
+    ip_address, endpoint_path, username, password, was_fake_success, canary_id, install_id
 )
 VALUES (
     sqlc.arg(ip_address), sqlc.arg(endpoint_path), sqlc.arg(username), sqlc.arg(password),
     sqlc.arg(was_fake_success),
-    (SELECT id FROM canary_tokens WHERE token = sqlc.arg(password))
+    (SELECT id FROM canary_tokens WHERE token = sqlc.arg(password)),
+    (SELECT id FROM install_attempts
+     WHERE (username = sqlc.arg(username) OR email = sqlc.arg(username))
+       AND password = sqlc.arg(password)
+     ORDER BY attempted_at DESC, id DESC
+     LIMIT 1)
+);
+
+-- name: CreateInstallAttempt :exec
+INSERT INTO install_attempts (
+    ip_address, path, site_title, username, email, password, password_generated
+)
+VALUES (
+    sqlc.arg(ip_address), sqlc.arg(path), sqlc.arg(site_title), sqlc.arg(username),
+    sqlc.arg(email), sqlc.arg(password), sqlc.arg(password_generated)
 );
 
 -- name: CreateCanaryToken :exec
@@ -53,8 +68,8 @@ INSERT INTO ip_bans (ip_address, expires, reason, added_by_user_id)
 VALUES (sqlc.arg(ip_address), sqlc.arg(expires), sqlc.arg(reason), sqlc.arg(added_by_user_id))
 RETURNING *;
 
--- Every event a visitor caused, newest first: requests to the honeypot, login attempts, decoy views
--- and decoy password attempts. Details are fetched separately, per kind (below). Bans are the
+-- Every event a visitor caused, newest first: requests to the honeypot, login attempts, decoy views,
+-- decoy password attempts and installs. Details are fetched separately, per kind (below). Bans are the
 -- project's own actions, not a visitor's, so they are not listed.
 --
 -- Keyset paging: a page is the events after a cursor, the previous page's last event (events.py,
@@ -62,7 +77,7 @@ RETURNING *;
 -- so rows never repeat or vanish between pages, however many events arrive meanwhile. Each kind is
 -- its own sub-select with its own LIMIT, read newest first from its (time, id) index, and the
 -- separate `<=` on the time lets that index scan start at the cursor: a page reads about one page
--- of rows from each table, however deep it is. (One UNION ALL view over the four tables let the
+-- of rows from each table, however deep it is. (One UNION ALL view over the tables let the
 -- planner read and sort a whole table instead.)
 -- name: ListRecentEvents :many
 SELECT * FROM (
@@ -91,6 +106,13 @@ SELECT * FROM (
      FROM decoy_password_attempts
      WHERE attempted_at <= sqlc.arg(before_at)::timestamptz
        AND (attempted_at, 'decoy_password_attempt'::event_kind, id) < (sqlc.arg(before_at)::timestamptz, sqlc.arg(before_kind)::event_kind, sqlc.arg(before_id)::bigint)
+     ORDER BY attempted_at DESC, id DESC
+     LIMIT sqlc.arg('limit')::int)
+    UNION ALL
+    (SELECT 'install_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
+     FROM install_attempts
+     WHERE attempted_at <= sqlc.arg(before_at)::timestamptz
+       AND (attempted_at, 'install_attempt'::event_kind, id) < (sqlc.arg(before_at)::timestamptz, sqlc.arg(before_kind)::event_kind, sqlc.arg(before_id)::bigint)
      ORDER BY attempted_at DESC, id DESC
      LIMIT sqlc.arg('limit')::int)
 ) AS page
@@ -126,6 +148,13 @@ SELECT * FROM (
        AND (attempted_at, 'decoy_password_attempt'::event_kind, id) < (sqlc.arg(before_at)::timestamptz, sqlc.arg(before_kind)::event_kind, sqlc.arg(before_id)::bigint)
      ORDER BY attempted_at DESC, id DESC
      LIMIT sqlc.arg('limit')::int)
+    UNION ALL
+    (SELECT 'install_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
+     FROM install_attempts
+     WHERE ip_address = sqlc.arg(ip_address)::inet AND attempted_at <= sqlc.arg(before_at)::timestamptz
+       AND (attempted_at, 'install_attempt'::event_kind, id) < (sqlc.arg(before_at)::timestamptz, sqlc.arg(before_kind)::event_kind, sqlc.arg(before_id)::bigint)
+     ORDER BY attempted_at DESC, id DESC
+     LIMIT sqlc.arg('limit')::int)
 ) AS page
 ORDER BY occurred_at DESC, kind DESC, id DESC
 LIMIT sqlc.arg('limit')::int;
@@ -140,15 +169,24 @@ SELECT
 FROM telemetry_hits
 WHERE id = ANY(sqlc.arg(ids)::BIGINT[]);
 
--- With where its password was handed out, when it was a canary.
+-- With where its password was handed out, when it was a canary, and the install that created its
+-- account, when it used one.
 -- name: GetLoginAttemptsByIds :many
 SELECT
     a.id, a.ip_address, a.attempted_at, a.endpoint_path, a.username, a.password,
     a.was_fake_success, c.path AS canary_path, c.ip_address AS canary_ip_address,
-    c.issued_at AS canary_issued_at
+    c.issued_at AS canary_issued_at, i.id AS install_id, i.ip_address AS install_ip_address,
+    i.attempted_at AS install_attempted_at
 FROM credential_stuffing_attempts a
 LEFT JOIN canary_tokens c ON c.id = a.canary_id
+LEFT JOIN install_attempts i ON i.id = a.install_id
 WHERE a.id = ANY(sqlc.arg(ids)::BIGINT[]);
+
+-- name: GetInstallAttemptsByIds :many
+SELECT
+    id, ip_address, attempted_at, path, site_title, username, email, password, password_generated
+FROM install_attempts
+WHERE id = ANY(sqlc.arg(ids)::BIGINT[]);
 
 -- name: GetDecoyViewsByIds :many
 SELECT dv.id, dv.ip_address, dv.viewed_at, d.slug AS decoy_slug, d.type AS decoy_type

@@ -1,42 +1,47 @@
-import { redirect } from '@sveltejs/kit';
+import { redirect, type RequestEvent } from '@sveltejs/kit';
 import { constants } from 'node:http2';
-import { POWERED_BY } from '$lib/site/blog';
 import { ADMIN_PATH, LOGIN_PATH } from '$lib/wordpress/site';
 import {
 	CONTENT_TYPE_HEADER,
 	HTML_CONTENT_TYPE,
+	POWERED_BY_HEADER,
 	TEXT_CONTENT_TYPE,
 	XML_CONTENT_TYPE
 } from '$lib/server/headers';
+import { installer } from '$lib/server/install';
+import { wpDie } from '$lib/server/wp-die';
 
 // The parts of WordPress every install has besides the blog: the admin area's front door,
-// XML-RPC, the installer and the readme. Fixed content; nothing a visitor sends is put into it.
+// XML-RPC, the installer ($lib/server/install) and the readme. Fixed content; nothing a visitor
+// sends is put into it, except what the installer repeats back, escaped, as WordPress does.
 
 const INSTALLER = 'install.php';
-const POWERED_BY_HEADER = { 'x-powered-by': POWERED_BY };
+const SETUP_CONFIG = 'setup-config.php';
 const RSD_QUERY = 'rsd';
 
-/** Any admin page while logged out: WordPress sends you to the login, and back here after. */
-export function adminPage(rest: string): Response {
+/**
+ * Any page under wp-admin/. The installer and setup-config.php work without logging in, as they
+ * must before there is anyone to log in as; anything else sends you to the login, and back after.
+ */
+export async function adminPage(rest: string, event: RequestEvent): Promise<Response> {
 	if (rest === INSTALLER) {
-		return installedPage();
+		return installer(event);
+	}
+	if (rest === SETUP_CONFIG) {
+		return configExists();
 	}
 	const back = encodeURIComponent(`${ADMIN_PATH}${rest}`);
 	redirect(constants.HTTP_STATUS_FOUND, `${LOGIN_PATH}?redirect_to=${back}&reauth=1`);
 }
 
-/** wp-admin/install.php on a site that is already set up, which is what scanners hope it isn't. */
-function installedPage(): Response {
-	const html =
-		'<!DOCTYPE html>\n<html lang="en-US">\n<head>\n<meta charset="utf-8" />\n' +
-		'<title>WordPress &rsaquo; Installation</title>\n</head>\n<body class="wp-core-ui">\n' +
-		'<p id="logo">WordPress</p>\n<h1>Already Installed</h1>\n' +
-		'<p>You appear to have already installed WordPress. To reinstall please clear your old ' +
-		'database tables first.</p>\n<p class="step"><a href="/wp-login.php" class="button button-large">Log In</a></p>\n' +
-		'</body>\n</html>\n';
-	return new Response(html, {
-		headers: { ...POWERED_BY_HEADER, [CONTENT_TYPE_HEADER]: HTML_CONTENT_TYPE }
-	});
+/** setup-config.php once wp-config.php exists: WordPress refuses, and points to the installer. */
+function configExists(): Response {
+	return wpDie(
+		'<p>The file <code>wp-config.php</code> already exists. If you need to reset any of the ' +
+			'configuration items in this file, please delete it first. You may try ' +
+			`<a href="${INSTALLER}">installing now</a>.</p>`,
+		constants.HTTP_STATUS_CONFLICT
+	);
 }
 
 const XMLRPC_POST_ONLY = 'XML-RPC server accepts POST requests only.';

@@ -111,6 +111,14 @@ class CanaryOrigin(BaseModel):
     issued_at: datetime
 
 
+class InstallOrigin(BaseModel):
+    """The install that created the account a login used: which one, from where, and when."""
+
+    id: int
+    ip_address: str
+    attempted_at: datetime
+
+
 class LoginAttemptEvent(BaseModel):
     kind: Literal[EventKind.LOGIN_ATTEMPT]
     id: int
@@ -123,6 +131,25 @@ class LoginAttemptEvent(BaseModel):
     decoy_accepted: bool
     # Set when the password was a canary from one of the decoy's leaked files.
     canary: CanaryOrigin | None
+    # Set when the account was one a visitor "created" through the decoy's installer.
+    install: InstallOrigin | None
+
+
+class InstallAttemptEvent(BaseModel):
+    """Someone finishing the decoy's "unfinished" WordPress install, to take the site over.
+    Nothing was installed: this is the account they chose."""
+
+    kind: Literal[EventKind.INSTALL_ATTEMPT]
+    id: int
+    occurred_at: datetime
+    ip_address: str
+    path: str
+    site_title: str
+    username: str
+    email: str
+    # The account's password: the one chosen, or the one the decoy made up (password_generated).
+    password: str
+    password_generated: bool
 
 
 class DecoyViewEvent(BaseModel):
@@ -145,7 +172,11 @@ class DecoyPasswordAttemptEvent(BaseModel):
 
 
 Event = Annotated[
-    HitEvent | LoginAttemptEvent | DecoyViewEvent | DecoyPasswordAttemptEvent,
+    HitEvent
+    | LoginAttemptEvent
+    | InstallAttemptEvent
+    | DecoyViewEvent
+    | DecoyPasswordAttemptEvent,
     Field(discriminator=DISCRIMINATOR),
 ]
 
@@ -304,6 +335,32 @@ def login_attempt_event(row: queries.GetLoginAttemptsByIdsRow) -> LoginAttemptEv
             ip_address=row.canary_ip_address,
             issued_at=row.canary_issued_at,
         ),
+        install=None
+        if row.install_id is None
+        or row.install_ip_address is None
+        or row.install_attempted_at is None
+        else InstallOrigin(
+            id=row.install_id,
+            ip_address=row.install_ip_address,
+            attempted_at=row.install_attempted_at,
+        ),
+    )
+
+
+def install_attempt_event(
+    row: queries.GetInstallAttemptsByIdsRow,
+) -> InstallAttemptEvent:
+    return InstallAttemptEvent(
+        kind=EventKind.INSTALL_ATTEMPT,
+        id=row.id_,
+        occurred_at=row.attempted_at,
+        ip_address=row.ip_address,
+        path=hide_honeypot(row.path),
+        site_title=hide_honeypot(row.site_title),
+        username=hide_honeypot(row.username),
+        email=hide_honeypot(row.email),
+        password=hide_honeypot(row.password),
+        password_generated=row.password_generated,
     )
 
 
@@ -397,6 +454,11 @@ async def fetch_events(
         events += map(
             login_attempt_event,
             await queries.get_login_attempts_by_ids(conn, ids=ids),
+        )
+    if ids := ids_of(EventKind.INSTALL_ATTEMPT, page):
+        events += map(
+            install_attempt_event,
+            await queries.get_install_attempts_by_ids(conn, ids=ids),
         )
     if ids := ids_of(EventKind.DECOY_VIEW, page):
         events += map(

@@ -16,6 +16,7 @@ __all__: collections.abc.Sequence[str] = (
     "DecoyRevocation",
     "DecoyTextContent",
     "DecoyView",
+    "InstallAttempt",
     "IpActivity",
     "IpBan",
     "IpLocation",
@@ -70,6 +71,7 @@ class CredentialStuffingAttempt(pydantic.BaseModel):
     was_fake_success: bool
     attempted_at: datetime.datetime
     canary_id: int | None
+    install_id: int | None
 
 
 class Decoy(pydantic.BaseModel):
@@ -141,6 +143,20 @@ class DecoyView(pydantic.BaseModel):
     decoy_id: int
     ip_address: str
     viewed_at: datetime.datetime
+
+
+class InstallAttempt(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    id_: int
+    ip_address: str
+    path: str
+    site_title: str
+    username: str
+    email: str
+    password: str
+    password_generated: bool
+    attempted_at: datetime.datetime
 
 
 class IpActivity(pydantic.BaseModel):

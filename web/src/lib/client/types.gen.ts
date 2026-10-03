@@ -198,7 +198,7 @@ export type EventPage = {
     /**
      * Items
      */
-    items: Array<HitEvent | LoginAttemptEvent | DecoyViewEvent | DecoyPasswordAttemptEvent>;
+    items: Array<HitEvent | LoginAttemptEvent | InstallAttemptEvent | DecoyViewEvent | DecoyPasswordAttemptEvent>;
     /**
      * Next Cursor
      */
@@ -338,6 +338,75 @@ export type HitEvent = {
 };
 
 /**
+ * InstallAttemptEvent
+ *
+ * Someone finishing the decoy's "unfinished" WordPress install, to take the site over.
+ * Nothing was installed: this is the account they chose.
+ */
+export type InstallAttemptEvent = {
+    /**
+     * Kind
+     */
+    kind: 'install_attempt';
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+    /**
+     * Ip Address
+     */
+    ip_address: string;
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Site Title
+     */
+    site_title: string;
+    /**
+     * Username
+     */
+    username: string;
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Password
+     */
+    password: string;
+    /**
+     * Password Generated
+     */
+    password_generated: boolean;
+};
+
+/**
+ * InstallOrigin
+ *
+ * The install that created the account a login used: which one, from where, and when.
+ */
+export type InstallOrigin = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Ip Address
+     */
+    ip_address: string;
+    /**
+     * Attempted At
+     */
+    attempted_at: string;
+};
+
+/**
  * IpLocation
  *
  * Where an address is, as a geolocation database estimated it when the address was first
@@ -444,6 +513,7 @@ export type LoginAttemptEvent = {
      */
     decoy_accepted: boolean;
     canary: CanaryOrigin | null;
+    install: InstallOrigin | null;
 };
 
 /**
