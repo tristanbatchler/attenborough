@@ -176,6 +176,13 @@ RETURN (CASE
     ELSE 'other'
 END)::path_category;
 
+-- Whether the exhibit shows an address's activity: not a private, loopback or link-local one. Those
+-- are the project's own, such as the admin testing the decoy from the LAN, reaching it through the
+-- router's loopback (NAT hairpinning) as the router's address. Kept as recorded, never shown.
+CREATE FUNCTION is_public_address(address INET) RETURNS BOOLEAN
+LANGUAGE sql IMMUTABLE PARALLEL SAFE
+RETURN NOT address <<= ANY ('{10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 169.254.0.0/16, ::1/128, fc00::/7, fe80::/10}'::INET[]);
+
 -- Secrets the decoy hands out in its "leaked" files (decoy/src/lib/server/leaks.ts): one fresh random
 -- value per request, recorded against the address it was given to. They open nothing. If one is
 -- ever submitted to a login form, the attempt is linked to it (credential_stuffing_attempts.

@@ -689,21 +689,21 @@ LIST_RECENT_EVENTS: typing.Final[typing.LiteralString] = """-- name: ListRecentE
 SELECT kind, id, ip_address, occurred_at FROM (
     (SELECT 'hit'::event_kind AS kind, id, ip_address, occurred_at
      FROM telemetry_hits
-     WHERE router_group = 'honeypot' AND occurred_at <= %(p1)s::timestamptz
+     WHERE router_group = 'honeypot' AND is_public_address(ip_address) AND occurred_at <= %(p1)s::timestamptz
        AND (occurred_at, 'hit'::event_kind, id) < (%(p1)s::timestamptz, %(p2)s::event_kind, %(p3)s::bigint)
      ORDER BY occurred_at DESC, id DESC
      LIMIT %(p4)s::int)
     UNION ALL
     (SELECT 'login_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
      FROM credential_stuffing_attempts
-     WHERE attempted_at <= %(p1)s::timestamptz
+     WHERE is_public_address(ip_address) AND attempted_at <= %(p1)s::timestamptz
        AND (attempted_at, 'login_attempt'::event_kind, id) < (%(p1)s::timestamptz, %(p2)s::event_kind, %(p3)s::bigint)
      ORDER BY attempted_at DESC, id DESC
      LIMIT %(p4)s::int)
     UNION ALL
     (SELECT 'install_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
      FROM install_attempts
-     WHERE attempted_at <= %(p1)s::timestamptz
+     WHERE is_public_address(ip_address) AND attempted_at <= %(p1)s::timestamptz
        AND (attempted_at, 'install_attempt'::event_kind, id) < (%(p1)s::timestamptz, %(p2)s::event_kind, %(p3)s::bigint)
      ORDER BY attempted_at DESC, id DESC
      LIMIT %(p4)s::int)
@@ -716,21 +716,21 @@ LIST_IP_EVENTS: typing.Final[typing.LiteralString] = """-- name: ListIpEvents :m
 SELECT kind, id, ip_address, occurred_at FROM (
     (SELECT 'hit'::event_kind AS kind, id, ip_address, occurred_at
      FROM telemetry_hits
-     WHERE router_group = 'honeypot' AND ip_address = %(p1)s::inet AND occurred_at <= %(p2)s::timestamptz
+     WHERE router_group = 'honeypot' AND ip_address = %(p1)s::inet AND is_public_address(ip_address) AND occurred_at <= %(p2)s::timestamptz
        AND (occurred_at, 'hit'::event_kind, id) < (%(p2)s::timestamptz, %(p3)s::event_kind, %(p4)s::bigint)
      ORDER BY occurred_at DESC, id DESC
      LIMIT %(p5)s::int)
     UNION ALL
     (SELECT 'login_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
      FROM credential_stuffing_attempts
-     WHERE ip_address = %(p1)s::inet AND attempted_at <= %(p2)s::timestamptz
+     WHERE ip_address = %(p1)s::inet AND is_public_address(ip_address) AND attempted_at <= %(p2)s::timestamptz
        AND (attempted_at, 'login_attempt'::event_kind, id) < (%(p2)s::timestamptz, %(p3)s::event_kind, %(p4)s::bigint)
      ORDER BY attempted_at DESC, id DESC
      LIMIT %(p5)s::int)
     UNION ALL
     (SELECT 'install_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
      FROM install_attempts
-     WHERE ip_address = %(p1)s::inet AND attempted_at <= %(p2)s::timestamptz
+     WHERE ip_address = %(p1)s::inet AND is_public_address(ip_address) AND attempted_at <= %(p2)s::timestamptz
        AND (attempted_at, 'install_attempt'::event_kind, id) < (%(p2)s::timestamptz, %(p3)s::event_kind, %(p4)s::bigint)
      ORDER BY attempted_at DESC, id DESC
      LIMIT %(p5)s::int)
@@ -756,8 +756,8 @@ SELECT
     c.issued_at AS canary_issued_at, i.id AS install_id, i.ip_address AS install_ip_address,
     i.attempted_at AS install_attempted_at
 FROM credential_stuffing_attempts a
-LEFT JOIN canary_tokens c ON c.id = a.canary_id
-LEFT JOIN install_attempts i ON i.id = a.install_id
+LEFT JOIN canary_tokens c ON c.id = a.canary_id AND is_public_address(c.ip_address)
+LEFT JOIN install_attempts i ON i.id = a.install_id AND is_public_address(i.ip_address)
 WHERE a.id = ANY(%(p1)s::BIGINT[])
 """
 
@@ -765,19 +765,20 @@ GET_INSTALL_ATTEMPTS_BY_IDS: typing.Final[typing.LiteralString] = """-- name: Ge
 SELECT
     id, ip_address, attempted_at, path, site_title, username, email, password, password_generated
 FROM install_attempts
-WHERE id = ANY(%(p1)s::BIGINT[])
+WHERE id = ANY(%(p1)s::BIGINT[]) AND is_public_address(ip_address)
 """
 
 LIST_INSTALL_LOGIN_IDS: typing.Final[typing.LiteralString] = """-- name: ListInstallLoginIds :many
 SELECT id
 FROM credential_stuffing_attempts
-WHERE install_id = %(p1)s
+WHERE install_id = %(p1)s AND is_public_address(ip_address)
 ORDER BY attempted_at, id
 LIMIT %(p2)s
 """
 
 COUNT_INSTALL_LOGINS: typing.Final[typing.LiteralString] = """-- name: CountInstallLogins :one
-SELECT count(*) FROM credential_stuffing_attempts WHERE install_id = %(p1)s
+SELECT count(*) FROM credential_stuffing_attempts
+WHERE install_id = %(p1)s AND is_public_address(ip_address)
 """
 
 GET_HIT: typing.Final[typing.LiteralString] = """-- name: GetHit :one
@@ -786,7 +787,7 @@ SELECT
     headers::TEXT AS headers, body, body_size, path_category(path) AS category, banned,
     rule_id IS NOT NULL AS custom_response
 FROM telemetry_hits
-WHERE id = %(p1)s AND router_group = %(p2)s
+WHERE id = %(p1)s AND router_group = %(p2)s AND is_public_address(ip_address)
 """
 
 CATEGORISE_PATH: typing.Final[typing.LiteralString] = """-- name: CategorisePath :one
@@ -798,7 +799,7 @@ SELECT
     requests, distinct_paths, login_attempts, install_attempts, first_seen_at, last_seen_at,
     banned_requests
 FROM ip_activity
-WHERE ip_address = %(p1)s::inet
+WHERE ip_address = %(p1)s::inet AND is_public_address(ip_address)
 """
 
 CREATE_IP_LOCATION: typing.Final[typing.LiteralString] = """-- name: CreateIpLocation :exec
@@ -836,25 +837,29 @@ SELECT
     count(DISTINCT l.country_code) AS countries
 FROM ip_activity a
 LEFT JOIN ip_locations l USING (ip_address)
+WHERE is_public_address(a.ip_address)
 """
 
 GET_OBSERVATION_SPAN: typing.Final[typing.LiteralString] = """-- name: GetObservationSpan :one
 SELECT min(first_seen_at)::TIMESTAMPTZ AS first_seen_at, max(last_seen_at)::TIMESTAMPTZ AS last_seen_at
 FROM ip_activity
+WHERE is_public_address(ip_address)
 HAVING count(first_seen_at) > 0
 """
 
 COUNT_REQUESTS_SINCE: typing.Final[typing.LiteralString] = """-- name: CountRequestsSince :one
 SELECT count(*) AS requests
 FROM telemetry_hits
-WHERE router_group = 'honeypot' AND occurred_at >= %(p1)s::TIMESTAMPTZ
+WHERE router_group = 'honeypot' AND is_public_address(ip_address)
+      AND occurred_at >= %(p1)s::TIMESTAMPTZ
 """
 
 COUNT_CATEGORIES_SINCE: typing.Final[typing.LiteralString] = """-- name: CountCategoriesSince :many
 WITH visits AS MATERIALIZED (
     SELECT path, ip_address, count(*) AS requests
     FROM telemetry_hits
-    WHERE router_group = 'honeypot' AND occurred_at >= %(p1)s::TIMESTAMPTZ
+    WHERE router_group = 'honeypot' AND is_public_address(ip_address)
+      AND occurred_at >= %(p1)s::TIMESTAMPTZ
     GROUP BY path, ip_address
 ), categories AS MATERIALIZED (
     SELECT path, path_category(path) AS category FROM (SELECT DISTINCT path FROM visits) p
@@ -870,7 +875,8 @@ TOP_PATHS_SINCE: typing.Final[typing.LiteralString] = """-- name: TopPathsSince 
 SELECT path, path_category(path) AS category, requests, addresses FROM (
     SELECT path, count(*) AS requests, count(DISTINCT ip_address) AS addresses
     FROM telemetry_hits
-    WHERE router_group = 'honeypot' AND occurred_at >= %(p1)s::TIMESTAMPTZ
+    WHERE router_group = 'honeypot' AND is_public_address(ip_address)
+      AND occurred_at >= %(p1)s::TIMESTAMPTZ
     GROUP BY path
     ORDER BY requests DESC, path
     LIMIT %(p2)s::INT
@@ -880,7 +886,8 @@ SELECT path, path_category(path) AS category, requests, addresses FROM (
 TOP_USER_AGENTS_SINCE: typing.Final[typing.LiteralString] = """-- name: TopUserAgentsSince :many
 SELECT user_agent, count(*) AS requests, count(DISTINCT ip_address) AS addresses
 FROM telemetry_hits
-WHERE router_group = 'honeypot' AND occurred_at >= %(p1)s::TIMESTAMPTZ
+WHERE router_group = 'honeypot' AND is_public_address(ip_address)
+      AND occurred_at >= %(p1)s::TIMESTAMPTZ
 GROUP BY user_agent
 ORDER BY requests DESC, user_agent
 LIMIT %(p2)s::INT
@@ -889,7 +896,8 @@ LIMIT %(p2)s::INT
 COUNT_REQUESTS_PER_HOUR_SINCE: typing.Final[typing.LiteralString] = """-- name: CountRequestsPerHourSince :many
 SELECT date_trunc('hour', occurred_at)::TIMESTAMPTZ AS hour, count(*) AS requests
 FROM telemetry_hits
-WHERE router_group = 'honeypot' AND occurred_at >= %(p1)s::TIMESTAMPTZ
+WHERE router_group = 'honeypot' AND is_public_address(ip_address)
+      AND occurred_at >= %(p1)s::TIMESTAMPTZ
 GROUP BY hour
 ORDER BY hour
 """
@@ -897,7 +905,7 @@ ORDER BY hour
 TOP_USERNAMES_SINCE: typing.Final[typing.LiteralString] = """-- name: TopUsernamesSince :many
 SELECT username AS value, count(*) AS attempts, count(DISTINCT ip_address) AS addresses
 FROM credential_stuffing_attempts
-WHERE attempted_at >= %(p1)s::TIMESTAMPTZ
+WHERE attempted_at >= %(p1)s::TIMESTAMPTZ AND is_public_address(ip_address)
 GROUP BY username
 ORDER BY attempts DESC, username
 LIMIT %(p2)s::INT
@@ -906,7 +914,7 @@ LIMIT %(p2)s::INT
 TOP_PASSWORDS_SINCE: typing.Final[typing.LiteralString] = """-- name: TopPasswordsSince :many
 SELECT password AS value, count(*) AS attempts, count(DISTINCT ip_address) AS addresses
 FROM credential_stuffing_attempts
-WHERE attempted_at >= %(p1)s::TIMESTAMPTZ
+WHERE attempted_at >= %(p1)s::TIMESTAMPTZ AND is_public_address(ip_address)
 GROUP BY password
 ORDER BY attempts DESC, password
 LIMIT %(p2)s::INT
@@ -916,6 +924,7 @@ TOP_COUNTRIES: typing.Final[typing.LiteralString] = """-- name: TopCountries :ma
 SELECT l.country_code, sum(a.requests)::BIGINT AS requests, count(*) AS addresses
 FROM ip_activity a
 LEFT JOIN ip_locations l USING (ip_address)
+WHERE is_public_address(a.ip_address)
 GROUP BY l.country_code
 ORDER BY requests DESC, l.country_code
 LIMIT %(p1)s::INT
@@ -925,6 +934,7 @@ TOP_NETWORKS: typing.Final[typing.LiteralString] = """-- name: TopNetworks :many
 SELECT l.asn, l.as_organisation, sum(a.requests)::BIGINT AS requests, count(*) AS addresses
 FROM ip_activity a
 LEFT JOIN ip_locations l USING (ip_address)
+WHERE is_public_address(a.ip_address)
 GROUP BY l.asn, l.as_organisation
 ORDER BY requests DESC, l.asn
 LIMIT %(p1)s::INT
@@ -936,6 +946,7 @@ SELECT
     a.last_seen_at, l.country_code
 FROM ip_activity a
 LEFT JOIN ip_locations l USING (ip_address)
+WHERE is_public_address(a.ip_address)
 ORDER BY a.requests DESC, a.ip_address
 LIMIT %(p1)s::INT
 """
@@ -946,7 +957,7 @@ SELECT
     a.last_seen_at, l.country_code
 FROM ip_activity a
 LEFT JOIN ip_locations l USING (ip_address)
-WHERE a.first_seen_at IS NOT NULL
+WHERE a.first_seen_at IS NOT NULL AND is_public_address(a.ip_address)
 ORDER BY a.last_seen_at - a.first_seen_at DESC, a.ip_address
 LIMIT %(p1)s::INT
 """
@@ -956,6 +967,7 @@ WITH path_sets AS (
     SELECT ip_address, md5(string_agg(path_md5::TEXT, ',' ORDER BY path_md5)) AS path_set,
            count(*) AS paths
     FROM ip_request_paths
+    WHERE is_public_address(ip_address)
     GROUP BY ip_address
     HAVING count(*) >= %(p3)s::INT
 )
@@ -977,6 +989,7 @@ LIST_PATHS_OF: typing.Final[typing.LiteralString] = """-- name: ListPathsOf :man
 SELECT DISTINCT path
 FROM telemetry_hits
 WHERE ip_address = %(p1)s::INET AND router_group = 'honeypot'
+  AND is_public_address(ip_address)
 ORDER BY path
 LIMIT %(p2)s::INT
 """
@@ -987,7 +1000,7 @@ SELECT
     sum(a.requests)::BIGINT AS requests, count(*) AS addresses
 FROM ip_activity a
 JOIN ip_locations l USING (ip_address)
-WHERE l.latitude IS NOT NULL
+WHERE l.latitude IS NOT NULL AND is_public_address(a.ip_address)
 GROUP BY l.latitude, l.longitude, l.city, l.country_code
 ORDER BY requests DESC
 LIMIT %(p1)s::INT

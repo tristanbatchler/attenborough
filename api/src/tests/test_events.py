@@ -6,7 +6,7 @@ from psycopg import AsyncConnection
 
 from attenborough import events
 from attenborough.db import queries
-from attenborough.db.enums import EventKind, PathCategory
+from attenborough.db.enums import EventKind, PathCategory, RouterGroup
 from attenborough.events import (
     DISCRIMINATOR,
     HONEYPOT_PLACEHOLDER,
@@ -390,3 +390,52 @@ async def test_a_takeover_is_its_install_and_the_logins_into_its_account_in_orde
     assert [login.ip_address for login in takeover.logins] == [IP, other_ip, other_ip]
     assert all(login.decoy_accepted for login in takeover.logins)
     assert missing is None
+
+
+@pytest.mark.anyio
+async def test_the_exhibit_shows_nothing_of_private_addresses(db_conn: AsyncConnection):
+    private_ip, public_ip = "192.168.20.1", "203.0.113.200"
+    cursor = events.FIRST_PAGE
+
+    async def visit(ip: str) -> None:
+        await queries.create_telemetry_hit(
+            db_conn,
+            ip_address=ip,
+            method=HTTPMethod.GET,
+            path=PATH,
+            query=None,
+            router_group=RouterGroup.HONEYPOT,
+            user_agent=USER_AGENT,
+            headers="{}",
+            body=None,
+            body_size=None,
+            status_code=200,
+            banned=False,
+            rule_id=None,
+        )
+
+    async def listed(ip: str) -> int:
+        rows = await queries.list_ip_events(
+            db_conn,
+            ip_address=ip,
+            before_at=cursor.occurred_at,
+            before_kind=cursor.kind,
+            before_id=cursor.id,
+            limit=1,
+        )
+        return len(rows)
+
+    async def addresses() -> int:
+        totals = await queries.get_pattern_totals(db_conn)
+        assert totals is not None
+        return totals.addresses
+
+    async with db_conn.transaction(force_rollback=True):
+        before = await addresses()
+        await visit(private_ip)
+        await visit(public_ip)
+        assert await listed(private_ip) == 0
+        assert await queries.get_ip_activity(db_conn, ip_address=private_ip) is None
+        assert await listed(public_ip) == 1
+        assert await queries.get_ip_activity(db_conn, ip_address=public_ip) is not None
+        assert await addresses() == before + 1
