@@ -7,6 +7,7 @@
 	let { username, error }: { username: string; error: LoginError | null } = $props();
 
 	const loginPath = resolve('/wp-login.php');
+	const lostPasswordPath = resolve('/wp-login.php?action=lostpassword');
 </script>
 
 <!-- Modelled on WordPress 6's login page (wp-login.php). Rendered by $lib/server/html: the CSS is a
@@ -117,6 +118,9 @@
 					The username field is empty.
 				{:else if error === LoginError.EMPTY_PASSWORD}
 					The password field is empty.
+				{:else if error === LoginError.INCORRECT_PASSWORD}
+					The password you entered for the username <strong>{username}</strong> is incorrect.
+					<a href={lostPasswordPath}>Lost your password?</a>
 				{:else}
 					The username <strong>{username}</strong> is not registered on this site. If you are unsure of
 					your username, try your email address instead.
@@ -174,6 +178,6 @@
 	</form>
 
 	<p id="nav">
-		<a href={resolve('/wp-login.php?action=lostpassword')}>Lost your password?</a>
+		<a href={lostPasswordPath}>Lost your password?</a>
 	</p>
 </div>

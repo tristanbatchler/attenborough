@@ -87,7 +87,12 @@ class LoginAttempt(BaseModel):
 class LoginOutcome(BaseModel):
     """How the decoy should answer a login: decided here, not in the decoy app."""
 
+    # The decoy pretends to accept a login only into an account an install created, with its
+    # password: nothing is ever really logged in.
     success: bool
+    # Whether the login named an account an install created, whatever the password: WordPress says
+    # such an account's password was wrong, rather than that it isn't registered.
+    known_account: bool
     # How long to wait before answering: the tarpit for persistent guessers (tarpit_delay_ms).
     delay_ms: int = Field(ge=0, le=TARPIT_MAX_DELAY_MS)
 
@@ -147,22 +152,31 @@ async def report_hit(
 async def report_login(
     attempt: LoginAttempt, db_conn: DBConn, origin: RequestOrigin
 ) -> LoginOutcome:
-    """Record submitted credentials and decide the outcome the decoy app shows."""
-    # No decoy account exists, so every login fails, as a real site does for guessed credentials,
-    # canaries included: they were never anyone's password. The attempt is linked to the canary.
-    success = False
+    """Record submitted credentials and decide the outcome the decoy app shows.
+
+    The only accounts are the ones installs created (report_install), so only those open, with
+    their own password. Every other login fails, as a real site does for guessed credentials,
+    canaries included: they were never anyone's password. The attempt is linked to the canary or
+    install it used (CreateCredentialStuffingAttempt).
+    """
     previous = await queries.count_login_attempts_since(
         db_conn, ip_address=str(origin), since=datetime.now(UTC) - TARPIT_WINDOW
     )
-    await queries.create_credential_stuffing_attempt(
+    recorded = await queries.create_credential_stuffing_attempt(
         db_conn,
         endpoint_path=attempt.path,
         ip_address=str(origin),
         username=attempt.username,
         password=attempt.password,
-        was_fake_success=success,
     )
-    return LoginOutcome(success=success, delay_ms=tarpit_delay_ms(previous or 0))
+    if recorded is None:
+        # Unreachable: INSERT ... RETURNING returns the row it inserted.
+        raise RuntimeError("Recording a login attempt returned no row")
+    return LoginOutcome(
+        success=recorded.was_fake_success,
+        known_account=recorded.known_account,
+        delay_ms=tarpit_delay_ms(previous or 0),
+    )
 
 
 def account_password(chosen: str) -> tuple[str, bool]:

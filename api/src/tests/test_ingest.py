@@ -2,8 +2,10 @@ import base64
 from collections.abc import Callable
 
 import pytest
+from psycopg import AsyncConnection
 from pydantic import BaseModel, ValidationError
 
+from attenborough.db import queries
 from attenborough.ingest import (
     TARPIT_FREE_ATTEMPTS,
     TARPIT_MAX_DELAY_MS,
@@ -28,6 +30,8 @@ TOO_MANY_HEADERS = {str(i): "" for i in range(2001)}
 TOO_BIG_BODY = base64.b64encode(bytes(1024 * 1024 + 1)).decode()
 # Credentials are parsed from a body, so they share its limit.
 TOO_LONG_CREDENTIAL = FILLER * (1024 * 1024 + 1)
+# An address from TEST-NET-1 (RFC 5737), never a real visitor.
+TEST_IP = "192.0.2.1"
 
 
 def hit(
@@ -127,3 +131,38 @@ def test_an_install_without_a_password_gets_a_made_up_one_like_wordpress_gives(
     assert password.isascii()
     assert password.isalnum()
     assert account_password(chosen)[0] != password
+
+
+@pytest.mark.anyio
+async def test_only_an_installed_account_with_its_own_password_opens(
+    db_conn: AsyncConnection,
+):
+    username, email, password = "test-installed-admin", "test@example.net", "chosen"
+
+    async def outcome(login: str, tried: str) -> tuple[bool, bool]:
+        recorded = await queries.create_credential_stuffing_attempt(
+            db_conn,
+            ip_address=TEST_IP,
+            endpoint_path=LOGIN_PATH,
+            username=login,
+            password=tried,
+        )
+        assert recorded is not None
+        return recorded.was_fake_success, recorded.known_account
+
+    async with db_conn.transaction(force_rollback=True):
+        assert await outcome(username, password) == (False, False)
+        await queries.create_install_attempt(
+            db_conn,
+            ip_address=TEST_IP,
+            path=INSTALL_PATH,
+            site_title="",
+            username=username,
+            email=email,
+            password=password,
+            password_generated=False,
+        )
+        assert await outcome(username, password) == (True, True)
+        assert await outcome(email, password) == (True, True)
+        assert await outcome(username, "wrong") == (False, True)
+        assert await outcome("test-someone-else", password) == (False, False)

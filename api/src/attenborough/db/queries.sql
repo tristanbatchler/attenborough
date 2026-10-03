@@ -27,21 +27,32 @@ VALUES (
 );
 
 -- A login attempt, linked to the canary its password was, if it was one, and to the latest install
--- whose account it used (by username or email, as WordPress's login takes either), if any.
--- name: CreateCredentialStuffingAttempt :exec
+-- whose account it opened (by username or email, as WordPress's login takes either), if any. Opening
+-- an installed account is the one login the decoy pretends to accept (was_fake_success). Returns
+-- that, and whether the login named an installed account at all, whatever the password.
+-- name: CreateCredentialStuffingAttempt :one
+WITH opened AS (
+    SELECT id FROM install_attempts
+    WHERE (username = sqlc.arg(username) OR email = sqlc.arg(username))
+      AND password = sqlc.arg(password)
+    ORDER BY attempted_at DESC, id DESC
+    LIMIT 1
+)
 INSERT INTO credential_stuffing_attempts (
     ip_address, endpoint_path, username, password, was_fake_success, canary_id, install_id
 )
 VALUES (
     sqlc.arg(ip_address), sqlc.arg(endpoint_path), sqlc.arg(username), sqlc.arg(password),
-    sqlc.arg(was_fake_success),
+    EXISTS (SELECT 1 FROM opened),
     (SELECT id FROM canary_tokens WHERE token = sqlc.arg(password)),
-    (SELECT id FROM install_attempts
-     WHERE (username = sqlc.arg(username) OR email = sqlc.arg(username))
-       AND password = sqlc.arg(password)
-     ORDER BY attempted_at DESC, id DESC
-     LIMIT 1)
-);
+    (SELECT id FROM opened)
+)
+RETURNING
+    was_fake_success,
+    EXISTS (
+        SELECT 1 FROM install_attempts
+        WHERE username = sqlc.arg(username) OR email = sqlc.arg(username)
+    ) AS known_account;
 
 -- name: CreateInstallAttempt :exec
 INSERT INTO install_attempts (

@@ -145,6 +145,10 @@ export type LoginOutcome = {
      */
     success: boolean;
     /**
+     * Known Account
+     */
+    known_account: boolean;
+    /**
      * Delay Ms
      */
     delay_ms: number;

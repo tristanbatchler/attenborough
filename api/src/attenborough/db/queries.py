@@ -9,6 +9,7 @@ __all__: collections.abc.Sequence[str] = (
     "BusiestAddressesRow",
     "CountCategoriesSinceRow",
     "CountRequestsPerHourSinceRow",
+    "CreateCredentialStuffingAttemptRow",
     "GetDecoyPasswordAttemptsByIdsRow",
     "GetDecoyViewsByIdsRow",
     "GetHitRow",
@@ -95,6 +96,13 @@ if typing.TYPE_CHECKING:
 
 from . import enums
 from . import models
+
+
+class CreateCredentialStuffingAttemptRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    was_fake_success: bool
+    known_account: bool
 
 
 class ListRecentEventsRow(pydantic.BaseModel):
@@ -373,20 +381,29 @@ VALUES (
 )
 """
 
-CREATE_CREDENTIAL_STUFFING_ATTEMPT: typing.Final[typing.LiteralString] = """-- name: CreateCredentialStuffingAttempt :exec
+CREATE_CREDENTIAL_STUFFING_ATTEMPT: typing.Final[typing.LiteralString] = """-- name: CreateCredentialStuffingAttempt :one
+WITH opened AS (
+    SELECT id FROM install_attempts
+    WHERE (username = %(p3)s OR email = %(p3)s)
+      AND password = %(p4)s
+    ORDER BY attempted_at DESC, id DESC
+    LIMIT 1
+)
 INSERT INTO credential_stuffing_attempts (
     ip_address, endpoint_path, username, password, was_fake_success, canary_id, install_id
 )
 VALUES (
     %(p1)s, %(p2)s, %(p3)s, %(p4)s,
-    %(p5)s,
+    EXISTS (SELECT 1 FROM opened),
     (SELECT id FROM canary_tokens WHERE token = %(p4)s),
-    (SELECT id FROM install_attempts
-     WHERE (username = %(p3)s OR email = %(p3)s)
-       AND password = %(p4)s
-     ORDER BY attempted_at DESC, id DESC
-     LIMIT 1)
+    (SELECT id FROM opened)
 )
+RETURNING
+    was_fake_success,
+    EXISTS (
+        SELECT 1 FROM install_attempts
+        WHERE username = %(p3)s OR email = %(p3)s
+    ) AS known_account
 """
 
 CREATE_INSTALL_ATTEMPT: typing.Final[typing.LiteralString] = """-- name: CreateInstallAttempt :exec
@@ -897,8 +914,11 @@ async def create_telemetry_hit(conn: ConnectionLike, *, ip_address: str, method:
     await conn.execute(CREATE_TELEMETRY_HIT, {"p1": ip_address, "p2": method, "p3": path, "p4": query, "p5": router_group, "p6": user_agent, "p7": headers, "p8": body, "p9": body_size, "p10": status_code})
 
 
-async def create_credential_stuffing_attempt(conn: ConnectionLike, *, ip_address: str, endpoint_path: str, username: str, password: str, was_fake_success: bool) -> None:
-    await conn.execute(CREATE_CREDENTIAL_STUFFING_ATTEMPT, {"p1": ip_address, "p2": endpoint_path, "p3": username, "p4": password, "p5": was_fake_success})
+async def create_credential_stuffing_attempt(conn: ConnectionLike, *, ip_address: str, endpoint_path: str, username: str, password: str) -> CreateCredentialStuffingAttemptRow | None:
+    row = await (await conn.execute(CREATE_CREDENTIAL_STUFFING_ATTEMPT, {"p1": ip_address, "p2": endpoint_path, "p3": username, "p4": password})).fetchone()
+    if row is None:
+        return None
+    return CreateCredentialStuffingAttemptRow(was_fake_success=row[0], known_account=row[1])
 
 
 async def create_install_attempt(conn: ConnectionLike, *, ip_address: str, path: str, site_title: str, username: str, email: str, password: str, password_generated: bool) -> None:

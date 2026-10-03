@@ -38,6 +38,11 @@ export const reportHit = <ThrowOnError extends boolean = false>(options: Options
  * Report Login
  *
  * Record submitted credentials and decide the outcome the decoy app shows.
+ *
+ * The only accounts are the ones installs created (report_install), so only those open, with
+ * their own password. Every other login fails, as a real site does for guessed credentials,
+ * canaries included: they were never anyone's password. The attempt is linked to the canary or
+ * install it used (CreateCredentialStuffingAttempt).
  */
 export const reportLogin = <ThrowOnError extends boolean = false>(options: Options<ReportLoginData, ThrowOnError>): RequestResult<ReportLoginResponses, ReportLoginErrors, ThrowOnError> => (options.client ?? client).post<ReportLoginResponses, ReportLoginErrors, ThrowOnError>({
     url: '/ingest/logins',

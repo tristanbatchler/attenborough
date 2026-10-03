@@ -15,6 +15,7 @@ export const ADMIN_PATH = '/wp-admin/';
 export const LoginError = {
 	EMPTY_USERNAME: 'empty_username',
 	EMPTY_PASSWORD: 'empty_password',
-	INVALID_USERNAME: 'invalid_username'
+	INVALID_USERNAME: 'invalid_username',
+	INCORRECT_PASSWORD: 'incorrect_password'
 } as const;
 export type LoginError = (typeof LoginError)[keyof typeof LoginError];
