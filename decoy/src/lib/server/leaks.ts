@@ -51,10 +51,27 @@ const wpConfigBackup = (secret: string) =>
 	"if ( ! defined( 'ABSPATH' ) ) {\n\tdefine( 'ABSPATH', __DIR__ . '/' );\n}\n\n" +
 	"require_once ABSPATH . 'wp-settings.php';\n";
 
+// A git checkout deployed as the web root, its remote a self-hosted Gitea with the password in the
+// URL. The host is this machine's own, so the credential leads to no one else's server; it can
+// only come back here.
+const gitConfig = (secret: string) =>
+	'[core]\n' +
+	'\trepositoryformatversion = 0\n' +
+	'\tfilemode = true\n' +
+	'\tbare = false\n' +
+	'\tlogallrefupdates = true\n' +
+	'[remote "origin"]\n' +
+	`\turl = https://${DATABASE_USER}:${secret}@localhost:3000/${DATABASE_USER}/league-of-draven.git\n` +
+	'\tfetch = +refs/heads/*:refs/remotes/origin/*\n' +
+	'[branch "main"]\n' +
+	'\tremote = origin\n' +
+	'\tmerge = refs/heads/main\n';
+
 /** The leaked files, by path (as nginx would match it). */
 const LEAKS = new Map<string, (secret: string) => string>([
 	['/.env', dotEnv],
-	['/wp-config.php.bak', wpConfigBackup]
+	['/wp-config.php.bak', wpConfigBackup],
+	['/.git/config', gitConfig]
 ]);
 
 /**

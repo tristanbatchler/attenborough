@@ -176,7 +176,7 @@ RETURN (CASE
     ELSE 'other'
 END)::path_category;
 
--- Secrets the decoy hands out in its "leaked" files (/.env, /wp-config.php.bak): one fresh random
+-- Secrets the decoy hands out in its "leaked" files (decoy/src/lib/server/leaks.ts): one fresh random
 -- value per request, recorded against the address it was given to. They open nothing. If one is
 -- ever submitted to a login form, the attempt is linked to it (credential_stuffing_attempts.
 -- canary_id), so the exhibit can show where and when that password was picked up.
