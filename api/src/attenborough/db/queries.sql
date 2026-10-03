@@ -26,11 +26,27 @@ VALUES (
     sqlc.arg(user_agent), sqlc.arg(headers), sqlc.narg(body), sqlc.narg(body_size), sqlc.arg(status_code)
 );
 
+-- A login attempt, linked to the canary its password was, if it was one.
 -- name: CreateCredentialStuffingAttempt :exec
 INSERT INTO credential_stuffing_attempts (
-    ip_address, endpoint_path, username, password, was_fake_success
+    ip_address, endpoint_path, username, password, was_fake_success, canary_id
 )
-VALUES (sqlc.arg(ip_address), sqlc.arg(endpoint_path), sqlc.arg(username), sqlc.arg(password), sqlc.arg(was_fake_success));
+VALUES (
+    sqlc.arg(ip_address), sqlc.arg(endpoint_path), sqlc.arg(username), sqlc.arg(password),
+    sqlc.arg(was_fake_success),
+    (SELECT id FROM canary_tokens WHERE token = sqlc.arg(password))
+);
+
+-- name: CreateCanaryToken :exec
+INSERT INTO canary_tokens (token, path, ip_address)
+VALUES (sqlc.arg(token), sqlc.arg(path), sqlc.arg(ip_address));
+
+-- How many login attempts an address has made since a time (ingest.py, the tarpit), read from the
+-- (ip_address, attempted_at) index.
+-- name: CountLoginAttemptsSince :one
+SELECT count(*) AS attempts
+FROM credential_stuffing_attempts
+WHERE ip_address = sqlc.arg(ip_address)::inet AND attempted_at >= sqlc.arg(since)::timestamptz;
 
 -- name: CreateActiveIpBan :one
 INSERT INTO ip_bans (ip_address, expires, reason, added_by_user_id)
@@ -124,10 +140,15 @@ SELECT
 FROM telemetry_hits
 WHERE id = ANY(sqlc.arg(ids)::BIGINT[]);
 
+-- With where its password was handed out, when it was a canary.
 -- name: GetLoginAttemptsByIds :many
-SELECT id, ip_address, attempted_at, endpoint_path, username, password, was_fake_success
-FROM credential_stuffing_attempts
-WHERE id = ANY(sqlc.arg(ids)::BIGINT[]);
+SELECT
+    a.id, a.ip_address, a.attempted_at, a.endpoint_path, a.username, a.password,
+    a.was_fake_success, c.path AS canary_path, c.ip_address AS canary_ip_address,
+    c.issued_at AS canary_issued_at
+FROM credential_stuffing_attempts a
+LEFT JOIN canary_tokens c ON c.id = a.canary_id
+WHERE a.id = ANY(sqlc.arg(ids)::BIGINT[]);
 
 -- name: GetDecoyViewsByIds :many
 SELECT dv.id, dv.ip_address, dv.viewed_at, d.slug AS decoy_slug, d.type AS decoy_type

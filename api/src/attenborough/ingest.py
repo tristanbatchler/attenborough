@@ -6,6 +6,8 @@ A report names its visitor in X-Forwarded-For, which only counts because the dec
 in FORWARDED_ALLOW_IPS; the visitor is the `RequestOrigin`.
 """
 
+import secrets
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks
@@ -33,6 +35,24 @@ _MAX_METHOD_LENGTH = 32
 _MIN_STATUS = 100
 _MAX_STATUS = 599
 
+# The tarpit, for fast guessers: an address's first TARPIT_FREE_ATTEMPTS logins in TARPIT_WINDOW are
+# answered at once; after that each waits TARPIT_STEP_MS longer than the last, up to
+# TARPIT_MAX_DELAY_MS (under nginx's 60 s proxy timeout, so the visitor still gets the page). It
+# slows a guesser down without ever blocking one, and forgets an address that slows down itself.
+TARPIT_WINDOW = timedelta(minutes=10)
+TARPIT_FREE_ATTEMPTS = 10
+TARPIT_STEP_MS = 500
+TARPIT_MAX_DELAY_MS = 15_000
+# Random bytes in a canary secret: 24 URL-safe characters, an ordinary-looking strong password.
+_CANARY_BYTES = 18
+
+
+def tarpit_delay_ms(previous_attempts: int) -> int:
+    """How long to make an address wait, given how many logins it tried in the last
+    TARPIT_WINDOW."""
+    excess = max(0, previous_attempts - TARPIT_FREE_ATTEMPTS + 1)
+    return min(excess * TARPIT_STEP_MS, TARPIT_MAX_DELAY_MS)
+
 
 class DecoyHit(BaseModel):
     """One request the decoy app served: exactly what the visitor sent, and the status it got."""
@@ -58,9 +78,23 @@ class LoginAttempt(BaseModel):
 
 
 class LoginOutcome(BaseModel):
-    """Whether the decoy should treat the login as successful: decided here, not in the decoy app."""
+    """How the decoy should answer a login: decided here, not in the decoy app."""
 
     success: bool
+    # How long to wait before answering: the tarpit for persistent guessers (tarpit_delay_ms).
+    delay_ms: int = Field(ge=0, le=TARPIT_MAX_DELAY_MS)
+
+
+class CanaryRequest(BaseModel):
+    """A leaked file the decoy is about to serve."""
+
+    path: str = Field(max_length=_MAX_REQUEST_LINE)
+
+
+class Canary(BaseModel):
+    """The secret to put in it: fresh, random, and recorded against the visitor."""
+
+    secret: str
 
 
 @router.post("/hits", status_code=HTTP_204_NO_CONTENT)
@@ -89,9 +123,12 @@ async def report_login(
     attempt: LoginAttempt, db_conn: DBConn, origin: RequestOrigin
 ) -> LoginOutcome:
     """Record submitted credentials and decide the outcome the decoy app shows."""
-    # No decoy account exists yet, so every login fails, as a real site does for guessed
-    # credentials. Deterministic on purpose: the same credentials always get the same answer.
+    # No decoy account exists, so every login fails, as a real site does for guessed credentials,
+    # canaries included: they were never anyone's password. The attempt is linked to the canary.
     success = False
+    previous = await queries.count_login_attempts_since(
+        db_conn, ip_address=str(origin), since=datetime.now(UTC) - TARPIT_WINDOW
+    )
     await queries.create_credential_stuffing_attempt(
         db_conn,
         endpoint_path=attempt.path,
@@ -100,4 +137,16 @@ async def report_login(
         password=attempt.password,
         was_fake_success=success,
     )
-    return LoginOutcome(success=success)
+    return LoginOutcome(success=success, delay_ms=tarpit_delay_ms(previous or 0))
+
+
+@router.post("/canaries")
+async def issue_canary(
+    leak: CanaryRequest, db_conn: DBConn, origin: RequestOrigin
+) -> Canary:
+    """A fresh secret for a leaked file the decoy is serving, recorded against the visitor."""
+    secret = secrets.token_urlsafe(_CANARY_BYTES)
+    await queries.create_canary_token(
+        db_conn, token=secret, path=leak.path, ip_address=str(origin)
+    )
+    return Canary(secret=secret)

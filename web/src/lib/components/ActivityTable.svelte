@@ -56,6 +56,17 @@
 							<code>{event.username}</code> / <code>{event.password}</code> at
 							<code>{event.path}</code>
 							{#if event.decoy_accepted}(the decoy pretended to accept it){/if}
+							{#if event.canary}
+								<small>
+									A planted password: the honeypot handed it out in
+									<code>{event.canary.path}</code> to
+									<a href={resolve('/ip/[address]', { address: event.canary.ip_address })}
+										><code>{event.canary.ip_address}</code></a
+									>,
+									<time datetime={event.canary.issued_at}>{formatUtc(event.canary.issued_at)}</time
+									>.
+								</small>
+							{/if}
 						</td>
 					{:else if event.kind === 'decoy_view'}
 						<td>{event.decoy_type === 'binary' ? 'Decoy download' : 'Decoy view'}</td>

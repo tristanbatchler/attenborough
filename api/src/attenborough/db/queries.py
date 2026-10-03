@@ -33,9 +33,11 @@ __all__: collections.abc.Sequence[str] = (
     "busiest_addresses",
     "categorise_path",
     "count_categories_since",
+    "count_login_attempts_since",
     "count_requests_per_hour_since",
     "count_requests_since",
     "create_active_ip_ban",
+    "create_canary_token",
     "create_credential_stuffing_attempt",
     "create_decoy_password_attempt",
     "create_decoy_view",
@@ -136,6 +138,9 @@ class GetLoginAttemptsByIdsRow(pydantic.BaseModel):
     username: str
     password: str
     was_fake_success: bool
+    canary_path: str | None
+    canary_ip_address: str | None
+    canary_issued_at: datetime.datetime | None
 
 
 class GetDecoyViewsByIdsRow(pydantic.BaseModel):
@@ -350,9 +355,24 @@ VALUES (
 
 CREATE_CREDENTIAL_STUFFING_ATTEMPT: typing.Final[typing.LiteralString] = """-- name: CreateCredentialStuffingAttempt :exec
 INSERT INTO credential_stuffing_attempts (
-    ip_address, endpoint_path, username, password, was_fake_success
+    ip_address, endpoint_path, username, password, was_fake_success, canary_id
 )
-VALUES (%(p1)s, %(p2)s, %(p3)s, %(p4)s, %(p5)s)
+VALUES (
+    %(p1)s, %(p2)s, %(p3)s, %(p4)s,
+    %(p5)s,
+    (SELECT id FROM canary_tokens WHERE token = %(p4)s)
+)
+"""
+
+CREATE_CANARY_TOKEN: typing.Final[typing.LiteralString] = """-- name: CreateCanaryToken :exec
+INSERT INTO canary_tokens (token, path, ip_address)
+VALUES (%(p1)s, %(p2)s, %(p3)s)
+"""
+
+COUNT_LOGIN_ATTEMPTS_SINCE: typing.Final[typing.LiteralString] = """-- name: CountLoginAttemptsSince :one
+SELECT count(*) AS attempts
+FROM credential_stuffing_attempts
+WHERE ip_address = %(p1)s::inet AND attempted_at >= %(p2)s::timestamptz
 """
 
 CREATE_ACTIVE_IP_BAN: typing.Final[typing.LiteralString] = """-- name: CreateActiveIpBan :one
@@ -439,9 +459,13 @@ WHERE id = ANY(%(p1)s::BIGINT[])
 """
 
 GET_LOGIN_ATTEMPTS_BY_IDS: typing.Final[typing.LiteralString] = """-- name: GetLoginAttemptsByIds :many
-SELECT id, ip_address, attempted_at, endpoint_path, username, password, was_fake_success
-FROM credential_stuffing_attempts
-WHERE id = ANY(%(p1)s::BIGINT[])
+SELECT
+    a.id, a.ip_address, a.attempted_at, a.endpoint_path, a.username, a.password,
+    a.was_fake_success, c.path AS canary_path, c.ip_address AS canary_ip_address,
+    c.issued_at AS canary_issued_at
+FROM credential_stuffing_attempts a
+LEFT JOIN canary_tokens c ON c.id = a.canary_id
+WHERE a.id = ANY(%(p1)s::BIGINT[])
 """
 
 GET_DECOY_VIEWS_BY_IDS: typing.Final[typing.LiteralString] = """-- name: GetDecoyViewsByIds :many
@@ -819,6 +843,17 @@ async def create_credential_stuffing_attempt(conn: ConnectionLike, *, ip_address
     await conn.execute(CREATE_CREDENTIAL_STUFFING_ATTEMPT, {"p1": ip_address, "p2": endpoint_path, "p3": username, "p4": password, "p5": was_fake_success})
 
 
+async def create_canary_token(conn: ConnectionLike, *, token: str, path: str, ip_address: str) -> None:
+    await conn.execute(CREATE_CANARY_TOKEN, {"p1": token, "p2": path, "p3": ip_address})
+
+
+async def count_login_attempts_since(conn: ConnectionLike, *, ip_address: str, since: datetime.datetime) -> int | None:
+    row = await (await conn.execute(COUNT_LOGIN_ATTEMPTS_SINCE, {"p1": ip_address, "p2": since})).fetchone()
+    if row is None:
+        return None
+    return row[0]
+
+
 async def create_active_ip_ban(conn: ConnectionLike, *, ip_address: str, expires: datetime.datetime | None, reason: str | None, added_by_user_id: int) -> models.IpBan | None:
     row = await (await conn.execute(CREATE_ACTIVE_IP_BAN, {"p1": ip_address, "p2": expires, "p3": reason, "p4": added_by_user_id})).fetchone()
     if row is None:
@@ -849,7 +884,7 @@ def get_hits_by_ids(conn: ConnectionLike, *, ids: collections.abc.Sequence[int])
 
 def get_login_attempts_by_ids(conn: ConnectionLike, *, ids: collections.abc.Sequence[int]) -> QueryResults[GetLoginAttemptsByIdsRow]:
     def _decode_hook(row: psycopg.rows.TupleRow) -> GetLoginAttemptsByIdsRow:
-        return GetLoginAttemptsByIdsRow(id_=row[0], ip_address=str(row[1]), attempted_at=row[2], endpoint_path=row[3], username=row[4], password=row[5], was_fake_success=row[6])
+        return GetLoginAttemptsByIdsRow(id_=row[0], ip_address=str(row[1]), attempted_at=row[2], endpoint_path=row[3], username=row[4], password=row[5], was_fake_success=row[6], canary_path=row[7], canary_ip_address=str(row[8]) if row[8] is not None else None, canary_issued_at=row[9])
 
     return QueryResults(conn, GET_LOGIN_ATTEMPTS_BY_IDS, _decode_hook, {"p1": list(ids)})
 

@@ -5,6 +5,30 @@ export type ClientOptions = {
 };
 
 /**
+ * Canary
+ *
+ * The secret to put in it: fresh, random, and recorded against the visitor.
+ */
+export type Canary = {
+    /**
+     * Secret
+     */
+    secret: string;
+};
+
+/**
+ * CanaryRequest
+ *
+ * A leaked file the decoy is about to serve.
+ */
+export type CanaryRequest = {
+    /**
+     * Path
+     */
+    path: string;
+};
+
+/**
  * DecoyHit
  *
  * One request the decoy app served: exactly what the visitor sent, and the status it got.
@@ -71,13 +95,17 @@ export type LoginAttempt = {
 /**
  * LoginOutcome
  *
- * Whether the decoy should treat the login as successful: decided here, not in the decoy app.
+ * How the decoy should answer a login: decided here, not in the decoy app.
  */
 export type LoginOutcome = {
     /**
      * Success
      */
     success: boolean;
+    /**
+     * Delay Ms
+     */
+    delay_ms: number;
 };
 
 /**
@@ -157,3 +185,28 @@ export type ReportLoginResponses = {
 };
 
 export type ReportLoginResponse = ReportLoginResponses[keyof ReportLoginResponses];
+
+export type IssueCanaryData = {
+    body: CanaryRequest;
+    path?: never;
+    query?: never;
+    url: '/ingest/canaries';
+};
+
+export type IssueCanaryErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IssueCanaryError = IssueCanaryErrors[keyof IssueCanaryErrors];
+
+export type IssueCanaryResponses = {
+    /**
+     * Successful Response
+     */
+    200: Canary;
+};
+
+export type IssueCanaryResponse = IssueCanaryResponses[keyof IssueCanaryResponses];

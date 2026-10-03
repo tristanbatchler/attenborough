@@ -1,5 +1,6 @@
 import { redirect, type Cookies, type RequestEvent } from '@sveltejs/kit';
 import { constants } from 'node:http2';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { reportLogin } from '$lib/client';
 import { apiOptions } from '$lib/server/api';
 import { CONTENT_TYPE_HEADER } from '$lib/server/headers';
@@ -53,7 +54,10 @@ function field(form: FormData | null, name: string): string {
 	return typeof value === 'string' ? value : '';
 }
 
-/** Record the attempt; the API decides whether it succeeds. */
+/**
+ * Record the attempt; the API decides whether it succeeds, and how long to keep the visitor
+ * waiting first (its tarpit for persistent guessers).
+ */
 async function attemptLogin(event: RequestEvent, username: string, password: string) {
 	const result = await reportLogin({
 		...apiOptions(event),
@@ -63,6 +67,7 @@ async function attemptLogin(event: RequestEvent, username: string, password: str
 		console.error('Failed to report a login attempt', result.error);
 		return false;
 	}
+	await sleep(result.data.delay_ms);
 	return result.data.success;
 }
 

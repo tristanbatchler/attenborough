@@ -9,6 +9,7 @@ from attenborough.db.enums import EventKind, PathCategory
 from attenborough.events import (
     DISCRIMINATOR,
     HONEYPOT_PLACEHOLDER,
+    CanaryOrigin,
     DecoyPasswordAttemptEvent,
     DecoyViewEvent,
     HitEvent,
@@ -34,6 +35,8 @@ USERNAME = "admin"
 PASSWORD = "hunter2"
 DOWNLOAD = "backup.zip"
 NOTE = "notes"
+CANARY_PATH = "/.env"
+CANARY_IP = "198.51.100.4"
 
 
 def hit_row(body_preview: bytes, body_size: int | None) -> queries.GetHitsByIdsRow:
@@ -129,6 +132,9 @@ def test_a_login_attempt_keeps_the_credentials_in_full():
             username=USERNAME,
             password=PASSWORD,
             was_fake_success=True,
+            canary_path=None,
+            canary_ip_address=None,
+            canary_issued_at=None,
         )
     )
     assert event == LoginAttemptEvent(
@@ -140,6 +146,27 @@ def test_a_login_attempt_keeps_the_credentials_in_full():
         username=USERNAME,
         password=PASSWORD,
         decoy_accepted=True,
+        canary=None,
+    )
+
+
+def test_a_canary_password_says_where_it_was_handed_out():
+    event = login_attempt_event(
+        queries.GetLoginAttemptsByIdsRow(
+            id_=3,
+            ip_address=IP,
+            attempted_at=AT,
+            endpoint_path=PATH,
+            username=USERNAME,
+            password=PASSWORD,
+            was_fake_success=False,
+            canary_path=CANARY_PATH,
+            canary_ip_address=CANARY_IP,
+            canary_issued_at=AT,
+        )
+    )
+    assert event.canary == CanaryOrigin(
+        path=CANARY_PATH, ip_address=CANARY_IP, issued_at=AT
     )
 
 
@@ -203,6 +230,7 @@ def test_events_keep_the_page_order_when_kinds_interleave():
             username="u",
             password="p",
             decoy_accepted=False,
+            canary=None,
         )
         for n in (2, 1)
     ]

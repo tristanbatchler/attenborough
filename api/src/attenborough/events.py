@@ -103,6 +103,14 @@ class HitDetail(Hit):
     body_truncated: bool
 
 
+class CanaryOrigin(BaseModel):
+    """Where a canary password was handed out: the leaked file, to whom, and when."""
+
+    path: str
+    ip_address: str
+    issued_at: datetime
+
+
 class LoginAttemptEvent(BaseModel):
     kind: Literal[EventKind.LOGIN_ATTEMPT]
     id: int
@@ -113,6 +121,8 @@ class LoginAttemptEvent(BaseModel):
     password: str
     # The decoy's simulated answer, not a real login.
     decoy_accepted: bool
+    # Set when the password was a canary from one of the decoy's leaked files.
+    canary: CanaryOrigin | None
 
 
 class DecoyViewEvent(BaseModel):
@@ -285,6 +295,15 @@ def login_attempt_event(row: queries.GetLoginAttemptsByIdsRow) -> LoginAttemptEv
         username=hide_honeypot(row.username),
         password=hide_honeypot(row.password),
         decoy_accepted=row.was_fake_success,
+        canary=None
+        if row.canary_path is None
+        or row.canary_ip_address is None
+        or row.canary_issued_at is None
+        else CanaryOrigin(
+            path=hide_honeypot(row.canary_path),
+            ip_address=row.canary_ip_address,
+            issued_at=row.canary_issued_at,
+        ),
     )
 
 

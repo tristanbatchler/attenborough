@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ReportHitData, ReportHitErrors, ReportHitResponses, ReportLoginData, ReportLoginErrors, ReportLoginResponses } from './types.gen';
+import type { IssueCanaryData, IssueCanaryErrors, IssueCanaryResponses, ReportHitData, ReportHitErrors, ReportHitResponses, ReportLoginData, ReportLoginErrors, ReportLoginResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -41,6 +41,20 @@ export const reportHit = <ThrowOnError extends boolean = false>(options: Options
  */
 export const reportLogin = <ThrowOnError extends boolean = false>(options: Options<ReportLoginData, ThrowOnError>): RequestResult<ReportLoginResponses, ReportLoginErrors, ThrowOnError> => (options.client ?? client).post<ReportLoginResponses, ReportLoginErrors, ThrowOnError>({
     url: '/ingest/logins',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Issue Canary
+ *
+ * A fresh secret for a leaked file the decoy is serving, recorded against the visitor.
+ */
+export const issueCanary = <ThrowOnError extends boolean = false>(options: Options<IssueCanaryData, ThrowOnError>): RequestResult<IssueCanaryResponses, IssueCanaryErrors, ThrowOnError> => (options.client ?? client).post<IssueCanaryResponses, IssueCanaryErrors, ThrowOnError>({
+    url: '/ingest/canaries',
     ...options,
     headers: {
         'Content-Type': 'application/json',

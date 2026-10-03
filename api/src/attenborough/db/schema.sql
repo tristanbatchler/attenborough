@@ -174,6 +174,19 @@ RETURN (CASE
     ELSE 'other'
 END)::path_category;
 
+-- Secrets the decoy hands out in its "leaked" files (/.env, /wp-config.php.bak): one fresh random
+-- value per request, recorded against the address it was given to. They open nothing. If one is
+-- ever submitted to a login form, the attempt is linked to it (credential_stuffing_attempts.
+-- canary_id), so the exhibit can show where and when that password was picked up.
+CREATE TABLE canary_tokens (
+    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    token      TEXT NOT NULL UNIQUE,
+    -- The path it was served at, as requested.
+    path       TEXT NOT NULL,
+    ip_address INET NOT NULL,
+    issued_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Specialized logging for credential stuffing & brute force attempts on /honeypot/admin/login or /auth
 CREATE TABLE credential_stuffing_attempts (
     id BIGSERIAL PRIMARY KEY,
@@ -182,7 +195,9 @@ CREATE TABLE credential_stuffing_attempts (
     username TEXT NOT NULL,
     password TEXT NOT NULL,
     was_fake_success BOOLEAN NOT NULL DEFAULT FALSE,
-    attempted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    attempted_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- The canary (canary_tokens) the password was, if any.
+    canary_id BIGINT REFERENCES canary_tokens (id)
 );
 
 CREATE INDEX idx_credential_attempts_ip ON credential_stuffing_attempts (ip_address, attempted_at DESC, id DESC);

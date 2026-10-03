@@ -6,6 +6,7 @@ from __future__ import annotations
 
 __all__: collections.abc.Sequence[str] = (
     "AdminAuditLog",
+    "CanaryToken",
     "CredentialStuffingAttempt",
     "Decoy",
     "DecoyBinaryPath",
@@ -48,6 +49,16 @@ class AdminAuditLog(pydantic.BaseModel):
     logged_at: datetime.datetime
 
 
+class CanaryToken(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    id_: int
+    token: str
+    path: str
+    ip_address: str
+    issued_at: datetime.datetime
+
+
 class CredentialStuffingAttempt(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
 
@@ -58,6 +69,7 @@ class CredentialStuffingAttempt(pydantic.BaseModel):
     password: str
     was_fake_success: bool
     attempted_at: datetime.datetime
+    canary_id: int | None
 
 
 class Decoy(pydantic.BaseModel):

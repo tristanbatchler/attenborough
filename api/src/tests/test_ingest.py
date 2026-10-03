@@ -4,7 +4,14 @@ from collections.abc import Callable
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from attenborough.ingest import DecoyHit, LoginAttempt
+from attenborough.ingest import (
+    TARPIT_FREE_ATTEMPTS,
+    TARPIT_MAX_DELAY_MS,
+    TARPIT_STEP_MS,
+    DecoyHit,
+    LoginAttempt,
+    tarpit_delay_ms,
+)
 
 # The parametrized argument: a function building one report.
 REPORT = "report"
@@ -70,3 +77,11 @@ def test_ingest_accepts_valid_reports(report: Callable[[], BaseModel]):
 def test_ingest_rejects_out_of_bounds_reports(report: Callable[[], BaseModel]):
     with pytest.raises(ValidationError):
         _ = report()
+
+
+def test_the_tarpit_lets_the_first_attempts_through_then_slows_down_to_a_cap():
+    assert tarpit_delay_ms(0) == 0
+    assert tarpit_delay_ms(TARPIT_FREE_ATTEMPTS - 1) == 0
+    assert tarpit_delay_ms(TARPIT_FREE_ATTEMPTS) == TARPIT_STEP_MS
+    assert tarpit_delay_ms(TARPIT_FREE_ATTEMPTS + 1) == 2 * TARPIT_STEP_MS
+    assert tarpit_delay_ms(1_000_000) == TARPIT_MAX_DELAY_MS

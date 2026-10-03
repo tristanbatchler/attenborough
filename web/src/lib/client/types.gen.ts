@@ -39,6 +39,26 @@ export type AddressActivity = {
 };
 
 /**
+ * CanaryOrigin
+ *
+ * Where a canary password was handed out: the leaked file, to whom, and when.
+ */
+export type CanaryOrigin = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Ip Address
+     */
+    ip_address: string;
+    /**
+     * Issued At
+     */
+    issued_at: string;
+};
+
+/**
  * CategoryCount
  */
 export type CategoryCount = {
@@ -423,6 +443,7 @@ export type LoginAttemptEvent = {
      * Decoy Accepted
      */
     decoy_accepted: boolean;
+    canary: CanaryOrigin | null;
 };
 
 /**
