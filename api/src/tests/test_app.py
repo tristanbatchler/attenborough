@@ -89,8 +89,9 @@ async def recorded(
         # The decoy app's reports are records of other requests, never recorded themselves.
         (HTTPMethod.POST, "/ingest/hits", HTTPStatus.UNPROCESSABLE_ENTITY, None),
         # Without a session, the admin area is a 404, like an unknown path, before any body is read.
+        # Never recorded: its requests carry the session token.
         *(
-            (method, path, HTTPStatus.NOT_FOUND, RouterGroup.ADMIN)
+            (method, path, HTTPStatus.NOT_FOUND, None)
             for method, path in [
                 (HTTPMethod.GET, "/auth/me"),
                 (HTTPMethod.POST, "/auth/logout"),

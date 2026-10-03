@@ -16,7 +16,8 @@ CREATE TYPE decoy_type AS ENUM ('text', 'binary', 'trap');
 CREATE TYPE audit_action AS ENUM ('login', 'ban_created', 'ban_revoked', 'decoy_revoked', 'settings_changed');
 -- What a request was for, recorded with each hit; a router's tags carry its group (sqlc generates
 -- the RouterGroup enum the API uses). 'ingest' is the decoy app reporting its visitors' requests:
--- records, not visits, so it is never stored. 'admin' is the admin area (auth.py, admin.py).
+-- records, not visits, so it is never stored. 'admin' is the admin area (auth.py, admin.py), never
+-- stored either: its requests carry the session token.
 CREATE TYPE router_group AS ENUM ('exhibit', 'system', 'honeypot', 'ingest', 'admin');
 -- The kinds of event the exhibit lists (queries.sql, ListRecentEvents).
 CREATE TYPE event_kind AS ENUM (

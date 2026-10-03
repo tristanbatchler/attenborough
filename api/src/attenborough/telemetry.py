@@ -24,6 +24,12 @@ from attenborough.geolocation import record_location
 
 logger = logging.getLogger(__name__)
 
+# Requests that aren't visits, never recorded: the decoy app's reports are records of other
+# requests, and the admin area's are the exhibit's web server acting for the admin, carrying the
+# session as a bearer token, which must never be stored (auth.py keeps only its SHA-256). Admin
+# actions are recorded in the audit log instead.
+_UNRECORDED_GROUPS = frozenset({RouterGroup.INGEST, RouterGroup.ADMIN})
+
 # The request header recorded as each hit's user agent.
 USER_AGENT_HEADER = "user-agent"
 # How much of a request body is stored; body_size keeps the full length (see schema.sql).
@@ -167,8 +173,7 @@ class TelemetryMiddleware:
             await self.app(scope, receive, send_wrapper)
         finally:
             router_group = _router_group(scope)
-            # The decoy app's reports are records of other requests, not visits.
-            if router_group is not RouterGroup.INGEST:
+            if router_group not in _UNRECORDED_GROUPS:
                 # A Starlette background task (what FastAPI's BackgroundTasks are built on), run
                 # the way Starlette's Response.__call__ runs response.background: after the
                 # response has been sent, within the request. The client never waits for it, and
