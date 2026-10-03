@@ -60,6 +60,7 @@ Layout: `api/` (FastAPI backend, see `api/README.md`), `web/` (SvelteKit exhibit
 
 - `mise run check` / `mise run fix`, plus one task per check (`mise tasks ls`); watch mode with `mise watch -w api/src check`.
 - `api/scripts/telemetry_probe.py`: inspect `telemetry_hits` read-only (`summary`, `rows`), and verify end to end that every request to a running server is recorded exactly once with the right status, group and IP (`verify`, with `--target decoy` for the decoy app). Use the `telemetry-testing` skill for the full procedure: starting and stopping the server safely, handling test data in the real LAN database, and interpreting failures.
+- `api/scripts/locate_ips.py`: locate every visitor address not yet located (after turning geolocation on); `deploy/update-geoip.sh`: download DB-IP's monthly databases (`GEOIP_DIRECTORY`). `npm run gen-map` in `web/`: regenerate the world map's outline (`src/lib/world.gen.ts`, generated, excluded from ESLint and Prettier).
 - `api/scripts/reset_db.py --yes`: reset the development database to `schema.sql` (deletes all data; approved for development only, never production). `api/scripts/migrate.py`: apply pending migrations (as the schema's owner).
 - `api/scripts/seed_db.py --database <name>`: two million synthetic hits in the development database, to measure the exhibit at volume; `api/scripts/exhibit_latency.py`: time every page of a listing through a running API.
 - `deploy/check-isolation.sh`: on the host, prove from inside each container that it reaches only what it must.

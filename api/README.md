@@ -2,7 +2,7 @@
 
 The backend of Attenborough, a public honeypot. The decoy app (`../decoy`) serves the fake sites and reports every visit and login attempt here (`/ingest/...`); the API records them, decides every outcome, and publishes what it observed on the public **exhibit** (`/exhibit/...`). Requests to any other path of the API itself are recorded too, as honeypot 404s.
 
-The code is small and flat: `main.py` composes the app (middleware, routers, startup), `exhibit.py` and `ingest.py` are the two routers, `telemetry.py` records every request (`record_hit`, `TelemetryMiddleware`), `dependencies.py` has the client address and database dependencies, and `db/` the schema, queries and connection pool.
+The code is small and flat: `main.py` composes the app (middleware, routers, startup), `exhibit.py` and `ingest.py` are the two routers, `events.py` the exhibit's event models, `patterns.py` the Patterns page's figures, `telemetry.py` records every request (`record_hit`, `TelemetryMiddleware`), `geolocation.py` locates visitors' addresses, `dependencies.py` has the client address and database dependencies, and `db/` the schema, queries and connection pool.
 
 FastAPI on Python 3.14, async psycopg against PostgreSQL, and sqlc-generated query code. Commands below run from this `api/` directory, except the `mise` tasks, which run from the repo root.
 
@@ -89,6 +89,7 @@ The reset runs as the configured database user, which must own the `public` sche
 
 - **The exhibit's listings page by keyset,** never by `OFFSET`: a page is the events after the previous page's last one, passed as an opaque cursor (`?before=`, the previous page's `next_cursor`). `ListRecentEvents` and `ListIpEvents` read each kind of event from its own `(time, id)` index with its own `LIMIT`, so every page reads about one page of rows from each table, however deep it is. (A single `UNION ALL` view over the four tables let the planner read and sort a whole table instead: 2 s for the first page.)
 - **Per-address totals are kept, not counted.** `ip_activity` holds each address's requests, distinct paths, login attempts and first and last request, kept by insert triggers on `telemetry_hits` and `credential_stuffing_attempts` (`schema.sql`). Counting distinct paths for an address with a million requests took 1.2 s. Nothing deletes events; anything that ever does must recompute the totals.
+- **The Patterns page** (`GET /exhibit/patterns`, `patterns.py`) reads many rows, so it is computed at most every five minutes and served from memory in between. Its all-time figures come from the running totals (`ip_activity`, `ip_request_paths`, `ip_locations`), which grow with the number of addresses; its figures over requests and login attempts cover only the last seven UTC days, read through the time indexes, so their cost is one week's traffic however long the history. On two million seeded hits (155,000 in the last week, 30,000 addresses) a computation takes 0.84 s and a cached answer 4 ms. `path_category()` runs once per distinct path (a `MATERIALIZED` CTE): left to the planner, it ran on every row and took seconds.
 - **Measured** on two million hits (half from one address) and 100,000 login attempts: every exhibit query takes under 1 ms in the database, on the first page and the last (`EXPLAIN ANALYZE`). `scripts/seed_db.py` fills a development database with that mix (about ten minutes), and `scripts/exhibit_latency.py` walks a listing through a running API, page by page to the last, timing each. Run it where the API and the database are close: from a laptop over Wi-Fi, the few round trips per page dominate. In the container stack on 500,000 hits, every page of the feed took a median of 3.6 ms, the slowest 21 ms.
 
 ## Checks
@@ -107,9 +108,19 @@ mise run api-magic-strings                                   # candidates to jud
 uv run python scripts/telemetry_probe.py verify              # end-to-end: needs a running server; writes tagged test rows
 uv run python scripts/seed_db.py --database <DB_DATABASE>    # development database only: two million synthetic hits
 uv run python scripts/exhibit_latency.py                     # every page of the feed, timed (--address for one address)
+uv run python scripts/locate_ips.py                          # locate every address seen while geolocation was off
 ```
 
 Generated sqlc code is excluded from ruff and basedpyright (`pyproject.toml`). If you run basedpyright by hand, run it from this directory. It reads its config from the current directory, so running it from the repo root gives different, misleading results.
+
+## Geolocation
+
+Each address that sends the honeypot a request is located once, when its first request is recorded (`record_hit` calls `geolocation.record_location`), and kept in `ip_locations`: country, city, coordinates, and the network (autonomous system number and owner) it belongs to, with the databases it came from and their dates. The exhibit shows each with a flag beside the address, a map and the network on the address's page, and in aggregate on the Patterns page, always as an estimate: a location says where an address is registered and routed, not where the sender is, and most scanners rent servers in data centres.
+
+- **Source:** DB-IP's free Lite databases, City Lite and ASN Lite, MMDB files updated monthly, read with MaxMind's `maxminddb` (its C extension: `maxminddb.extension.Reader`). They are licensed CC BY 4.0, so every exhibit page credits DB-IP in its footer.
+- **Setting:** `GEOIP_DIRECTORY`, the directory holding `dbip-city-lite.mmdb` and `dbip-asn-lite.mmdb`. Unset, nothing is located and everything else works; set, both files must be there, or the server refuses to start. For development, download them as `../deploy/update-geoip.sh` does into any directory and point the setting at it.
+- **No row** in `ip_locations` means the address was never located (geolocation was off); **a row of NULLs** means the databases know nothing about it (private addresses, for one). `scripts/locate_ips.py` locates every address that has no row, so run it once after turning geolocation on. Addresses keep their first location: a later month's databases only affect new visitors.
+- `geolocator` (in `geolocation.py`) is opened in the lifespan, like the connection pool, and does no I/O before.
 
 ## Deployment
 
