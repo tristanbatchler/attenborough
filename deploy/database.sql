@@ -9,7 +9,8 @@
 --   owner  owns the database and its schema: applies migrations (`docker compose run --rm migrate`).
 --   app    the API's role: may read, insert and update rows in the owner's tables, and nothing else.
 --          It can't create, alter or drop anything, or delete rows, so the honeypot's data survives
---          even a compromised API.
+--          even a compromised API. The one exception: it may delete login states and sessions,
+--          granted by migration 0008_admin.sql to PUBLIC, which only it can use (USAGE, below).
 --
 -- It creates objects but never drops any: run against an existing database or role, it stops at
 -- the first error and changes nothing more.

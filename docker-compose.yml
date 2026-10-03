@@ -10,7 +10,8 @@
 #     host either, so a container can't reach the internet, the LAN, the host's own services or
 #     the other containers. The decoy can't reach web, and neither can reach PostgreSQL.
 #   - The API reaches PostgreSQL through its unix socket, mounted read-only, and has no other way
-#     out. It connects as the app role, which can read and write rows but never change the schema.
+#     out but one: nginx's socket to Google's token endpoint, for the admin login. It connects as
+#     the app role, which can read and write rows but never change the schema.
 #   - Every container runs as an unprivileged uid with a read-only filesystem, no capabilities,
 #     no privilege escalation, and limits on memory, CPU and processes.
 
@@ -33,6 +34,14 @@ x-database: &database
   DB_HOST: /var/run/postgresql
   DB_DATABASE: ${DB_DATABASE:?set DB_DATABASE in .env}
 
+# The admin login (api/src/attenborough/auth.py). The migrate service needs them too: it loads the
+# same settings.
+x-admin: &admin
+  WEB_BASE_URL: https://${EXHIBIT_DOMAIN:?set EXHIBIT_DOMAIN in .env}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?set GOOGLE_CLIENT_ID in .env}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?set GOOGLE_CLIENT_SECRET in .env}
+  ADMIN_EMAILS: ${ADMIN_EMAILS:?set ADMIN_EMAILS in .env}
+
 x-postgres-socket: &postgres-socket
   type: bind
   source: /var/run/postgresql
@@ -47,7 +56,7 @@ services:
     image: attenborough-api
     mem_limit: 512m
     environment:
-      <<: *database
+      <<: [*database, *admin]
       DB_USERNAME: ${DB_APP_USERNAME:?set DB_APP_USERNAME in .env}
       DB_PASSWORD: ${DB_APP_PASSWORD:?set DB_APP_PASSWORD in .env}
       HONEYPOT_ADDRESSES: ${HONEYPOT_ADDRESSES:?set HONEYPOT_ADDRESSES in .env}
@@ -55,8 +64,16 @@ services:
       # never a range: web shares no network with the decoy, but must not be trusted either.
       FORWARDED_ALLOW_IPS: 10.89.1.10
       GEOIP_DIRECTORY: /geoip
+      GOOGLE_TOKEN_SOCKET: /google/token.sock
     volumes:
       - *postgres-socket
+      # nginx's socket to Google's token endpoint (deploy/nginx/attenborough.conf).
+      - type: bind
+        source: /run/attenborough/google
+        target: /google
+        read_only: true
+        bind:
+          create_host_path: false
       # DB-IP's geolocation databases, downloaded monthly by deploy/update-geoip.sh.
       - type: bind
         source: /var/lib/attenborough/geoip
@@ -122,7 +139,7 @@ services:
     profiles: [tools]
     command: ["python", "scripts/migrate.py"]
     environment:
-      <<: *database
+      <<: [*database, *admin]
       DB_USERNAME: ${DB_OWNER_USERNAME:?set DB_OWNER_USERNAME in .env}
       DB_PASSWORD: ${DB_OWNER_PASSWORD:?set DB_OWNER_PASSWORD in .env}
       HONEYPOT_ADDRESSES: ${HONEYPOT_ADDRESSES:?set HONEYPOT_ADDRESSES in .env}

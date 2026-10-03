@@ -14,7 +14,7 @@ The decoy invites hostile traffic, on a machine shared with other services. Ever
 
 - **No published ports.** nginx reaches the decoy and web through unix sockets in `/run/attenborough/`, in directories only nginx's group (`www-data`) can enter (`tmpfiles.conf`). Nothing listens on any interface, so nothing on the LAN or the host can connect to the apps around nginx.
 - **No route out.** The decoy and web each share one network with the API, and nothing else. Both networks are `internal` with gateway mode `isolated`: the bridge has no address on the host, so a container can reach neither the internet, the LAN, the host's own services (PostgreSQL, SSH, other containers' published ports) nor the other containers. The decoy can't reach web. A plain `internal` network isn't enough: its containers can still reach every host service listening on all interfaces, and a host firewall may well admit Docker's address ranges.
-- **The API's only way out** is PostgreSQL's unix socket, mounted read-only. It connects as the app role, which can read and write rows but never change the schema or delete rows (`database.sql`). Like any role, it can connect to the server's other databases that leave PostgreSQL's default `CONNECT` for everyone in place, but it has no privileges on their tables.
+- **The API's only ways out** are PostgreSQL's unix socket, mounted read-only, and nginx's socket to Google's token endpoint, for the admin login (`/run/attenborough/google`, read-only; nginx forwards that one path to Google and nothing else). It connects as the app role, which can read and write rows but never change the schema or delete rows (`database.sql`). Like any role, it can connect to the server's other databases that leave PostgreSQL's default `CONNECT` for everyone in place, but it has no privileges on their tables.
 - **Every container** runs as uid 10001 (which owns nothing on the host), with a read-only root filesystem, no capabilities, `no-new-privileges`, Docker's default seccomp and AppArmor profiles, and limits on memory, CPU and processes. Logs are rotated (5 × 10 MB per container).
 - **Only the decoy's address may name a visitor** to the API (`FORWARDED_ALLOW_IPS`, the decoy's fixed address on its own network). nginx overwrites `X-Forwarded-For` with the visitor's address, so no visitor can choose their own.
 - **The exhibit answers only Cloudflare.** Anyone else asking this host for the exhibit's domain gets no response at all, so the exhibit can't be traced to this host by asking for it here.
@@ -27,7 +27,7 @@ Run from the repository's root on the host, e.g. `~/attenborough`, cloned from G
 
 1. **DNS.** The decoy's domain, a domain of its own unrelated to the exhibit's: `A` records for the domain itself and `www`, both straight to the host's public IP (no `CNAME` to another of your names, and no registrar redirect: either would name or bypass the host), **DNS only** (never proxied: Cloudflare would block or challenge the scanners the honeypot exists to see, and replace their addresses with its own). The exhibit's domain: **proxied** through Cloudflare, with SSL/TLS mode **Full (strict)**. Ports 80 and 443 forwarded to the host.
 
-2. **Settings.** `cp .env.example .env && chmod 600 .env`, then fill it in. `HONEYPOT_ADDRESSES` must list the decoy's domain and the host's public IP: the exhibit hides each of them (`../api/README.md`, "Hiding where the honeypot is"). If the public IP ever changes, add the new one and keep the old.
+2. **Settings.** `cp .env.example .env && chmod 600 .env`, then fill it in. `HONEYPOT_ADDRESSES` must list the decoy's domain and the host's public IP: the exhibit hides each of them (`../api/README.md`, "Hiding where the honeypot is"). If the public IP ever changes, add the new one and keep the old. The admin login needs a Google OAuth client (Google Cloud Console, APIs & Services → Credentials, a "Web application") whose authorised redirect URI is `https://<exhibit domain>/auth/google/callback`: its ID and secret go in `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and the Google accounts allowed in, comma-separated, in `ADMIN_EMAILS`.
 
 3. **The database and its roles.** As a PostgreSQL superuser, which asks for the two passwords you put in `.env`:
 
@@ -95,6 +95,8 @@ docker compose up -d
 ```
 
 Then run the checks. If `deploy/nginx/` changed, copy `decoy-proxy.conf` again and render and reload the site (step 5's `render` and the reload).
+
+**The admin area** (the release that added it): fill in the admin settings in `.env` (step 2), copy `tmpfiles.conf` again and create its directories (step 4), copy and render the nginx site again (step 5: it now also listens on the socket to Google), then build, migrate and start as above. The migration lets the app role delete login states and sessions; nothing else changes about its privileges.
 
 **Turning geolocation on** (the release that added it): before `docker compose up -d`, set up the databases as in step 6, and after it, locate the addresses seen so far: `docker compose exec api python scripts/locate_ips.py`.
 
