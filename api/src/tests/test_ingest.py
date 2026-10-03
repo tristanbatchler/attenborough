@@ -1,5 +1,7 @@
 import base64
 from collections.abc import Callable
+from datetime import UTC, datetime
+from ipaddress import IPv4Address
 
 import pytest
 from psycopg import AsyncConnection
@@ -11,11 +13,15 @@ from attenborough.ingest import (
     TARPIT_FREE_ATTEMPTS,
     TARPIT_MAX_DELAY_MS,
     TARPIT_STEP_MS,
+    Credentials,
     DecoyHit,
     InstallAttempt,
     LoginAttempt,
+    XmlrpcLogins,
     account_password,
     author_password,
+    record_login,
+    report_xmlrpc_logins,
     tarpit_delay_ms,
 )
 
@@ -34,6 +40,7 @@ TOO_BIG_BODY = base64.b64encode(bytes(1024 * 1024 + 1)).decode()
 TOO_LONG_CREDENTIAL = FILLER * (1024 * 1024 + 1)
 # An address from TEST-NET-1 (RFC 5737), never a real visitor.
 TEST_IP = "192.0.2.1"
+XMLRPC_PATH = "/xmlrpc.php"
 AUTHOR = "axespinner"
 
 
@@ -83,7 +90,14 @@ def install(
     )
 
 
-@pytest.mark.parametrize(REPORT, [hit, login, install])
+def xmlrpc_logins(*, attempts: int = 1) -> XmlrpcLogins:
+    return XmlrpcLogins(
+        path=XMLRPC_PATH,
+        attempts=[Credentials(username="", password="")] * attempts,
+    )
+
+
+@pytest.mark.parametrize(REPORT, [hit, login, install, xmlrpc_logins])
 def test_ingest_accepts_valid_reports(report: Callable[[], BaseModel]):
     _ = report()
 
@@ -107,6 +121,9 @@ def test_ingest_accepts_valid_reports(report: Callable[[], BaseModel]):
         lambda: install(username=TOO_LONG_CREDENTIAL),
         lambda: install(email=TOO_LONG_CREDENTIAL),
         lambda: install(password=TOO_LONG_CREDENTIAL),
+        lambda: xmlrpc_logins(attempts=0),
+        # More calls than a 1 MiB body can hold.
+        lambda: xmlrpc_logins(attempts=8193),
     ],
 )
 def test_ingest_rejects_out_of_bounds_reports(report: Callable[[], BaseModel]):
@@ -145,15 +162,13 @@ async def test_only_an_installed_account_with_its_own_password_opens(
     username, email, password = "test-installed-admin", "test@example.net", "chosen"
 
     async def outcome(login: str, tried: str) -> tuple[bool, bool]:
-        recorded = await queries.create_credential_stuffing_attempt(
+        recorded = await record_login(
             db_conn,
-            ip_address=TEST_IP,
-            endpoint_path=LOGIN_PATH,
-            username=login,
-            password=tried,
-            author_password=author_password(login) == tried,
+            TEST_IP,
+            LOGIN_PATH,
+            Credentials(username=login, password=tried),
+            checked=True,
         )
-        assert recorded is not None
         return recorded.was_fake_success, recorded.known_account
 
     async with db_conn.transaction(force_rollback=True):
@@ -183,20 +198,17 @@ def test_each_author_always_has_the_same_weak_password_and_nobody_else_has_one()
 
 
 @pytest.mark.anyio
-async def test_an_author_opens_with_their_weak_password(db_conn: AsyncConnection):
+async def test_an_author_opens_with_their_weak_password_only_when_wordpress_checks_it(
+    db_conn: AsyncConnection,
+):
     password = author_password(AUTHOR)
     assert password is not None
 
-    async def opens(username: str, tried: str) -> bool:
-        recorded = await queries.create_credential_stuffing_attempt(
-            db_conn,
-            ip_address=TEST_IP,
-            endpoint_path=LOGIN_PATH,
-            username=username,
-            password=tried,
-            author_password=author_password(username) == tried,
+    async def opens(username: str, tried: str, *, checked: bool = True) -> bool:
+        attempt = Credentials(username=username, password=tried)
+        recorded = await record_login(
+            db_conn, TEST_IP, LOGIN_PATH, attempt, checked=checked
         )
-        assert recorded is not None
         return recorded.was_fake_success
 
     async with db_conn.transaction(force_rollback=True):
@@ -204,3 +216,30 @@ async def test_an_author_opens_with_their_weak_password(db_conn: AsyncConnection
         assert await opens(AUTHOR.upper(), password)
         assert not await opens(AUTHOR, password + FILLER)
         assert not await opens("admin", password)
+        assert not await opens(AUTHOR, password, checked=False)
+
+
+@pytest.mark.anyio
+async def test_an_xmlrpc_request_records_every_login_but_checks_none_after_one_fails(
+    db_conn: AsyncConnection,
+):
+    password = author_password(AUTHOR)
+    assert password is not None
+    right = Credentials(username=AUTHOR, password=password)
+    wrong = Credentials(username=AUTHOR, password=password + FILLER)
+    origin = IPv4Address(TEST_IP)
+
+    async with db_conn.transaction(force_rollback=True):
+        before = await queries.count_login_attempts_since(
+            db_conn, ip_address=TEST_IP, since=datetime.min.replace(tzinfo=UTC)
+        )
+        outcome = await report_xmlrpc_logins(
+            XmlrpcLogins(path=XMLRPC_PATH, attempts=[right, wrong, right]),
+            db_conn,
+            origin,
+        )
+        assert outcome.successes == [True, False, False]
+        after = await queries.count_login_attempts_since(
+            db_conn, ip_address=TEST_IP, since=datetime.min.replace(tzinfo=UTC)
+        )
+        assert (after or 0) - (before or 0) == 3

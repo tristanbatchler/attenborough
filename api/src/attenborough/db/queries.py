@@ -471,7 +471,8 @@ INSERT INTO credential_stuffing_attempts (
 )
 VALUES (
     %(p1)s, %(p2)s, %(p3)s, %(p4)s,
-    %(p5)s::BOOLEAN OR EXISTS (SELECT 1 FROM opened),
+    %(p5)s::BOOLEAN
+        AND (%(p6)s::BOOLEAN OR EXISTS (SELECT 1 FROM opened)),
     (SELECT id FROM canary_tokens WHERE token = %(p4)s),
     (SELECT id FROM opened)
 )
@@ -1123,8 +1124,8 @@ async def create_telemetry_hit(conn: ConnectionLike, *, ip_address: str, method:
     await conn.execute(CREATE_TELEMETRY_HIT, {"p1": ip_address, "p2": method, "p3": path, "p4": query, "p5": router_group, "p6": user_agent, "p7": headers, "p8": body, "p9": body_size, "p10": status_code, "p11": banned, "p12": rule_id})
 
 
-async def create_credential_stuffing_attempt(conn: ConnectionLike, *, ip_address: str, endpoint_path: str, username: str, password: str, author_password: bool) -> CreateCredentialStuffingAttemptRow | None:
-    row = await (await conn.execute(CREATE_CREDENTIAL_STUFFING_ATTEMPT, {"p1": ip_address, "p2": endpoint_path, "p3": username, "p4": password, "p5": author_password})).fetchone()
+async def create_credential_stuffing_attempt(conn: ConnectionLike, *, ip_address: str, endpoint_path: str, username: str, password: str, checked: bool, author_password: bool) -> CreateCredentialStuffingAttemptRow | None:
+    row = await (await conn.execute(CREATE_CREDENTIAL_STUFFING_ATTEMPT, {"p1": ip_address, "p2": endpoint_path, "p3": username, "p4": password, "p5": checked, "p6": author_password})).fetchone()
     if row is None:
         return None
     return CreateCredentialStuffingAttemptRow(was_fake_success=row[0], known_account=row[1])

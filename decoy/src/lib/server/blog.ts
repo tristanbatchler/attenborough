@@ -181,7 +181,7 @@ export async function rest(route: string, request: Request): Promise<Response> {
 	return json(REST_NO_ROUTE, constants.HTTP_STATUS_NOT_FOUND);
 }
 
-function escapeXml(text: string): string {
+export function escapeXml(text: string): string {
 	return text
 		.replaceAll('&', '&amp;')
 		.replaceAll('<', '&lt;')

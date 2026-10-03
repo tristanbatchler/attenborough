@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { IssueCanaryData, IssueCanaryErrors, IssueCanaryResponses, JudgeVisitData, JudgeVisitErrors, JudgeVisitResponses, ReportHitData, ReportHitErrors, ReportHitResponses, ReportInstallData, ReportInstallErrors, ReportInstallResponses, ReportLoginData, ReportLoginErrors, ReportLoginResponses } from './types.gen';
+import type { IssueCanaryData, IssueCanaryErrors, IssueCanaryResponses, JudgeVisitData, JudgeVisitErrors, JudgeVisitResponses, ReportHitData, ReportHitErrors, ReportHitResponses, ReportInstallData, ReportInstallErrors, ReportInstallResponses, ReportLoginData, ReportLoginErrors, ReportLoginResponses, ReportXmlrpcLoginsData, ReportXmlrpcLoginsErrors, ReportXmlrpcLoginsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -55,13 +55,30 @@ export const reportHit = <ThrowOnError extends boolean = false>(options: Options
  *
  * Record submitted credentials and decide the outcome the decoy app shows.
  *
- * The only accounts are the ones installs created (report_install), so only those open, with
- * their own password. Every other login fails, as a real site does for guessed credentials,
- * canaries included: they were never anyone's password. The attempt is linked to the canary or
- * install it used (CreateCredentialStuffingAttempt).
+ * The only accounts are the authors' (author_password) and the ones installs created
+ * (report_install), so only those open, with their own password. Every other login fails, as a
+ * real site does for guessed credentials, canaries included: they were never anyone's password.
+ * The attempt is linked to the canary or install it used (CreateCredentialStuffingAttempt).
  */
 export const reportLogin = <ThrowOnError extends boolean = false>(options: Options<ReportLoginData, ThrowOnError>): RequestResult<ReportLoginResponses, ReportLoginErrors, ThrowOnError> => (options.client ?? client).post<ReportLoginResponses, ReportLoginErrors, ThrowOnError>({
     url: '/ingest/logins',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Report Xmlrpc Logins
+ *
+ * Record every login one XML-RPC request made, and decide each as report_login does, except
+ * that, as in WordPress (wp_xmlrpc_server::login, since 4.4), once one fails, the rest of the
+ * request's logins fail without being checked: a multicall can't try many passwords at once.
+ * Every one is recorded all the same; they are what the visitor tried.
+ */
+export const reportXmlrpcLogins = <ThrowOnError extends boolean = false>(options: Options<ReportXmlrpcLoginsData, ThrowOnError>): RequestResult<ReportXmlrpcLoginsResponses, ReportXmlrpcLoginsErrors, ThrowOnError> => (options.client ?? client).post<ReportXmlrpcLoginsResponses, ReportXmlrpcLoginsErrors, ThrowOnError>({
+    url: '/ingest/logins/xmlrpc',
     ...options,
     headers: {
         'Content-Type': 'application/json',

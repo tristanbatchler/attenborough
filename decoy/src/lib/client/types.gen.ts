@@ -29,6 +29,20 @@ export type CanaryRequest = {
 };
 
 /**
+ * Credentials
+ */
+export type Credentials = {
+    /**
+     * Username
+     */
+    username: string;
+    /**
+     * Password
+     */
+    password: string;
+};
+
+/**
  * DecoyHit
  *
  * One request the decoy app served: exactly what the visitor sent, and the status it got.
@@ -129,10 +143,6 @@ export type InstallOutcome = {
  */
 export type LoginAttempt = {
     /**
-     * Path
-     */
-    path: string;
-    /**
      * Username
      */
     username: string;
@@ -140,6 +150,10 @@ export type LoginAttempt = {
      * Password
      */
     password: string;
+    /**
+     * Path
+     */
+    path: string;
 };
 
 /**
@@ -263,6 +277,39 @@ export type VisitVerdict = {
     response: RenderedResponse | null;
 };
 
+/**
+ * XmlrpcLoginOutcome
+ *
+ * Which of the calls' logins the decoy pretends to accept, in order.
+ */
+export type XmlrpcLoginOutcome = {
+    /**
+     * Successes
+     */
+    successes: Array<boolean>;
+    /**
+     * Delay Ms
+     */
+    delay_ms: number;
+};
+
+/**
+ * XmlrpcLogins
+ *
+ * The credentials of every login call in one XML-RPC request (wp.getUsersBlogs, also inside
+ * system.multicall), in the order they were made.
+ */
+export type XmlrpcLogins = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Attempts
+     */
+    attempts: Array<Credentials>;
+};
+
 export type JudgeVisitData = {
     body: Visit;
     path?: never;
@@ -337,6 +384,31 @@ export type ReportLoginResponses = {
 };
 
 export type ReportLoginResponse = ReportLoginResponses[keyof ReportLoginResponses];
+
+export type ReportXmlrpcLoginsData = {
+    body: XmlrpcLogins;
+    path?: never;
+    query?: never;
+    url: '/ingest/logins/xmlrpc';
+};
+
+export type ReportXmlrpcLoginsErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReportXmlrpcLoginsError = ReportXmlrpcLoginsErrors[keyof ReportXmlrpcLoginsErrors];
+
+export type ReportXmlrpcLoginsResponses = {
+    /**
+     * Successful Response
+     */
+    200: XmlrpcLoginOutcome;
+};
+
+export type ReportXmlrpcLoginsResponse = ReportXmlrpcLoginsResponses[keyof ReportXmlrpcLoginsResponses];
 
 export type ReportInstallData = {
     body: InstallAttempt;

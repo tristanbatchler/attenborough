@@ -20,9 +20,12 @@ export const POWERED_BY = 'PHP/8.2.24';
 
 export interface Author {
 	id: number;
+	/** Also the username they log in with (the API knows it too: ingest.py, AUTHORS). */
 	slug: string;
 	name: string;
 	description: string;
+	/** Whether they are the site's administrator, rather than an author. */
+	administrator: boolean;
 }
 
 export interface Post {
@@ -41,13 +44,15 @@ export const AUTHORS: Author[] = [
 		id: 1,
 		slug: 'axespinner',
 		name: 'Axe Spinner',
-		description: 'Runs the blog. Catches most of the axes. Writes about the ones that got away.'
+		description: 'Runs the blog. Catches most of the axes. Writes about the ones that got away.',
+		administrator: true
 	},
 	{
 		id: 2,
 		slug: 'second-axe',
 		name: 'Second Axe',
-		description: 'Bot lane enthusiast and reluctant support main.'
+		description: 'Bot lane enthusiast and reluctant support main.',
+		administrator: false
 	}
 ];
 

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks
+from psycopg import AsyncConnection
 from pydantic import Base64Bytes, BaseModel, Field
 from starlette.status import HTTP_204_NO_CONTENT
 
@@ -62,6 +63,9 @@ AUTHORS = frozenset({"axespinner", "second-axe"})
 # The 1000 most common passwords, from SecLists (MIT): Passwords/Common-Credentials/
 # 10k-most-common.txt, one per line. Attackers' generic wordlists start with the same ones.
 _WEAK_PASSWORDS_FILE = Path(__file__).with_name("weak_passwords.txt")
+# The fewest bytes a call in an XML-RPC body takes, so the most logins one can carry.
+_MIN_XMLRPC_CALL_BYTES = 128
+_MAX_XMLRPC_LOGINS = _MAX_BODY_BYTES // _MIN_XMLRPC_CALL_BYTES
 
 
 def tarpit_delay_ms(previous_attempts: int) -> int:
@@ -106,12 +110,31 @@ class VisitVerdict(BaseModel):
     response: RenderedResponse | None
 
 
-class LoginAttempt(BaseModel):
+class Credentials(BaseModel):
+    username: str = Field(max_length=_MAX_BODY_BYTES)
+    password: str = Field(max_length=_MAX_BODY_BYTES)
+
+
+class LoginAttempt(Credentials):
     """Credentials a visitor submitted to one of the decoy app's login forms."""
 
     path: str = Field(max_length=_MAX_REQUEST_LINE)
-    username: str = Field(max_length=_MAX_BODY_BYTES)
-    password: str = Field(max_length=_MAX_BODY_BYTES)
+
+
+class XmlrpcLogins(BaseModel):
+    """The credentials of every login call in one XML-RPC request (wp.getUsersBlogs, also inside
+    system.multicall), in the order they were made."""
+
+    path: str = Field(max_length=_MAX_REQUEST_LINE)
+    attempts: list[Credentials] = Field(min_length=1, max_length=_MAX_XMLRPC_LOGINS)
+
+
+class XmlrpcLoginOutcome(BaseModel):
+    """Which of the calls' logins the decoy pretends to accept, in order."""
+
+    successes: list[bool]
+    # The tarpit, as for a form's login (LoginOutcome), once for the whole request.
+    delay_ms: int = Field(ge=0, le=TARPIT_MAX_DELAY_MS)
 
 
 class LoginOutcome(BaseModel):
@@ -217,6 +240,38 @@ def author_password(username: str) -> str | None:
     return passwords[int.from_bytes(digest) % len(passwords)]
 
 
+async def _tarpit(db_conn: AsyncConnection, address: str) -> int:
+    previous = await queries.count_login_attempts_since(
+        db_conn, ip_address=address, since=datetime.now(UTC) - TARPIT_WINDOW
+    )
+    return tarpit_delay_ms(previous or 0)
+
+
+async def record_login(
+    db_conn: AsyncConnection,
+    address: str,
+    path: str,
+    attempt: Credentials,
+    *,
+    checked: bool,
+) -> queries.CreateCredentialStuffingAttemptRow:
+    """Record one login and decide whether it opens (CreateCredentialStuffingAttempt). One that
+    WordPress didn't check (`checked` false) never does."""
+    recorded = await queries.create_credential_stuffing_attempt(
+        db_conn,
+        endpoint_path=path,
+        ip_address=address,
+        username=attempt.username,
+        password=attempt.password,
+        checked=checked,
+        author_password=author_password(attempt.username) == attempt.password,
+    )
+    if recorded is None:
+        # Unreachable: INSERT ... RETURNING returns the row it inserted.
+        raise RuntimeError("Recording a login attempt returned no row")
+    return recorded
+
+
 @router.post("/logins")
 async def report_login(
     attempt: LoginAttempt, db_conn: DBConn, origin: RequestOrigin
@@ -225,28 +280,39 @@ async def report_login(
 
     The only accounts are the authors' (author_password) and the ones installs created
     (report_install), so only those open, with their own password. Every other login fails, as a
-    real site does for guessed credentials, canaries included: they were never anyone's password. The attempt is linked to the canary or
-    install it used (CreateCredentialStuffingAttempt).
+    real site does for guessed credentials, canaries included: they were never anyone's password.
+    The attempt is linked to the canary or install it used (CreateCredentialStuffingAttempt).
     """
-    previous = await queries.count_login_attempts_since(
-        db_conn, ip_address=str(origin), since=datetime.now(UTC) - TARPIT_WINDOW
-    )
-    recorded = await queries.create_credential_stuffing_attempt(
-        db_conn,
-        endpoint_path=attempt.path,
-        ip_address=str(origin),
-        username=attempt.username,
-        password=attempt.password,
-        author_password=author_password(attempt.username) == attempt.password,
-    )
-    if recorded is None:
-        # Unreachable: INSERT ... RETURNING returns the row it inserted.
-        raise RuntimeError("Recording a login attempt returned no row")
+    address = str(origin)
+    delay_ms = await _tarpit(db_conn, address)
+    recorded = await record_login(db_conn, address, attempt.path, attempt, checked=True)
     return LoginOutcome(
         success=recorded.was_fake_success,
         known_account=recorded.known_account,
-        delay_ms=tarpit_delay_ms(previous or 0),
+        delay_ms=delay_ms,
     )
+
+
+@router.post("/logins/xmlrpc")
+async def report_xmlrpc_logins(
+    logins: XmlrpcLogins, db_conn: DBConn, origin: RequestOrigin
+) -> XmlrpcLoginOutcome:
+    """Record every login one XML-RPC request made, and decide each as report_login does, except
+    that, as in WordPress (wp_xmlrpc_server::login, since 4.4), once one fails, the rest of the
+    request's logins fail without being checked: a multicall can't try many passwords at once.
+    Every one is recorded all the same; they are what the visitor tried."""
+    address = str(origin)
+    delay_ms = await _tarpit(db_conn, address)
+    successes: list[bool] = []
+    checked = True
+    # ponytail: one INSERT per login; a full 1 MiB multicall takes thousands. Batch if it matters.
+    for attempt in logins.attempts:
+        recorded = await record_login(
+            db_conn, address, logins.path, attempt, checked=checked
+        )
+        successes.append(recorded.was_fake_success)
+        checked = recorded.was_fake_success
+    return XmlrpcLoginOutcome(successes=successes, delay_ms=delay_ms)
 
 
 def account_password(chosen: str) -> tuple[str, bool]:
