@@ -44,9 +44,22 @@ _HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 _HEADER_BREAKS = re.compile(r"[\r\n\0]")
 # Headers the decoy's server sets itself, or that the rule sets through content_type.
 _RESERVED_HEADERS = frozenset(
-    {"content-length", "transfer-encoding", "connection", "content-type"}
+    {
+        "content-length",
+        "transfer-encoding",
+        "connection",
+        "content-type",
+        "x-content-type-options",
+    }
 )
-_HTML_TYPES = frozenset({"text/html", "application/xhtml+xml"})
+# Media types whose bodies a browser never runs (with nosniff, below): the only ones whose markers
+# are not HTML-escaped, so JSON can quote them with `| json`. Every other type (HTML, XML, SVG,
+# anything unknown) escapes every marker, so nothing a visitor sent can become markup or script.
+_INERT_TYPES = frozenset({"text/plain", "application/json"})
+_JSON_SUFFIX = "+json"
+# Sent with every rule's answer, so a browser takes the content type as given and never sniffs a
+# text or JSON body as HTML.
+_NOSNIFF = {"X-Content-Type-Options": "nosniff"}
 _CONTENT_TYPE_SEPARATOR = ";"
 # The condition is rendered inside this `if`: a match renders the marker.
 _MATCHED = "1"
@@ -134,19 +147,20 @@ class _Liquid(Environment):
     output_stream_limit: ClassVar[int | None] = 64 * 1024
 
 
-_html = _Liquid(auto_escape=True, undefined=StrictUndefined)
+_escaping = _Liquid(auto_escape=True, undefined=StrictUndefined)
 _text = _Liquid(undefined=StrictUndefined)
 
 
-def _is_html(content_type: str) -> bool:
+def _escapes(content_type: str) -> bool:
+    """Whether a body of `content_type` HTML-escapes its markers: all but the inert types."""
     media_type = content_type.split(_CONTENT_TYPE_SEPARATOR, 1)[0].strip().lower()
-    return media_type in _HTML_TYPES
+    return not (media_type in _INERT_TYPES or media_type.endswith(_JSON_SUFFIX))
 
 
 @lru_cache(maxsize=1024)
-def _template(source: str, html: bool) -> Template:
+def _template(source: str, escaped: bool) -> Template:
     """A template parsed once: rules are read on every request, but rarely change."""
-    return (_html if html else _text).from_string(source)
+    return (_escaping if escaped else _text).from_string(source)
 
 
 def _condition(source: str) -> Template:
@@ -178,8 +192,8 @@ class Rule:
         return _condition(self.condition).render(**context) == _MATCHED
 
     def templates(self) -> list[Template]:
-        html = _is_html(self.content_type)
-        return [_template(self.body, html)] + [
+        escaped = _escapes(self.content_type)
+        return [_template(self.body, escaped)] + [
             _template(value, False) for value in self.headers.values()
         ]
 
@@ -190,8 +204,8 @@ class Rule:
         headers = {
             name: _HEADER_BREAKS.sub("", _template(value, False).render(**context))
             for name, value in self.headers.items()
-        }
-        body = _template(self.body, _is_html(self.content_type)).render(**context)
+        } | _NOSNIFF
+        body = _template(self.body, _escapes(self.content_type)).render(**context)
         return RenderedResponse(
             status_code=self.status_code,
             content_type=self.content_type,

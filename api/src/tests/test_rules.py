@@ -84,6 +84,31 @@ def test_html_bodies_escape_what_the_visitor_sent():
     assert "<script>" not in body
 
 
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        "image/svg+xml",
+        "text/xml",
+        "application/xml",
+        "TEXT/HTML; charset=UTF-8",
+        "application/x-whatever",
+    ],
+)
+def test_every_body_but_text_and_json_escapes_what_the_visitor_sent(content_type: str):
+    rule = RuleForm(
+        content_type=content_type, body="<svg>{{ user_agent }}</svg>"
+    ).rule()
+    assert "<script>" not in rule.render(markers()).body
+
+
+@pytest.mark.parametrize("content_type", [TEXT, JSON, "application/ld+json"])
+def test_text_and_json_are_never_sniffed_as_html(content_type: str):
+    rule = RuleForm(content_type=content_type, body="{{ user_agent }}").rule()
+    rendered = rule.render(markers())
+    assert rendered.body == EVIL_AGENT
+    assert rendered.headers["X-Content-Type-Options"] == "nosniff"
+
+
 def test_json_bodies_quote_with_the_json_filter():
     rule = RuleForm(content_type=JSON, body='{"agent": {{ user_agent | json }}}').rule()
     assert rule.render(markers()).body == '{"agent": "zgrab <script>\\"x\\"</script>"}'
@@ -126,6 +151,7 @@ def test_only_a_rule_that_uses_the_canary_issues_one():
         {"body": '{{ "x" | append: "" }}' + "y" * 70_000},
         # Headers the server owns, or that aren't headers.
         {"headers": {"Content-Length": "1"}},
+        {"headers": {"x-content-type-options": "sniff"}},
         {"headers": {"Bad Name": "x"}},
         # A body where none is allowed.
         {"status_code": 204, "body": "x"},
