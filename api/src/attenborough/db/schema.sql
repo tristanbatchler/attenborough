@@ -273,14 +273,15 @@ CREATE INDEX idx_decoy_lockouts_ip ON decoy_lockouts (ip_address, expires DESC);
 -- way a row is inserted keeps them right. Nothing deletes events; anything that ever does must
 -- recompute these.
 CREATE TABLE ip_activity (
-    ip_address     INET PRIMARY KEY,
+    ip_address       INET PRIMARY KEY,
     -- Honeypot requests only, as the exhibit lists them.
-    requests       BIGINT NOT NULL DEFAULT 0,
-    distinct_paths BIGINT NOT NULL DEFAULT 0,
-    login_attempts BIGINT NOT NULL DEFAULT 0,
+    requests         BIGINT NOT NULL DEFAULT 0,
+    distinct_paths   BIGINT NOT NULL DEFAULT 0,
+    login_attempts   BIGINT NOT NULL DEFAULT 0,
     -- The first and last honeypot request; NULL while there are none.
-    first_seen_at  TIMESTAMPTZ,
-    last_seen_at   TIMESTAMPTZ
+    first_seen_at    TIMESTAMPTZ,
+    last_seen_at     TIMESTAMPTZ,
+    install_attempts BIGINT NOT NULL DEFAULT 0
 );
 
 -- Each path an address requested, once, by the MD5 of the path as sent: paths can be longer than
@@ -329,6 +330,20 @@ CREATE TRIGGER trg_credential_attempts_count_ip
     AFTER INSERT ON credential_stuffing_attempts
     FOR EACH ROW
     EXECUTE FUNCTION count_ip_login_attempt();
+
+CREATE FUNCTION count_ip_install_attempt() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO ip_activity AS a (ip_address, install_attempts)
+    VALUES (NEW.ip_address, 1)
+    ON CONFLICT (ip_address) DO UPDATE SET install_attempts = a.install_attempts + 1;
+    RETURN NULL;
+END
+$$;
+
+CREATE TRIGGER trg_install_attempts_count_ip
+    AFTER INSERT ON install_attempts
+    FOR EACH ROW
+    EXECUTE FUNCTION count_ip_install_attempt();
 
 -- Where each address that sent the honeypot a request is, and whose network it is in: derived from
 -- a geolocation database (geolocation.py), never proof of where the sender is. Located once, when

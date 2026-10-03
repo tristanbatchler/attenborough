@@ -168,6 +168,7 @@ class IpActivity(pydantic.BaseModel):
     login_attempts: int
     first_seen_at: datetime.datetime | None
     last_seen_at: datetime.datetime | None
+    install_attempts: int
 
 
 class IpBan(pydantic.BaseModel):

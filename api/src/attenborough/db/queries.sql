@@ -226,7 +226,7 @@ SELECT path_category(sqlc.arg(path)::TEXT) AS category;
 
 -- What one IP address did, in numbers (running totals, see schema.sql); no row if it did nothing.
 -- name: GetIpActivity :one
-SELECT requests, distinct_paths, login_attempts, first_seen_at, last_seen_at
+SELECT requests, distinct_paths, login_attempts, install_attempts, first_seen_at, last_seen_at
 FROM ip_activity
 WHERE ip_address = sqlc.arg(ip_address)::inet;
 
@@ -264,6 +264,7 @@ ORDER BY a.ip_address;
 SELECT
     COALESCE(sum(a.requests), 0)::BIGINT AS requests,
     COALESCE(sum(a.login_attempts), 0)::BIGINT AS login_attempts,
+    COALESCE(sum(a.install_attempts), 0)::BIGINT AS install_attempts,
     count(*) AS addresses,
     count(DISTINCT l.country_code) AS countries
 FROM ip_activity a

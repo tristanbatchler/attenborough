@@ -36,6 +36,7 @@
 				<tr><th scope="row">Requests</th><td>{data.summary.requests}</td></tr>
 				<tr><th scope="row">Distinct paths</th><td>{data.summary.distinct_paths}</td></tr>
 				<tr><th scope="row">Login attempts</th><td>{data.summary.login_attempts}</td></tr>
+				<tr><th scope="row">WordPress installs</th><td>{data.summary.install_attempts}</td></tr>
 				<tr>
 					<th scope="row">First seen</th>
 					<td>

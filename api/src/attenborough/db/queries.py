@@ -214,6 +214,7 @@ class GetIpActivityRow(pydantic.BaseModel):
     requests: int
     distinct_paths: int
     login_attempts: int
+    install_attempts: int
     first_seen_at: datetime.datetime | None
     last_seen_at: datetime.datetime | None
 
@@ -223,6 +224,7 @@ class GetPatternTotalsRow(pydantic.BaseModel):
 
     requests: int
     login_attempts: int
+    install_attempts: int
     addresses: int
     countries: int
 
@@ -570,7 +572,7 @@ SELECT path_category(%(p1)s::TEXT) AS category
 """
 
 GET_IP_ACTIVITY: typing.Final[typing.LiteralString] = """-- name: GetIpActivity :one
-SELECT requests, distinct_paths, login_attempts, first_seen_at, last_seen_at
+SELECT requests, distinct_paths, login_attempts, install_attempts, first_seen_at, last_seen_at
 FROM ip_activity
 WHERE ip_address = %(p1)s::inet
 """
@@ -605,6 +607,7 @@ GET_PATTERN_TOTALS: typing.Final[typing.LiteralString] = """-- name: GetPatternT
 SELECT
     COALESCE(sum(a.requests), 0)::BIGINT AS requests,
     COALESCE(sum(a.login_attempts), 0)::BIGINT AS login_attempts,
+    COALESCE(sum(a.install_attempts), 0)::BIGINT AS install_attempts,
     count(*) AS addresses,
     count(DISTINCT l.country_code) AS countries
 FROM ip_activity a
@@ -1024,7 +1027,7 @@ async def get_ip_activity(conn: ConnectionLike, *, ip_address: str) -> GetIpActi
     row = await (await conn.execute(GET_IP_ACTIVITY, {"p1": ip_address})).fetchone()
     if row is None:
         return None
-    return GetIpActivityRow(requests=row[0], distinct_paths=row[1], login_attempts=row[2], first_seen_at=row[3], last_seen_at=row[4])
+    return GetIpActivityRow(requests=row[0], distinct_paths=row[1], login_attempts=row[2], install_attempts=row[3], first_seen_at=row[4], last_seen_at=row[5])
 
 
 async def create_ip_location(conn: ConnectionLike, *, ip_address: str, country_code: str | None, city: str | None, latitude: float | None, longitude: float | None, asn: int | None, as_organisation: str | None, source: str) -> None:
@@ -1049,7 +1052,7 @@ async def get_pattern_totals(conn: ConnectionLike) -> GetPatternTotalsRow | None
     row = await (await conn.execute(GET_PATTERN_TOTALS)).fetchone()
     if row is None:
         return None
-    return GetPatternTotalsRow(requests=row[0], login_attempts=row[1], addresses=row[2], countries=row[3])
+    return GetPatternTotalsRow(requests=row[0], login_attempts=row[1], install_attempts=row[2], addresses=row[3], countries=row[4])
 
 
 async def get_observation_span(conn: ConnectionLike) -> GetObservationSpanRow | None:

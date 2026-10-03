@@ -44,6 +44,7 @@ class Totals(BaseModel):
 
     requests: int
     login_attempts: int
+    install_attempts: int
     addresses: int
     # Distinct countries among the located addresses.
     countries: int
@@ -228,6 +229,7 @@ async def compute_patterns(conn: AsyncConnection, now: datetime) -> Patterns:
         totals=Totals(
             requests=0 if totals is None else totals.requests,
             login_attempts=0 if totals is None else totals.login_attempts,
+            install_attempts=0 if totals is None else totals.install_attempts,
             addresses=0 if totals is None else totals.addresses,
             countries=0 if totals is None else totals.countries,
             requests_last_day=last_day or 0,

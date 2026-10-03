@@ -254,6 +254,7 @@ class IpSummary(BaseModel):
     requests: int
     distinct_paths: int
     login_attempts: int
+    install_attempts: int
     first_seen_at: datetime | None
     last_seen_at: datetime | None
     # Null when the address was never located.
@@ -418,6 +419,7 @@ def ip_summary(
             requests=0,
             distinct_paths=0,
             login_attempts=0,
+            install_attempts=0,
             first_seen_at=None,
             last_seen_at=None,
             location=location,
@@ -426,6 +428,7 @@ def ip_summary(
         requests=row.requests,
         distinct_paths=row.distinct_paths,
         login_attempts=row.login_attempts,
+        install_attempts=row.install_attempts,
         first_seen_at=row.first_seen_at,
         last_seen_at=row.last_seen_at,
         location=location,

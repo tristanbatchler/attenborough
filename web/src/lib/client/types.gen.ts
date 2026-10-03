@@ -466,6 +466,10 @@ export type IpSummary = {
      */
     login_attempts: number;
     /**
+     * Install Attempts
+     */
+    install_attempts: number;
+    /**
      * First Seen At
      */
     first_seen_at: string | null;
@@ -695,6 +699,10 @@ export type Totals = {
      * Login Attempts
      */
     login_attempts: number;
+    /**
+     * Install Attempts
+     */
+    install_attempts: number;
     /**
      * Addresses
      */

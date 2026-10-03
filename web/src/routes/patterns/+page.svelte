@@ -64,6 +64,10 @@
 					></tr
 				>
 				<tr><th scope="row">Login attempts</th><td>{formatCount(totals.login_attempts)}</td></tr>
+				<tr
+					><th scope="row">WordPress installs</th><td>{formatCount(totals.install_attempts)}</td
+					></tr
+				>
 				<tr><th scope="row">Addresses</th><td>{formatCount(totals.addresses)}</td></tr>
 				<tr><th scope="row">Countries</th><td>{formatCount(totals.countries)}</td></tr>
 				{#if totals.first_seen_at !== null && totals.last_seen_at !== null}
