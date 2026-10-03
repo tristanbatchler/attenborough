@@ -26,6 +26,11 @@ export default defineConfig({
 			// will guess sends every such probe through the hook to an nginx 404 instead.
 			appDir: 'c3f9a1e7',
 
+			// Links as WordPress writes them, from the site's root (`/wp-login.php`). By default,
+			// SvelteKit's resolve() writes them relative to the page (`./wp-login.php`,
+			// `../../2026/08/...`), which no WordPress does.
+			paths: { relative: false },
+
 			// Self-hosted Node server (`node build`) behind the public reverse proxy. See
 			// decoy/README.md, "Deployment".
 			adapter: adapter()
