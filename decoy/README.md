@@ -24,7 +24,7 @@ The API trusts this app to name the visitor (see "Client IP attribution" below).
 
 ## How it works
 
-**Banned visitors.** Before serving anything, the hook asks the API whether the visitor is banned (`POST /ingest/visits`; bans are made in the exhibit's admin area). A banned visitor gets nginx's 403 page for every request, and is still reported, marked as refused. If the API can't answer within 2 seconds, the visitor is served as usual.
+**Bans and response rules.** Before serving anything, the hook asks the API how to answer (`POST /ingest/visits`, with the request's method, raw path, query and headers). A banned visitor gets nginx's 403 page for every request. If an admin's response rule matches (made in the exhibit's admin area, `../api/README.md`), the API sends the rule's answer already rendered (status, headers, body, delay), and the hook serves exactly that instead of the route. Both are reported like any other request, marked as refused or with the rule's id. If the API can't answer within 2 seconds, the visitor is served as usual.
 
 **Every request is reported once, exactly as sent.** The `handle` hook in `src/hooks.server.ts` captures what the visitor sent (`$lib/server/visit`), serves the request, then reports it to `POST /ingest/hits` with the status they got. The API records it as a `honeypot` hit, as if it had served the request itself. What's recorded is the visitor's own request, not SvelteKit's view of it:
 
