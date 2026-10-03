@@ -103,8 +103,14 @@ interface Element {
 	text: string;
 }
 
-// One piece of XML: CDATA, a declaration or comment (skipped), a tag, or text.
-const XML_TOKEN = /<!\[CDATA\[([\s\S]*?)\]\]>|<[?!][\s\S]*?>|<(\/?)([^\s/>]+)[^>]*?(\/?)>|([^<]+)/g;
+// One piece of XML: CDATA, a declaration or comment (skipped), a tag, or text. Sticky (`y`), so a
+// token is only ever looked for where the last one ended, and no two parts of a tag can match the
+// same characters: a body is scanned in linear time, whatever a visitor sends. (Without both, a
+// 4 KB body of `<` took seconds, and the decoy answers nothing else meanwhile.)
+const XML_TOKEN =
+	/<!\[CDATA\[([\s\S]*?)\]\]>|<(?:\?|!(?!\[CDATA\[))[^>]*>|<(\/?)([A-Za-z_][^\s/>]*)(?:\s[^>]*?)?(\/?)>|([^<]+)/gy;
+// How deep elements may nest, as libxml2 allows by default: value() recurses once per level.
+const MAX_DEPTH = 256;
 const ENTITY = /&(?:#x([0-9a-f]+)|#([0-9]+)|(lt|gt|amp|quot|apos));/gi;
 const NAMED_ENTITIES = new Map([
 	['lt', '<'],
@@ -133,9 +139,6 @@ function parseXml(xml: string): Element | null {
 	let current = document;
 	let at = 0;
 	for (const token of xml.matchAll(XML_TOKEN)) {
-		if (token.index !== at) {
-			return null;
-		}
 		at += token[0].length;
 		const [, cdata, closing, name, selfClosing, text] = token;
 		if (cdata !== undefined) {
@@ -154,11 +157,15 @@ function parseXml(xml: string): Element | null {
 			const element: Element = { name, children: [], text: '' };
 			current.children.push(element);
 			if (!selfClosing) {
+				if (ancestors.length === MAX_DEPTH) {
+					return null;
+				}
 				ancestors.push(current);
 				current = element;
 			}
 		}
 	}
+	// A sticky scan stops at the first thing that isn't a token: anything left unread is malformed.
 	const [root, ...others] = document.children;
 	return at === xml.length && current === document && others.length === 0 ? (root ?? null) : null;
 }
