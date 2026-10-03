@@ -35,6 +35,7 @@ The tool is `api/scripts/telemetry_probe.py` (typed, checked by the project's ru
    - Restart the decoy app with `ADDRESS_HEADER=x-forwarded-for XFF_DEPTH=1` (as behind nginx) and run `verify --target decoy --decoy-behind-proxy`: the tool acts as nginx, and the `decoy-forwarded` row must be at `203.0.113.7` (`rows --run <tag>`).
    - For attribution changes, repeat that with the API untrusted (step 4): every row, `decoy-forwarded` included, must be at `127.0.0.1`.
    - The tool checks hits only. Credentials submitted through the decoy app land in `credential_stuffing_attempts` (username `probe`, path `/wp-login.php`): count them with a read-only query if the login flow changed.
+   - The decoy's logins go through the API's tarpit (`ingest.py`): once `127.0.0.1` has made more than ten attempts in ten minutes, each waits up to 15 s, so a run takes about 20 s. That is expected, and within the tool's 30 s timeout.
    - Stop the decoy app by port too (8766). Planted failures that must fail: copying the visitor's `X-Forwarded-For` into `apiOptions` (`IP db=203.0.113.7 expected=127.0.0.1` in direct mode), and reporting twice in the hook (`DUPLICATED x2`).
 5. Scan the server log for unexpected errors: `grep -v "^DEBUG\|^INFO" <scratchpad>/server.log`. Expect none: every case is a handled response. `verify` has no unhandled-exception case, because nothing in the API deliberately crashes; don't reuse a real bug as one.
 6. Stop the server **by port**, never with `pkill -f <pattern>` (the pattern also matches, and kills, the shell running the command):

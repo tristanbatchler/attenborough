@@ -113,6 +113,11 @@ uv run python scripts/locate_ips.py                          # locate every addr
 
 Generated sqlc code is excluded from ruff and basedpyright (`pyproject.toml`). If you run basedpyright by hand, run it from this directory. It reads its config from the current directory, so running it from the repo root gives different, misleading results.
 
+## Canaries and the tarpit
+
+- **Canaries:** `POST /ingest/canaries` issues a fresh random secret (`secrets.token_urlsafe`) for a leaked file the decoy is serving, recorded in `canary_tokens` with the path and the visitor. `POST /ingest/logins` links an attempt whose password is a recorded secret (`credential_stuffing_attempts.canary_id`), and the exhibit's login events carry where and when it was handed out (`canary`). The secrets are our own random format, not imitations of any real service's credentials, and open nothing.
+- **Tarpit:** the login outcome's `delay_ms` (`ingest.tarpit_delay_ms`): an address's first ten attempts in ten minutes are answered at once, then each waits half a second longer, up to 15 s, under nginx's 60 s proxy timeout. It slows fast guessers without blocking anyone, and forgets an address that slows down.
+
 ## Geolocation
 
 Each address that sends the honeypot a request is located once, when its first request is recorded (`record_hit` calls `geolocation.record_location`), and kept in `ip_locations`: country, city, coordinates, and the network (autonomous system number and owner) it belongs to, with the databases it came from and their dates. The exhibit shows each with a flag beside the address, a map and the network on the address's page, and in aggregate on the Patterns page, always as an estimate: a location says where an address is registered and routed, not where the sender is, and most scanners rent servers in data centres.

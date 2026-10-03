@@ -31,6 +31,8 @@ The API trusts this app to name the visitor (see "Client IP attribution" below).
 
 The hook waits for the report, rather than leaving a promise floating, so no report is lost when the server stops. The API answers before writing to the database, so the wait is one quick local round trip, capped at 2 seconds if the API is down. A failed report is logged and never changes the visitor's response.
 
+**Leaked files and the tarpit.** A few files a careless admin leaves in the web root (`/.env`, `/wp-config.php.bak`; `$lib/server/leaks.ts`, reached through the catch-all route) are served with a fresh secret the API issues for each request (`POST /ingest/canaries`) and records against the visitor. The secret opens nothing; if it is ever tried on the login page, the API links the attempt to it and the exhibit says where it came from. If the API can't issue one, the file isn't there (nginx's 404). Logins wait however long the API's outcome says (`delay_ms`): its tarpit for fast guessers.
+
 **The API decides; this app presents.** A decoy that takes input sends it to an `/ingest/...` endpoint (the WordPress login uses `POST /ingest/logins`), which records it and returns the outcome. The page then shows what the real software would. Nothing here decides whether a login works.
 
 **Client IP attribution.** The visitor is whoever SvelteKit's `getClientAddress()` says. Each API call carries `X-Forwarded-For` set by `apiOptions(event)` (`src/lib/server/api.ts`) to that single address, replacing anything the visitor sent, and the API honours it only because this app's address is in the API's `FORWARDED_ALLOW_IPS`. Don't forward the visitor's own headers to the API: `telemetry_probe.py verify --target decoy` catches that as an IP mismatch.
