@@ -30,6 +30,7 @@ __all__: collections.abc.Sequence[str] = (
     "ListToolkitsRow",
     "LongestSeenAddressesRow",
     "QueryResults",
+    "SearchEventsRow",
     "TopCountriesRow",
     "TopNetworksRow",
     "TopPasswordsSinceRow",
@@ -39,6 +40,7 @@ __all__: collections.abc.Sequence[str] = (
     "UseSessionRow",
     "busiest_addresses",
     "categorise_path",
+    "configure_search",
     "count_categories_since",
     "count_install_logins",
     "count_login_attempts_since",
@@ -71,6 +73,7 @@ __all__: collections.abc.Sequence[str] = (
     "list_active_rules",
     "list_applied_migrations",
     "list_audit_log",
+    "list_country_codes",
     "list_install_login_ids",
     "list_ip_bans",
     "list_ip_events",
@@ -86,6 +89,8 @@ __all__: collections.abc.Sequence[str] = (
     "record_migration",
     "remove_rule",
     "revoke_ip_ban",
+    "search_addresses",
+    "search_events",
     "seed_hits",
     "seed_login_attempts",
     "set_rule_position",
@@ -224,6 +229,15 @@ class ListRecentEventsRow(pydantic.BaseModel):
 
 
 class ListIpEventsRow(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    kind: enums.EventKind
+    id_: int
+    ip_address: str
+    occurred_at: datetime.datetime
+
+
+class SearchEventsRow(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
 
     kind: enums.EventKind
@@ -738,6 +752,108 @@ SELECT kind, id, ip_address, occurred_at FROM (
 ) AS page
 ORDER BY occurred_at DESC, kind DESC, id DESC
 LIMIT %(p5)s::int
+"""
+
+SEARCH_ADDRESSES: typing.Final[typing.LiteralString] = """-- name: SearchAddresses :many
+SELECT a.ip_address
+FROM ip_activity a
+LEFT JOIN ip_locations l ON l.ip_address = a.ip_address
+WHERE is_public_address(a.ip_address)
+  AND (cardinality(%(p1)s::inet[]) = 0 OR a.ip_address <<= ANY(%(p1)s::inet[]))
+  AND (cardinality(%(p2)s::inet[]) = 0 OR NOT a.ip_address <<= ANY(%(p2)s::inet[]))
+  AND (cardinality(%(p3)s::text[]) = 0 OR l.country_code = ANY(%(p3)s::text[]))
+  AND (cardinality(%(p4)s::text[]) = 0 OR l.country_code IS NULL OR l.country_code <> ALL(%(p4)s::text[]))
+  AND (cardinality(%(p5)s::text[]) = 0 OR l.city ILIKE ANY(%(p5)s::text[]))
+  AND (cardinality(%(p6)s::text[]) = 0 OR NOT COALESCE(l.city, '') ILIKE ANY(%(p6)s::text[]))
+  AND (cardinality(%(p7)s::bigint[]) = 0 OR l.asn = ANY(%(p7)s::bigint[]))
+  AND (cardinality(%(p8)s::bigint[]) = 0 OR l.asn IS NULL OR l.asn <> ALL(%(p8)s::bigint[]))
+  AND (cardinality(%(p9)s::text[]) = 0 OR l.as_organisation ILIKE ANY(%(p9)s::text[]))
+  AND (cardinality(%(p10)s::text[]) = 0 OR NOT COALESCE(l.as_organisation, '') ILIKE ANY(%(p10)s::text[]))
+  AND (%(p11)s::bigint IS NULL OR a.requests >= %(p11)s::bigint)
+  AND (%(p12)s::bigint IS NULL OR a.requests < %(p12)s::bigint)
+  AND (%(p13)s::bigint IS NULL OR a.login_attempts >= %(p13)s::bigint)
+  AND (%(p14)s::bigint IS NULL OR a.login_attempts < %(p14)s::bigint)
+  AND (%(p15)s::timestamptz IS NULL OR a.first_seen_at >= %(p15)s::timestamptz)
+  AND (%(p16)s::timestamptz IS NULL OR a.first_seen_at < %(p16)s::timestamptz)
+  AND (%(p17)s::timestamptz IS NULL OR a.last_seen_at >= %(p17)s::timestamptz)
+  AND (%(p18)s::timestamptz IS NULL OR a.last_seen_at < %(p18)s::timestamptz)
+"""
+
+SEARCH_EVENTS: typing.Final[typing.LiteralString] = """-- name: SearchEvents :many
+SELECT kind, id, ip_address, occurred_at FROM (
+    (SELECT 'hit'::event_kind AS kind, id, ip_address, occurred_at
+     FROM telemetry_hits
+     WHERE %(p1)s::boolean
+       AND router_group = 'honeypot' AND is_public_address(ip_address) AND occurred_at <= %(p2)s::timestamptz
+       AND (occurred_at, 'hit'::event_kind, id) < (%(p2)s::timestamptz, %(p3)s::event_kind, %(p4)s::bigint)
+       AND (%(p5)s::timestamptz IS NULL OR occurred_at >= %(p5)s::timestamptz)
+       AND (%(p6)s::timestamptz IS NULL OR occurred_at < %(p6)s::timestamptz)
+       AND (NOT %(p7)s::boolean OR ip_address = ANY(%(p8)s::inet[]))
+       AND (cardinality(%(p9)s::text[]) = 0 OR regexp_replace(method, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p9)s::text[]))
+       AND (cardinality(%(p12)s::text[]) = 0 OR NOT regexp_replace(method, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p12)s::text[]))
+       AND (cardinality(%(p13)s::text[]) = 0 OR regexp_replace(path, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p13)s::text[]))
+       AND (cardinality(%(p14)s::text[]) = 0 OR NOT regexp_replace(path, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p14)s::text[]))
+       AND (cardinality(%(p15)s::text[]) = 0 OR regexp_replace(COALESCE(query, ''), %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p15)s::text[]))
+       AND (cardinality(%(p16)s::text[]) = 0 OR NOT regexp_replace(COALESCE(query, ''), %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p16)s::text[]))
+       AND (cardinality(%(p17)s::text[]) = 0 OR regexp_replace(COALESCE(user_agent, ''), %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p17)s::text[]))
+       AND (cardinality(%(p18)s::text[]) = 0 OR NOT regexp_replace(COALESCE(user_agent, ''), %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p18)s::text[]))
+       AND (cardinality(%(p19)s::integer[]) = 0 OR status_code = ANY(%(p19)s::integer[]))
+       AND (cardinality(%(p20)s::integer[]) = 0 OR status_code <> ALL(%(p20)s::integer[]))
+       AND (cardinality(%(p21)s::path_category[]) = 0 OR path_category(path) = ANY(%(p21)s::path_category[]))
+       AND (cardinality(%(p22)s::path_category[]) = 0 OR path_category(path) <> ALL(%(p22)s::path_category[]))
+       AND (%(p23)s::boolean IS NULL OR banned = %(p23)s::boolean)
+     ORDER BY occurred_at DESC, id DESC
+     LIMIT %(p24)s::int)
+    UNION ALL
+    (SELECT 'login_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
+     FROM credential_stuffing_attempts
+     WHERE %(p25)s::boolean
+       AND is_public_address(ip_address) AND attempted_at <= %(p2)s::timestamptz
+       AND (attempted_at, 'login_attempt'::event_kind, id) < (%(p2)s::timestamptz, %(p3)s::event_kind, %(p4)s::bigint)
+       AND (%(p5)s::timestamptz IS NULL OR attempted_at >= %(p5)s::timestamptz)
+       AND (%(p6)s::timestamptz IS NULL OR attempted_at < %(p6)s::timestamptz)
+       AND (NOT %(p7)s::boolean OR ip_address = ANY(%(p8)s::inet[]))
+       AND (cardinality(%(p13)s::text[]) = 0 OR regexp_replace(endpoint_path, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p13)s::text[]))
+       AND (cardinality(%(p14)s::text[]) = 0 OR NOT regexp_replace(endpoint_path, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p14)s::text[]))
+       AND (cardinality(%(p26)s::text[]) = 0 OR regexp_replace(username, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p26)s::text[]))
+       AND (cardinality(%(p27)s::text[]) = 0 OR NOT regexp_replace(username, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p27)s::text[]))
+       AND (cardinality(%(p28)s::text[]) = 0 OR regexp_replace(password, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p28)s::text[]))
+       AND (cardinality(%(p29)s::text[]) = 0 OR NOT regexp_replace(password, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p29)s::text[]))
+     ORDER BY attempted_at DESC, id DESC
+     LIMIT %(p24)s::int)
+    UNION ALL
+    (SELECT 'install_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
+     FROM install_attempts
+     WHERE %(p30)s::boolean
+       AND is_public_address(ip_address) AND attempted_at <= %(p2)s::timestamptz
+       AND (attempted_at, 'install_attempt'::event_kind, id) < (%(p2)s::timestamptz, %(p3)s::event_kind, %(p4)s::bigint)
+       AND (%(p5)s::timestamptz IS NULL OR attempted_at >= %(p5)s::timestamptz)
+       AND (%(p6)s::timestamptz IS NULL OR attempted_at < %(p6)s::timestamptz)
+       AND (NOT %(p7)s::boolean OR ip_address = ANY(%(p8)s::inet[]))
+       AND (cardinality(%(p13)s::text[]) = 0 OR regexp_replace(path, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p13)s::text[]))
+       AND (cardinality(%(p14)s::text[]) = 0 OR NOT regexp_replace(path, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p14)s::text[]))
+       AND (cardinality(%(p26)s::text[]) = 0 OR regexp_replace(username, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p26)s::text[]))
+       AND (cardinality(%(p27)s::text[]) = 0 OR NOT regexp_replace(username, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p27)s::text[]))
+       AND (cardinality(%(p28)s::text[]) = 0 OR regexp_replace(password, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p28)s::text[]))
+       AND (cardinality(%(p29)s::text[]) = 0 OR NOT regexp_replace(password, %(p10)s::text, %(p11)s::text, 'gi') ILIKE ANY(%(p29)s::text[]))
+     ORDER BY attempted_at DESC, id DESC
+     LIMIT %(p24)s::int)
+) AS page
+ORDER BY occurred_at DESC, kind DESC, id DESC
+LIMIT %(p24)s::int
+"""
+
+CONFIGURE_SEARCH: typing.Final[typing.LiteralString] = """-- name: ConfigureSearch :exec
+SELECT
+    set_config('plan_cache_mode', 'force_custom_plan', true),
+    set_config('statement_timeout', %(p1)s::int::text, true)
+"""
+
+LIST_COUNTRY_CODES: typing.Final[typing.LiteralString] = """-- name: ListCountryCodes :many
+SELECT DISTINCT country_code::text
+FROM ip_locations
+WHERE country_code IS NOT NULL AND is_public_address(ip_address)
+ORDER BY 1
 """
 
 GET_HITS_BY_IDS: typing.Final[typing.LiteralString] = """-- name: GetHitsByIds :many
@@ -1294,6 +1410,134 @@ def list_ip_events(conn: ConnectionLike, *, ip_address: str, before_at: datetime
         return ListIpEventsRow(kind=enums.EventKind(row[0]), id_=row[1], ip_address=str(row[2]), occurred_at=row[3])
 
     return QueryResults(conn, LIST_IP_EVENTS, _decode_hook, {"p1": ip_address, "p2": before_at, "p3": before_kind, "p4": before_id, "p5": limit})
+
+
+def search_addresses(
+    conn: ConnectionLike,
+    *,
+    ips: collections.abc.Sequence[str],
+    not_ips: collections.abc.Sequence[str],
+    countries: collections.abc.Sequence[str],
+    not_countries: collections.abc.Sequence[str],
+    cities: collections.abc.Sequence[str],
+    not_cities: collections.abc.Sequence[str],
+    asns: collections.abc.Sequence[int],
+    not_asns: collections.abc.Sequence[int],
+    networks: collections.abc.Sequence[str],
+    not_networks: collections.abc.Sequence[str],
+    requests_from: int | None,
+    requests_to: int | None,
+    logins_from: int | None,
+    logins_to: int | None,
+    first_seen_from: datetime.datetime | None,
+    first_seen_to: datetime.datetime | None,
+    last_seen_from: datetime.datetime | None,
+    last_seen_to: datetime.datetime | None,
+) -> QueryResults[str]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> str:
+        return str(row[0])
+
+    sql_params: dict[str, QueryResultsArgsType] = {
+        "p1": list(ips),
+        "p2": list(not_ips),
+        "p3": list(countries),
+        "p4": list(not_countries),
+        "p5": list(cities),
+        "p6": list(not_cities),
+        "p7": list(asns),
+        "p8": list(not_asns),
+        "p9": list(networks),
+        "p10": list(not_networks),
+        "p11": requests_from,
+        "p12": requests_to,
+        "p13": logins_from,
+        "p14": logins_to,
+        "p15": first_seen_from,
+        "p16": first_seen_to,
+        "p17": last_seen_from,
+        "p18": last_seen_to,
+    }
+    return QueryResults(conn, SEARCH_ADDRESSES, _decode_hook, sql_params)
+
+
+def search_events(
+    conn: ConnectionLike,
+    *,
+    include_hits: bool,
+    before_at: datetime.datetime,
+    before_kind: enums.EventKind,
+    before_id: int,
+    from_at: datetime.datetime | None,
+    to_at: datetime.datetime | None,
+    by_address: bool,
+    addresses: collections.abc.Sequence[str],
+    methods: collections.abc.Sequence[str],
+    honeypot: str,
+    placeholder: str,
+    not_methods: collections.abc.Sequence[str],
+    paths: collections.abc.Sequence[str],
+    not_paths: collections.abc.Sequence[str],
+    queries: collections.abc.Sequence[str],
+    not_queries: collections.abc.Sequence[str],
+    user_agents: collections.abc.Sequence[str],
+    not_user_agents: collections.abc.Sequence[str],
+    statuses: collections.abc.Sequence[int],
+    not_statuses: collections.abc.Sequence[int],
+    categories: collections.abc.Sequence[enums.PathCategory],
+    not_categories: collections.abc.Sequence[enums.PathCategory],
+    banned: bool | None,
+    limit: int,
+    include_logins: bool,
+    usernames: collections.abc.Sequence[str],
+    not_usernames: collections.abc.Sequence[str],
+    passwords: collections.abc.Sequence[str],
+    not_passwords: collections.abc.Sequence[str],
+    include_installs: bool,
+) -> QueryResults[SearchEventsRow]:
+    def _decode_hook(row: psycopg.rows.TupleRow) -> SearchEventsRow:
+        return SearchEventsRow(kind=enums.EventKind(row[0]), id_=row[1], ip_address=str(row[2]), occurred_at=row[3])
+
+    sql_params: dict[str, QueryResultsArgsType] = {
+        "p1": include_hits,
+        "p2": before_at,
+        "p3": before_kind,
+        "p4": before_id,
+        "p5": from_at,
+        "p6": to_at,
+        "p7": by_address,
+        "p8": list(addresses),
+        "p9": list(methods),
+        "p10": honeypot,
+        "p11": placeholder,
+        "p12": list(not_methods),
+        "p13": list(paths),
+        "p14": list(not_paths),
+        "p15": list(queries),
+        "p16": list(not_queries),
+        "p17": list(user_agents),
+        "p18": list(not_user_agents),
+        "p19": list(statuses),
+        "p20": list(not_statuses),
+        "p21": list(categories),
+        "p22": list(not_categories),
+        "p23": banned,
+        "p24": limit,
+        "p25": include_logins,
+        "p26": list(usernames),
+        "p27": list(not_usernames),
+        "p28": list(passwords),
+        "p29": list(not_passwords),
+        "p30": include_installs,
+    }
+    return QueryResults(conn, SEARCH_EVENTS, _decode_hook, sql_params)
+
+
+async def configure_search(conn: ConnectionLike, *, milliseconds: int) -> None:
+    await conn.execute(CONFIGURE_SEARCH, {"p1": milliseconds})
+
+
+def list_country_codes(conn: ConnectionLike) -> QueryResults[str]:
+    return QueryResults(conn, LIST_COUNTRY_CODES, operator.itemgetter(0))
 
 
 def get_hits_by_ids(conn: ConnectionLike, *, ids: collections.abc.Sequence[int]) -> QueryResults[GetHitsByIdsRow]:

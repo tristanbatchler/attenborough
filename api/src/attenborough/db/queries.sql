@@ -304,6 +304,118 @@ SELECT * FROM (
 ORDER BY occurred_at DESC, kind DESC, id DESC
 LIMIT sqlc.arg('limit')::int;
 
+-- The addresses whose facts (where they are, their totals) a search (search.py) names, for
+-- SearchEvents. Every address with an event has a row in ip_activity.
+-- name: SearchAddresses :many
+SELECT a.ip_address
+FROM ip_activity a
+LEFT JOIN ip_locations l ON l.ip_address = a.ip_address
+WHERE is_public_address(a.ip_address)
+  AND (cardinality(sqlc.arg(ips)::inet[]) = 0 OR a.ip_address <<= ANY(sqlc.arg(ips)::inet[]))
+  AND (cardinality(sqlc.arg(not_ips)::inet[]) = 0 OR NOT a.ip_address <<= ANY(sqlc.arg(not_ips)::inet[]))
+  AND (cardinality(sqlc.arg(countries)::text[]) = 0 OR l.country_code = ANY(sqlc.arg(countries)::text[]))
+  AND (cardinality(sqlc.arg(not_countries)::text[]) = 0 OR l.country_code IS NULL OR l.country_code <> ALL(sqlc.arg(not_countries)::text[]))
+  AND (cardinality(sqlc.arg(cities)::text[]) = 0 OR l.city ILIKE ANY(sqlc.arg(cities)::text[]))
+  AND (cardinality(sqlc.arg(not_cities)::text[]) = 0 OR NOT COALESCE(l.city, '') ILIKE ANY(sqlc.arg(not_cities)::text[]))
+  AND (cardinality(sqlc.arg(asns)::bigint[]) = 0 OR l.asn = ANY(sqlc.arg(asns)::bigint[]))
+  AND (cardinality(sqlc.arg(not_asns)::bigint[]) = 0 OR l.asn IS NULL OR l.asn <> ALL(sqlc.arg(not_asns)::bigint[]))
+  AND (cardinality(sqlc.arg(networks)::text[]) = 0 OR l.as_organisation ILIKE ANY(sqlc.arg(networks)::text[]))
+  AND (cardinality(sqlc.arg(not_networks)::text[]) = 0 OR NOT COALESCE(l.as_organisation, '') ILIKE ANY(sqlc.arg(not_networks)::text[]))
+  AND (sqlc.narg(requests_from)::bigint IS NULL OR a.requests >= sqlc.narg(requests_from)::bigint)
+  AND (sqlc.narg(requests_to)::bigint IS NULL OR a.requests < sqlc.narg(requests_to)::bigint)
+  AND (sqlc.narg(logins_from)::bigint IS NULL OR a.login_attempts >= sqlc.narg(logins_from)::bigint)
+  AND (sqlc.narg(logins_to)::bigint IS NULL OR a.login_attempts < sqlc.narg(logins_to)::bigint)
+  AND (sqlc.narg(first_seen_from)::timestamptz IS NULL OR a.first_seen_at >= sqlc.narg(first_seen_from)::timestamptz)
+  AND (sqlc.narg(first_seen_to)::timestamptz IS NULL OR a.first_seen_at < sqlc.narg(first_seen_to)::timestamptz)
+  AND (sqlc.narg(last_seen_from)::timestamptz IS NULL OR a.last_seen_at >= sqlc.narg(last_seen_from)::timestamptz)
+  AND (sqlc.narg(last_seen_to)::timestamptz IS NULL OR a.last_seen_at < sqlc.narg(last_seen_to)::timestamptz);
+
+-- The events a search (search.py) matches, newest first, paged like ListRecentEvents. Every filter
+-- is an argument that is empty (or NULL, for a range's end) when the search doesn't use it; the
+-- search is planned with its arguments' values (search.py, ConfigureSearch), so a filter it doesn't
+-- use costs nothing. Text a visitor sent is matched as the exhibit shows it, with the honeypot's
+-- own names hidden (events.py, hide_honeypot): matching the stored text would let a search confirm
+-- a guessed name. Facts about an address arrive as the list of addresses that have them
+-- (SearchAddresses): a list of values lets the planner see how many events they have, and read
+-- a quiet address's events from its index.
+-- name: SearchEvents :many
+SELECT * FROM (
+    (SELECT 'hit'::event_kind AS kind, id, ip_address, occurred_at
+     FROM telemetry_hits
+     WHERE sqlc.arg(include_hits)::boolean
+       AND router_group = 'honeypot' AND is_public_address(ip_address) AND occurred_at <= sqlc.arg(before_at)::timestamptz
+       AND (occurred_at, 'hit'::event_kind, id) < (sqlc.arg(before_at)::timestamptz, sqlc.arg(before_kind)::event_kind, sqlc.arg(before_id)::bigint)
+       AND (sqlc.narg(from_at)::timestamptz IS NULL OR occurred_at >= sqlc.narg(from_at)::timestamptz)
+       AND (sqlc.narg(to_at)::timestamptz IS NULL OR occurred_at < sqlc.narg(to_at)::timestamptz)
+       AND (NOT sqlc.arg(by_address)::boolean OR ip_address = ANY(sqlc.arg(addresses)::inet[]))
+       AND (cardinality(sqlc.arg(methods)::text[]) = 0 OR regexp_replace(method, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(methods)::text[]))
+       AND (cardinality(sqlc.arg(not_methods)::text[]) = 0 OR NOT regexp_replace(method, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(not_methods)::text[]))
+       AND (cardinality(sqlc.arg(paths)::text[]) = 0 OR regexp_replace(path, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(paths)::text[]))
+       AND (cardinality(sqlc.arg(not_paths)::text[]) = 0 OR NOT regexp_replace(path, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(not_paths)::text[]))
+       AND (cardinality(sqlc.arg(queries)::text[]) = 0 OR regexp_replace(COALESCE(query, ''), sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(queries)::text[]))
+       AND (cardinality(sqlc.arg(not_queries)::text[]) = 0 OR NOT regexp_replace(COALESCE(query, ''), sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(not_queries)::text[]))
+       AND (cardinality(sqlc.arg(user_agents)::text[]) = 0 OR regexp_replace(COALESCE(user_agent, ''), sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(user_agents)::text[]))
+       AND (cardinality(sqlc.arg(not_user_agents)::text[]) = 0 OR NOT regexp_replace(COALESCE(user_agent, ''), sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(not_user_agents)::text[]))
+       AND (cardinality(sqlc.arg(statuses)::integer[]) = 0 OR status_code = ANY(sqlc.arg(statuses)::integer[]))
+       AND (cardinality(sqlc.arg(not_statuses)::integer[]) = 0 OR status_code <> ALL(sqlc.arg(not_statuses)::integer[]))
+       AND (cardinality(sqlc.arg(categories)::path_category[]) = 0 OR path_category(path) = ANY(sqlc.arg(categories)::path_category[]))
+       AND (cardinality(sqlc.arg(not_categories)::path_category[]) = 0 OR path_category(path) <> ALL(sqlc.arg(not_categories)::path_category[]))
+       AND (sqlc.narg(banned)::boolean IS NULL OR banned = sqlc.narg(banned)::boolean)
+     ORDER BY occurred_at DESC, id DESC
+     LIMIT sqlc.arg('limit')::int)
+    UNION ALL
+    (SELECT 'login_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
+     FROM credential_stuffing_attempts
+     WHERE sqlc.arg(include_logins)::boolean
+       AND is_public_address(ip_address) AND attempted_at <= sqlc.arg(before_at)::timestamptz
+       AND (attempted_at, 'login_attempt'::event_kind, id) < (sqlc.arg(before_at)::timestamptz, sqlc.arg(before_kind)::event_kind, sqlc.arg(before_id)::bigint)
+       AND (sqlc.narg(from_at)::timestamptz IS NULL OR attempted_at >= sqlc.narg(from_at)::timestamptz)
+       AND (sqlc.narg(to_at)::timestamptz IS NULL OR attempted_at < sqlc.narg(to_at)::timestamptz)
+       AND (NOT sqlc.arg(by_address)::boolean OR ip_address = ANY(sqlc.arg(addresses)::inet[]))
+       AND (cardinality(sqlc.arg(paths)::text[]) = 0 OR regexp_replace(endpoint_path, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(paths)::text[]))
+       AND (cardinality(sqlc.arg(not_paths)::text[]) = 0 OR NOT regexp_replace(endpoint_path, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(not_paths)::text[]))
+       AND (cardinality(sqlc.arg(usernames)::text[]) = 0 OR regexp_replace(username, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(usernames)::text[]))
+       AND (cardinality(sqlc.arg(not_usernames)::text[]) = 0 OR NOT regexp_replace(username, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(not_usernames)::text[]))
+       AND (cardinality(sqlc.arg(passwords)::text[]) = 0 OR regexp_replace(password, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(passwords)::text[]))
+       AND (cardinality(sqlc.arg(not_passwords)::text[]) = 0 OR NOT regexp_replace(password, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(not_passwords)::text[]))
+     ORDER BY attempted_at DESC, id DESC
+     LIMIT sqlc.arg('limit')::int)
+    UNION ALL
+    (SELECT 'install_attempt'::event_kind AS kind, id, ip_address, attempted_at AS occurred_at
+     FROM install_attempts
+     WHERE sqlc.arg(include_installs)::boolean
+       AND is_public_address(ip_address) AND attempted_at <= sqlc.arg(before_at)::timestamptz
+       AND (attempted_at, 'install_attempt'::event_kind, id) < (sqlc.arg(before_at)::timestamptz, sqlc.arg(before_kind)::event_kind, sqlc.arg(before_id)::bigint)
+       AND (sqlc.narg(from_at)::timestamptz IS NULL OR attempted_at >= sqlc.narg(from_at)::timestamptz)
+       AND (sqlc.narg(to_at)::timestamptz IS NULL OR attempted_at < sqlc.narg(to_at)::timestamptz)
+       AND (NOT sqlc.arg(by_address)::boolean OR ip_address = ANY(sqlc.arg(addresses)::inet[]))
+       AND (cardinality(sqlc.arg(paths)::text[]) = 0 OR regexp_replace(path, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(paths)::text[]))
+       AND (cardinality(sqlc.arg(not_paths)::text[]) = 0 OR NOT regexp_replace(path, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(not_paths)::text[]))
+       AND (cardinality(sqlc.arg(usernames)::text[]) = 0 OR regexp_replace(username, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(usernames)::text[]))
+       AND (cardinality(sqlc.arg(not_usernames)::text[]) = 0 OR NOT regexp_replace(username, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(not_usernames)::text[]))
+       AND (cardinality(sqlc.arg(passwords)::text[]) = 0 OR regexp_replace(password, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(passwords)::text[]))
+       AND (cardinality(sqlc.arg(not_passwords)::text[]) = 0 OR NOT regexp_replace(password, sqlc.arg(honeypot)::text, sqlc.arg(placeholder)::text, 'gi') ILIKE ANY(sqlc.arg(not_passwords)::text[]))
+     ORDER BY attempted_at DESC, id DESC
+     LIMIT sqlc.arg('limit')::int)
+) AS page
+ORDER BY occurred_at DESC, kind DESC, id DESC
+LIMIT sqlc.arg('limit')::int;
+
+-- For the rest of the transaction: plan each search with its arguments' values, even once psycopg
+-- has prepared it (a generic plan can't leave out the filters a search doesn't use), and cancel
+-- any query that runs longer than `milliseconds` (a search can scan a whole table).
+-- name: ConfigureSearch :exec
+SELECT
+    set_config('plan_cache_mode', 'force_custom_plan', true),
+    set_config('statement_timeout', sqlc.arg(milliseconds)::int::text, true);
+
+-- The country codes of every located address, for the search box's suggestions.
+-- name: ListCountryCodes :many
+SELECT DISTINCT country_code::text
+FROM ip_locations
+WHERE country_code IS NOT NULL AND is_public_address(ip_address)
+ORDER BY 1;
+
 -- The details of one page's events, one query per kind. A hit's body is cut to its first KiB here,
 -- and empty when none was captured (body_size is NULL then): sqlc can't type a nullable substring.
 -- name: GetHitsByIds :many

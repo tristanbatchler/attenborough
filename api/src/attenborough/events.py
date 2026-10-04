@@ -41,7 +41,7 @@ def honeypot_pattern(addresses: Iterable[str]) -> re.Pattern[str]:
     return re.compile(f"(?<![0-9])(?:{alternatives})(?![0-9])", re.IGNORECASE)
 
 
-_HONEYPOT = honeypot_pattern(settings.HONEYPOT_ADDRESSES)
+HONEYPOT = honeypot_pattern(settings.HONEYPOT_ADDRESSES)
 
 
 def hide_honeypot(text: str) -> str:
@@ -52,7 +52,7 @@ def hide_honeypot(text: str) -> str:
     honeypot is; the database keeps everything as sent. Best effort: a name sent in another
     encoding (base64, `%2E` for the dots) isn't recognised.
     """
-    return _HONEYPOT.sub(HONEYPOT_PLACEHOLDER, text)
+    return HONEYPOT.sub(HONEYPOT_PLACEHOLDER, text)
 
 
 def _hide_optional(text: str | None) -> str | None:

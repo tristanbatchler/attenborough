@@ -7,7 +7,9 @@ from http import HTTPStatus
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi.exceptions import RequestValidationError
 from psycopg import AsyncConnection
+from psycopg.errors import QueryCanceled
 from pydantic import AfterValidator, BaseModel, Field, IPvAnyAddress
 
 from attenborough import settings
@@ -30,11 +32,20 @@ from attenborough.events import (
     ip_summary,
 )
 from attenborough.patterns import Patterns, latest_patterns
+from attenborough.search import FIELDS, Search, SearchField, suggestions, valid_query
 
 router = APIRouter(prefix="/exhibit", tags=[RouterGroup.EXHIBIT])
 
 # Longer than any token EventCursor.token() makes.
 _MAX_CURSOR_LENGTH = 256
+# The longest search query, and how long one may run before it is cancelled.
+_MAX_QUERY_LENGTH = 1000
+_SEARCH_TIMEOUT_MS = 3000
+_TOO_SLOW = {
+    "type": "search_timeout",
+    "loc": ("query", "q"),
+    "msg": "This search took too long. Narrow it, with a date range for instance.",
+}
 
 
 def _valid_cursor(token: str | None) -> str | None:
@@ -91,18 +102,58 @@ class Paging(BaseModel):
 PagingQuery = Annotated[Paging, Query()]
 
 
+class SearchPaging(Paging):
+    """The feed's query parameters: paging, and a search (search.py) that picks the events."""
+
+    # Blank: every event.
+    q: Annotated[
+        str, Field(max_length=_MAX_QUERY_LENGTH), AfterValidator(valid_query)
+    ] = ""
+
+
 @router.get("/feed")
-async def list_recent_events(db_conn: DBConn, paging: PagingQuery) -> EventPage:
-    """The latest visitor events from every IP address, newest first."""
+async def list_recent_events(
+    db_conn: DBConn, paging: Annotated[SearchPaging, Query()]
+) -> EventPage:
+    """The latest visitor events from every IP address, newest first: only those the search `q`
+    matches (search.py), if given. A search that can't be run, or runs too long, is a 422 whose
+    message says why."""
     cursor = paging.cursor
-    rows = await queries.list_recent_events(
-        db_conn,
-        before_at=cursor.occurred_at,
-        before_kind=cursor.kind,
-        before_id=cursor.id,
-        limit=paging.limit,
-    )
+    if not paging.q.strip():
+        rows = await queries.list_recent_events(
+            db_conn,
+            before_at=cursor.occurred_at,
+            before_kind=cursor.kind,
+            before_id=cursor.id,
+            limit=paging.limit,
+        )
+        return await paging.page_of(db_conn, rows)
+    try:
+        async with db_conn.transaction():
+            await queries.configure_search(db_conn, milliseconds=_SEARCH_TIMEOUT_MS)
+            rows = await Search.parse(paging.q).run(db_conn, cursor, paging.limit)
+    except QueryCanceled:
+        raise RequestValidationError([_TOO_SLOW]) from None
     return await paging.page_of(db_conn, rows)
+
+
+class SearchFieldHelp(BaseModel):
+    """A field a search can name (search.py)."""
+
+    name: SearchField
+    description: str
+    # The values the search box suggests; empty for open-ended ones.
+    values: list[str]
+
+
+@router.get("/search-fields")
+async def list_search_fields(db_conn: DBConn) -> list[SearchFieldHelp]:
+    """Every field a search can name, what it matches, and the values to suggest for it."""
+    values = suggestions(await queries.list_country_codes(db_conn))
+    return [
+        SearchFieldHelp(name=name, description=text, values=values.get(name, []))
+        for name, text in FIELDS.items()
+    ]
 
 
 @router.get("/ip/{ip_addr}/activity")

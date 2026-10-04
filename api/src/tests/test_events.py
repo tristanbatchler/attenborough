@@ -314,7 +314,7 @@ def test_other_names_are_shown_as_sent(text: str):
 
 def test_every_text_a_visitor_sent_is_hidden_in(monkeypatch: pytest.MonkeyPatch):
     host = "honeypot.test"
-    monkeypatch.setattr(events, "_HONEYPOT", honeypot_pattern([host]))
+    monkeypatch.setattr(events, "HONEYPOT", honeypot_pattern([host]))
     hidden = events.hit_detail(
         queries.GetHitRow(
             id_=1,
