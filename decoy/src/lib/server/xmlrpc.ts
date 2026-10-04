@@ -214,11 +214,14 @@ function call(method: string, params: Value[]): Call {
 	if (at === undefined) {
 		return BAD_LOGIN;
 	}
-	// IXR passes a lone parameter on its own, not in a list, which every method then refuses.
-	if (params.length < at + CREDENTIAL_PARAMS) {
+	// IXR's call() passes a lone parameter on its own, not in a list: a lone array becomes the
+	// parameters (brute force tools send [[username, password]]); any other lone value is too few.
+	const [lone, ...others] = params;
+	const args = others.length === 0 && Array.isArray(lone) ? lone : params;
+	if (args.length < at + CREDENTIAL_PARAMS) {
 		return TOO_FEW_ARGUMENTS;
 	}
-	const [username, password] = params.slice(at, at + CREDENTIAL_PARAMS);
+	const [username, password] = args.slice(at, at + CREDENTIAL_PARAMS);
 	if (typeof username !== 'string' || typeof password !== 'string') {
 		return NOT_STRINGS;
 	}
