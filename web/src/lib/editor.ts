@@ -6,6 +6,7 @@ import { Compartment } from '@codemirror/state';
 import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark';
 import { basicSetup, EditorView } from 'codemirror';
 import type { Marker } from '$lib/client';
+import { picoEditorTheme, prefersDark } from '$lib/editor-theme';
 
 // A code editor for a response rule's body: CodeMirror 6 with Liquid over HTML or JSON, completing
 // the API's markers. It enhances a <textarea>, which stays the form's field and works without
@@ -24,35 +25,15 @@ export function editorMode(contentType: string): EditorMode {
 	return 'text';
 }
 
-// Pico follows the reader's colour scheme, so the editor does too.
-const DARK_SCHEME = '(prefers-color-scheme: dark)';
-
-const theme = (dark: boolean) =>
-	EditorView.theme(
-		{
-			'&': {
-				backgroundColor: 'var(--pico-form-element-background-color)',
-				color: 'var(--pico-color)',
-				border: 'var(--pico-border-width) solid var(--pico-form-element-border-color)',
-				borderRadius: 'var(--pico-border-radius)',
-				marginBottom: 'var(--pico-spacing)'
-			},
-			'&.cm-focused': { outline: 'var(--pico-outline-width) solid var(--pico-primary-focus)' },
-			'.cm-scroller': {
-				fontFamily: 'var(--pico-font-family-monospace)',
-				minHeight: '12em',
-				maxHeight: '36em'
-			},
-			'.cm-content': { caretColor: 'var(--pico-color)' },
-			'.cm-gutters': {
-				backgroundColor: 'transparent',
-				color: 'var(--pico-muted-color)',
-				border: 'none'
-			},
-			'.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--pico-muted-border-color)' }
-		},
-		{ dark }
-	);
+const theme = EditorView.theme({
+	'.cm-scroller': { minHeight: '12em', maxHeight: '36em' },
+	'.cm-gutters': {
+		backgroundColor: 'transparent',
+		color: 'var(--pico-muted-color)',
+		border: 'none'
+	},
+	'.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--pico-muted-border-color)' }
+});
 
 export interface Editor {
 	setMode(mode: EditorMode): void;
@@ -76,12 +57,13 @@ export function createEditor(
 			...(editing === 'html' ? { base: html() } : editing === 'json' ? { base: json() } : {})
 		});
 	const languageSlot = new Compartment();
-	const dark = window.matchMedia(DARK_SCHEME).matches;
+	const dark = prefersDark();
 	const view = new EditorView({
 		doc: textarea.value,
 		extensions: [
 			basicSetup,
-			theme(dark),
+			picoEditorTheme(dark),
+			theme,
 			// basicSetup's default style, meant for light backgrounds, only applies when no other does.
 			...(dark ? [syntaxHighlighting(oneDarkHighlightStyle)] : []),
 			EditorView.lineWrapping,

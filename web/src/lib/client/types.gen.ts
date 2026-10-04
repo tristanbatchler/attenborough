@@ -1003,6 +1003,31 @@ export type RuleRecord = {
 };
 
 /**
+ * SearchField
+ *
+ * What a search term can name. The names a response rule's markers share (rules.py) mean the
+ * same here.
+ */
+export type SearchField = 'ip' | 'date' | 'kind' | 'country' | 'city' | 'asn' | 'network' | 'requests' | 'logins' | 'first_seen' | 'last_seen' | 'method' | 'path' | 'query' | 'user_agent' | 'status' | 'category' | 'banned' | 'username' | 'password';
+
+/**
+ * SearchFieldHelp
+ *
+ * A field a search can name (search.py).
+ */
+export type SearchFieldHelp = {
+    name: SearchField;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Values
+     */
+    values: Array<string>;
+};
+
+/**
  * Session
  *
  * A new session: the token to send as a bearer token, and when it stops working.
@@ -1164,6 +1189,10 @@ export type ListRecentEventsData = {
          * Take
          */
         take?: number;
+        /**
+         * Q
+         */
+        q?: string;
     };
     url: '/exhibit/feed';
 };
@@ -1185,6 +1214,24 @@ export type ListRecentEventsResponses = {
 };
 
 export type ListRecentEventsResponse = ListRecentEventsResponses[keyof ListRecentEventsResponses];
+
+export type ListSearchFieldsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/exhibit/search-fields';
+};
+
+export type ListSearchFieldsResponses = {
+    /**
+     * Response List Search Fields
+     *
+     * Successful Response
+     */
+    200: Array<SearchFieldHelp>;
+};
+
+export type ListSearchFieldsResponse = ListSearchFieldsResponses[keyof ListSearchFieldsResponses];
 
 export type GetIpEventsData = {
     body?: never;

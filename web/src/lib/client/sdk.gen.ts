@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { BanIpData, BanIpErrors, BanIpResponses, CreateRuleData, CreateRuleErrors, CreateRuleResponses, FinishGoogleLoginData, FinishGoogleLoginErrors, FinishGoogleLoginResponses, GetHitData, GetHitErrors, GetHitResponses, GetIpEventsData, GetIpEventsErrors, GetIpEventsResponses, GetIpSummaryData, GetIpSummaryErrors, GetIpSummaryResponses, GetMeData, GetMeResponses, GetPatternsData, GetPatternsResponses, GetRuleData, GetRuleErrors, GetRuleResponses, GetTakeoverData, GetTakeoverErrors, GetTakeoverResponses, ListActiveBansData, ListActiveBansResponses, ListAuditLogData, ListAuditLogResponses, ListIpBansData, ListIpBansErrors, ListIpBansResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses, ListRuleMarkersData, ListRuleMarkersResponses, ListRulesData, ListRulesResponses, LogOutData, LogOutResponses, MoveRuleData, MoveRuleErrors, MoveRuleResponses, PreviewRuleData, PreviewRuleErrors, PreviewRuleResponses, RemoveRuleData, RemoveRuleErrors, RemoveRuleResponses, RevokeBanData, RevokeBanErrors, RevokeBanResponses, StartGoogleLoginData, StartGoogleLoginResponses, UpdateRuleData, UpdateRuleErrors, UpdateRuleResponses } from './types.gen';
+import type { BanIpData, BanIpErrors, BanIpResponses, CreateRuleData, CreateRuleErrors, CreateRuleResponses, FinishGoogleLoginData, FinishGoogleLoginErrors, FinishGoogleLoginResponses, GetHitData, GetHitErrors, GetHitResponses, GetIpEventsData, GetIpEventsErrors, GetIpEventsResponses, GetIpSummaryData, GetIpSummaryErrors, GetIpSummaryResponses, GetMeData, GetMeResponses, GetPatternsData, GetPatternsResponses, GetRuleData, GetRuleErrors, GetRuleResponses, GetTakeoverData, GetTakeoverErrors, GetTakeoverResponses, ListActiveBansData, ListActiveBansResponses, ListAuditLogData, ListAuditLogResponses, ListIpBansData, ListIpBansErrors, ListIpBansResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses, ListRuleMarkersData, ListRuleMarkersResponses, ListRulesData, ListRulesResponses, ListSearchFieldsData, ListSearchFieldsResponses, LogOutData, LogOutResponses, MoveRuleData, MoveRuleErrors, MoveRuleResponses, PreviewRuleData, PreviewRuleErrors, PreviewRuleResponses, RemoveRuleData, RemoveRuleErrors, RemoveRuleResponses, RevokeBanData, RevokeBanErrors, RevokeBanResponses, StartGoogleLoginData, StartGoogleLoginResponses, UpdateRuleData, UpdateRuleErrors, UpdateRuleResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -21,9 +21,18 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 /**
  * List Recent Events
  *
- * The latest visitor events from every IP address, newest first.
+ * The latest visitor events from every IP address, newest first: only those the search `q`
+ * matches (search.py), if given. A search that can't be run, or runs too long, is a 422 whose
+ * message says why.
  */
 export const listRecentEvents = <ThrowOnError extends boolean = false>(options?: Options<ListRecentEventsData, ThrowOnError>): RequestResult<ListRecentEventsResponses, ListRecentEventsErrors, ThrowOnError> => (options?.client ?? client).get<ListRecentEventsResponses, ListRecentEventsErrors, ThrowOnError>({ url: '/exhibit/feed', ...options });
+
+/**
+ * List Search Fields
+ *
+ * Every field a search can name, what it matches, and the values to suggest for it.
+ */
+export const listSearchFields = <ThrowOnError extends boolean = false>(options?: Options<ListSearchFieldsData, ThrowOnError>): RequestResult<ListSearchFieldsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListSearchFieldsResponses, unknown, ThrowOnError>({ url: '/exhibit/search-fields', ...options });
 
 /**
  * Get Ip Events
